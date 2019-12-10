@@ -1,0 +1,2 @@
+SELECT users
+FROM users;

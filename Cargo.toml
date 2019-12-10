@@ -1,0 +1,28 @@
+[package]
+name = "boluo_server"
+version = "0.1.0"
+authors = ["Quan Brew <t@ioover.net>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "manage"
+path = "src/manage.rs"
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[dependencies]
+postgres = { version = "0.17.0-alpha.2", features = ["with-chrono-0_4", "with-uuid-0_8", "with-serde_json-1"]}
+postgres-types = { version = "0.1.0-alpha.2", features = ["derive"]}
+dotenv = "*"
+anyhow = "*"
+thiserror = "*"
+uuid = { version = "0.8", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+once_cell = "*"
+crc32fast = "1.2.0"
