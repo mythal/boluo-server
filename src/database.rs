@@ -24,10 +24,7 @@ pub enum CreationError {
 }
 
 pub fn get_postgres_url() -> String {
-    #[cfg(not(test))]
-        let key = "POSTGRES_URL";
-    #[cfg(test)]
-        let key = "TEST_POSTGRES_URL";
+    let key = "DATABASE_URL";
     env::var(key).expect("Failed to load Postgres connect URL")
 }
 

@@ -1,16 +1,7 @@
-BEGIN;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "hstore";
 
-DROP TABLE IF EXISTS "media" CASCADE;
-DROP TABLE IF EXISTS "space_members" CASCADE;
-DROP TABLE IF EXISTS "channel_members" CASCADE;
-DROP TABLE IF EXISTS "spaces" CASCADE;
-DROP TABLE IF EXISTS "users" CASCADE;
-DROP TABLE IF EXISTS "channels" CASCADE;
-DROP TABLE IF EXISTS "messages" CASCADE;
-DROP TABLE IF EXISTS "restrained_members" CASCADE;
 
 
 CREATE TABLE media
@@ -148,5 +139,3 @@ CREATE TABLE restrained_members
 );
 
 CREATE INDEX order_index ON messages (order_date DESC, order_offset ASC);
-
-COMMIT;
