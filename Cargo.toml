@@ -26,3 +26,4 @@ serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 once_cell = "*"
 crc32fast = "1.2.0"
+phf = { version = "0.8", features = ["macros"] }
