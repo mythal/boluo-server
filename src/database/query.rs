@@ -1,4 +1,4 @@
-use postgres::types::Type;
+use postgres_types::Type;
 
 #[derive(Copy, Clone)]
 pub struct Query {

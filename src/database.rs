@@ -3,23 +3,38 @@ use std::env;
 use std::hash::BuildHasher;
 use std::sync::{Arc, Mutex};
 
-use postgres::types::ToSql;
-pub use postgres::types::Type as SqlType;
 use thiserror::Error;
+pub use tokio_postgres::types::{ToSql, Type as SqlType};
 
-pub trait Querist {
-    fn query(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)])
-             -> Result<Vec<postgres::Row>, postgres::Error>;
+use async_trait::async_trait;
 
-    fn fetch(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<postgres::Row, FetchError> {
-        self.query(key, params)?
+#[async_trait]
+pub trait Querist: Send {
+    async fn query(
+        &mut self,
+        key: query::Key,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error>;
+
+    async fn fetch(
+        &mut self,
+        key: query::Key,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<tokio_postgres::Row, FetchError> {
+        self.query(key, params)
+            .await?
             .into_iter()
             .next()
             .ok_or(FetchError::NoSuchRecord)
     }
 
-    fn create(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<postgres::Row, CreationError> {
-        self.query(key, params)?
+    async fn create(
+        &mut self,
+        key: query::Key,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<tokio_postgres::Row, CreationError> {
+        self.query(key, params)
+            .await?
             .into_iter()
             .next()
             .ok_or(CreationError::AlreadyExists)
@@ -29,7 +44,7 @@ pub trait Querist {
 #[derive(Error, Debug)]
 pub enum FetchError {
     #[error("unknown query error")]
-    QueryFail(#[from] postgres::Error),
+    QueryFail(#[from] tokio_postgres::Error),
     #[error("no such record")]
     NoSuchRecord,
 }
@@ -37,7 +52,7 @@ pub enum FetchError {
 #[derive(Error, Debug)]
 pub enum CreationError {
     #[error("unknown query error")]
-    QueryFail(#[from] postgres::Error),
+    QueryFail(#[from] tokio_postgres::Error),
     #[error("record already exists")]
     AlreadyExists,
 }
@@ -57,76 +72,79 @@ impl BuildHasher for CrcBuilder {
     }
 }
 
-pub type PrepareMap = HashMap<query::Key, postgres::Statement, CrcBuilder>;
+pub type PrepareMap = HashMap<query::Key, tokio_postgres::Statement, CrcBuilder>;
 
 pub struct Client {
-    pub client: postgres::Client,
+    pub client: tokio_postgres::Client,
     prepared: PrepareMap,
 }
 
 pub mod query;
 
 impl Client {
-    pub fn new() -> Client {
-        Client::with_config(get_postgres_url().parse().unwrap())
+    pub async fn new() -> Client {
+        Client::with_config(get_postgres_url().parse().unwrap()).await
     }
 
-    fn prepare(client: &mut postgres::Client) -> PrepareMap {
+    async fn prepare(client: &mut tokio_postgres::Client) -> PrepareMap {
         let mut map = HashMap::with_capacity_and_hasher(20, CrcBuilder);
         for query in query::ALL_QUERY.iter() {
-            let statement = client.prepare_typed(query.source, query.types).unwrap();
+            let statement = client.prepare_typed(query.source, query.types).await.unwrap();
             map.insert(query.key, statement);
         }
         map
     }
 
-    pub fn with_config(config: postgres::Config) -> Client {
-        let mut client = config.connect(postgres::NoTls).unwrap();
-        let prepared = Client::prepare(&mut client);
+    pub async fn with_config(config: tokio_postgres::Config) -> Client {
+        let (mut client, connection) = config.connect(tokio_postgres::NoTls).await.unwrap();
+        tokio::spawn(connection);
+        let prepared = Client::prepare(&mut client).await;
         Client { client, prepared }
     }
 
-    pub fn transaction(&mut self) -> Result<Transaction, postgres::Error> {
-        let transaction = self.client.transaction()?;
+    pub async fn transaction<'a>(&'a mut self) -> Result<Transaction<'a>, tokio_postgres::Error> {
+        let transaction = self.client.transaction().await?;
         let prepared = &self.prepared;
         Ok(Transaction { transaction, prepared })
     }
 }
 
+#[async_trait]
 impl Querist for Client {
-    fn query(
+    async fn query(
         &mut self,
         key: query::Key,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<postgres::Row>, postgres::Error> {
+    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
         let statement = self.prepared.get(&key).expect("Query not found");
-        self.client.query(statement, params)
+        self.client.query(statement, params).await
     }
 }
 
 pub struct Transaction<'a> {
-    pub transaction: postgres::Transaction<'a>,
+    pub transaction: tokio_postgres::Transaction<'a>,
     prepared: &'a PrepareMap,
 }
 
 impl<'a> Transaction<'a> {
-    fn commit(self) -> Result<(), postgres::Error> {
-        self.transaction.commit()
+    async fn commit(self) -> Result<(), tokio_postgres::Error> {
+        self.transaction.commit().await
     }
 
-    fn rollback(self) -> Result<(), postgres::Error> {
-        self.transaction.rollback()
+    async fn rollback(self) -> Result<(), tokio_postgres::Error> {
+        self.transaction.rollback().await
     }
 }
 
+#[async_trait]
 impl<'a> Querist for Transaction<'a> {
-    fn query(
+    async fn query(
         &mut self,
         key: query::Key,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<postgres::Row>, postgres::Error> {
+    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
         let statement = self.prepared.get(&key).expect("Query not found");
-        self.transaction.query(statement, params)
+        self.transaction.query(statement, params).await
     }
 }
 
@@ -136,7 +154,7 @@ struct InternalPool {
 }
 
 struct SharedPool {
-    config: postgres::Config,
+    config: tokio_postgres::Config,
     inner: Mutex<InternalPool>,
 }
 
@@ -146,7 +164,7 @@ pub struct Pool {
 
 impl Pool {
     pub fn new() -> Pool {
-        let config: postgres::Config = env::var("POSTGRES_URL")
+        let config: tokio_postgres::Config = env::var("POSTGRES_URL")
             .expect("Failed to load Postgres connect URL.")
             .parse()
             .unwrap();

@@ -37,12 +37,15 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn get_messages<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Vec<Message>, postgres::Error> {
-        let rows = db.query(query::SELECT_MESSAGES.key, &[channel_id])?;
+    pub async fn get_messages<T: Querist>(
+        db: &mut T,
+        channel_id: &Uuid,
+    ) -> Result<Vec<Message>, tokio_postgres::Error> {
+        let rows = db.query(query::SELECT_MESSAGES.key, &[channel_id]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
-    pub fn create_message<T: Querist>(
+    pub async fn create_message<T: Querist>(
         db: &mut T,
         channel_id: &Uuid,
         sender_id: &Uuid,
@@ -50,32 +53,38 @@ impl Message {
         text: &str,
     ) -> Result<Message, CreationError> {
         db.create(query::CREATE_MESSAGE.key, &[sender_id, channel_id, &name, &text])
+            .await
             .map(|row| row.get(0))
     }
 }
 
-#[test]
-fn message_test() {
+#[tokio::test]
+async fn message_test() {
     use crate::channels::Channel;
     use crate::database::Client;
     use crate::spaces::Space;
     use crate::users::User;
 
-    let mut client = Client::new();
-    let mut trans = client.transaction().unwrap();
+    let mut client = Client::new().await;
+    let mut trans = client.transaction().await.unwrap();
     let email = "channels@mythal.net";
     let username = "channel_test";
     let password = "no password";
     let nickname = "Channel Test User";
     let space_name = "Channel Test Space";
 
-    let user = User::create(&mut trans, email, username, nickname, password).unwrap();
-    let space = Space::create(&mut trans, space_name, &user.id, None).unwrap();
+    let user = User::create(&mut trans, email, username, nickname, password)
+        .await
+        .unwrap();
+    let space = Space::create(&mut trans, space_name, &user.id, None).await.unwrap();
     let channel_name = "Test Channel";
-    let channel = Channel::create(&mut trans, &space.id, channel_name, true).unwrap();
-    let new_message =
-        Message::create_message(&mut trans, &channel.id, &user.id, &*user.nickname, "hello, world").unwrap();
-    let messages = Message::get_messages(&mut trans, &channel.id).unwrap();
+    let channel = Channel::create(&mut trans, &space.id, channel_name, true)
+        .await
+        .unwrap();
+    let new_message = Message::create_message(&mut trans, &channel.id, &user.id, &*user.nickname, "hello, world")
+        .await
+        .unwrap();
+    let messages = Message::get_messages(&mut trans, &channel.id).await.unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, new_message.id);
 }

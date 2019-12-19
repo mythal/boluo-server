@@ -15,15 +15,18 @@ name = "server"
 path = "src/server.rs"
 
 [dependencies]
-postgres = { version = "0.17.0-alpha.2", features = ["with-chrono-0_4", "with-uuid-0_8", "with-serde_json-1"]}
+tokio-postgres = { version = "0.5.0-alpha.2", features = ["with-chrono-0_4", "with-uuid-0_8", "with-serde_json-1"]}
 postgres-types = { version = "0.1.0-alpha.2", features = ["derive"]}
+async-trait = "*"
 dotenv = "*"
 anyhow = "*"
+once_cell = "*"
 thiserror = "*"
 uuid = { version = "0.8", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-once_cell = "*"
 crc32fast = "1.2.0"
-phf = { version = "0.8", features = ["macros"] }
+hyper = "0.13"
+tokio = { version = "0.2.5", features = ["full", "rt-core"] }
+futures = "0.3"
