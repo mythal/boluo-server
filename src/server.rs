@@ -3,7 +3,6 @@
 use std::env;
 use std::net::SocketAddr;
 
-use futures::executor::block_on;
 use futures::TryStreamExt as _;
 use hyper::{Body, Request, Response, Server};
 use hyper::{Method, StatusCode};
@@ -18,14 +17,18 @@ mod messages;
 mod spaces;
 mod users;
 
-#[derive(Clone, Debug)]
-pub struct Context {}
+#[derive(Clone)]
+pub struct Context {
+    pub pool: database::pool::Pool,
+}
 
 pub static CTX: OnceCell<Context> = OnceCell::new();
 
 impl Context {
     async fn new() -> Context {
-        Context {}
+        Context {
+            pool: database::pool::Pool::with_num(10).await,
+        }
     }
 
     fn get() -> &'static Context {
@@ -34,7 +37,7 @@ impl Context {
 }
 
 async fn router(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
-    let context = Context::get();
+    let _context = Context::get();
     let mut response = Response::new(Body::empty());
 
     match (req.method(), req.uri().path()) {
@@ -77,7 +80,7 @@ async fn main() {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
-    CTX.set(Context::new().await).unwrap();
+    CTX.set(Context::new().await).ok();
 
     let make_svc = make_service_fn::<_, AddrStream, _>(move |_| async { Ok::<_, hyper::Error>(service_fn(router)) });
 

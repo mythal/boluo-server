@@ -1,12 +1,14 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::env;
 use std::hash::BuildHasher;
-use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
 pub use tokio_postgres::types::{ToSql, Type as SqlType};
 
 use async_trait::async_trait;
+
+pub mod pool;
+pub mod query;
 
 #[async_trait]
 pub trait Querist: Send {
@@ -79,11 +81,9 @@ pub struct Client {
     prepared: PrepareMap,
 }
 
-pub mod query;
-
 impl Client {
     pub async fn new() -> Client {
-        Client::with_config(get_postgres_url().parse().unwrap()).await
+        Client::with_config(&get_postgres_url().parse().unwrap()).await
     }
 
     async fn prepare(client: &mut tokio_postgres::Client) -> PrepareMap {
@@ -95,14 +95,14 @@ impl Client {
         map
     }
 
-    pub async fn with_config(config: tokio_postgres::Config) -> Client {
+    pub async fn with_config(config: &tokio_postgres::Config) -> Client {
         let (mut client, connection) = config.connect(tokio_postgres::NoTls).await.unwrap();
         tokio::spawn(connection);
         let prepared = Client::prepare(&mut client).await;
         Client { client, prepared }
     }
 
-    pub async fn transaction<'a>(&'a mut self) -> Result<Transaction<'a>, tokio_postgres::Error> {
+    pub async fn transaction(&'_ mut self) -> Result<Transaction<'_>, tokio_postgres::Error> {
         let transaction = self.client.transaction().await?;
         let prepared = &self.prepared;
         Ok(Transaction { transaction, prepared })
@@ -137,7 +137,7 @@ impl<'a> Transaction<'a> {
 }
 
 #[async_trait]
-impl<'a> Querist for Transaction<'a> {
+impl Querist for Transaction<'_> {
     async fn query(
         &mut self,
         key: query::Key,
@@ -145,39 +145,5 @@ impl<'a> Querist for Transaction<'a> {
     ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
         let statement = self.prepared.get(&key).expect("Query not found");
         self.transaction.query(statement, params).await
-    }
-}
-
-struct InternalPool {
-    conns: VecDeque<Client>,
-    num: u32,
-}
-
-struct SharedPool {
-    config: tokio_postgres::Config,
-    inner: Mutex<InternalPool>,
-}
-
-pub struct Pool {
-    inner: Arc<SharedPool>,
-}
-
-impl Pool {
-    pub fn new() -> Pool {
-        let config: tokio_postgres::Config = env::var("POSTGRES_URL")
-            .expect("Failed to load Postgres connect URL.")
-            .parse()
-            .unwrap();
-        let internal_pool = InternalPool {
-            conns: VecDeque::new(),
-            num: 0,
-        };
-        let shared_pool = SharedPool {
-            inner: Mutex::new(internal_pool),
-            config,
-        };
-        Pool {
-            inner: Arc::new(shared_pool),
-        }
     }
 }
