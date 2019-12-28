@@ -30,3 +30,4 @@ crc32fast = "1.2.0"
 hyper = "0.13"
 tokio = { version = "0.2.5", features = ["full"] }
 futures = "0.3"
+regex = "1"
