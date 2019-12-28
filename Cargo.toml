@@ -15,8 +15,8 @@ name = "server"
 path = "src/server.rs"
 
 [dependencies]
-tokio-postgres = { version = "0.5.0-alpha.2", features = ["with-chrono-0_4", "with-uuid-0_8", "with-serde_json-1"]}
-postgres-types = { version = "0.1.0-alpha.2", features = ["derive"]}
+tokio-postgres = { version = "0.5.0", features = ["with-chrono-0_4", "with-uuid-0_8", "with-serde_json-1"]}
+postgres-types = { version = "0.1.0", features = ["derive"]}
 async-trait = "*"
 dotenv = "*"
 anyhow = "*"
