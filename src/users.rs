@@ -88,3 +88,19 @@ async fn user_test() {
     let all_users = User::all(&mut trans).await.unwrap();
     assert!(all_users.into_iter().find(|u| u.id == user.id).is_none());
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterForm {
+    pub email: String,
+    pub username: String,
+    pub nickname: String,
+    pub password: String,
+    pub repeat_password: String,
+}
+
+impl RegisterForm {
+    pub async fn register<T: Querist>(&self, db: &mut T) -> Result<User, CreationError> {
+        User::create(db, &*self.email, &*self.username, &*self.nickname, &*self.password).await
+    }
+}

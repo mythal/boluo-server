@@ -72,18 +72,19 @@ impl Pool {
         internal.conns.push_back(client);
     }
 
-    pub async fn run<F, R>(&self, f: F)
+    pub async fn run<F, R, V>(&self, f: F) -> V
         where
             F: FnOnce(Client) -> R,
-            R: Future<Output=Client>,
+            R: Future<Output=(V, Client)>,
     {
-        let client = f(self.get_client().await).await;
+        let (v, client) = f(self.get_client().await).await;
         self.put_client(client).await;
+        v
     }
 }
 
 #[tokio::test]
 async fn pool_test() {
     let pool = Pool::with_num(10).await;
-    pool.run(|conn| async { conn }).await;
+    pool.run(|conn| async { ((), conn) }).await;
 }

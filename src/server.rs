@@ -3,12 +3,12 @@
 use std::env;
 use std::net::SocketAddr;
 
-use futures::TryStreamExt as _;
 use hyper::{Body, Request, Response, Server};
-use hyper::{Method, StatusCode};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
+use hyper::StatusCode;
 use once_cell::sync::OnceCell;
+use serde::Serialize;
 
 mod channels;
 mod database;
@@ -24,6 +24,9 @@ pub struct Context {
 
 pub static CTX: OnceCell<Context> = OnceCell::new();
 
+pub type HttpRequest = hyper::Request<hyper::Body>;
+pub type HttpResult<T> = Result<hyper::Response<T>, hyper::Error>;
+
 impl Context {
     async fn new() -> Context {
         Context {
@@ -36,41 +39,77 @@ impl Context {
     }
 }
 
-async fn router(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
-    let _context = Context::get();
-    let mut response = Response::new(Body::empty());
-
-    match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => {
-            *response.body_mut() = Body::from("Try POSTing data to /echo");
-        }
-        (&Method::POST, "/echo") => {
-            *response.body_mut() = req.into_body();
-        }
-        (&Method::POST, "/echo/uppercase") => {
-            // This is actually a new `futures::Stream`...
-            let mapping = req
-                .into_body()
-                .map_ok(|chunk| chunk.iter().map(|byte| byte.to_ascii_uppercase()).collect::<Vec<u8>>());
-
-            // Use `Body::wrap_stream` to convert it to a `Body`...
-            *response.body_mut() = Body::wrap_stream(mapping);
-        }
-        (&Method::POST, "/echo/reverse") => {
-            // Await the full body to be concatenated into a single `Bytes`...
-            let full_body = hyper::body::to_bytes(req.into_body()).await?;
-
-            // Iterate the full body in reverse order and collect into a new Vec.
-            let reversed = full_body.iter().rev().cloned().collect::<Vec<u8>>();
-
-            *response.body_mut() = reversed.into();
-        }
-        _ => {
-            *response.status_mut() = StatusCode::NOT_FOUND;
-        }
-    };
-
+async fn not_found(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+    let mut response = Response::new(Body::from("Not found requested resources."));
+    *response.status_mut() = StatusCode::NOT_FOUND;
     Ok(response)
+}
+
+
+fn bad_request() -> Response<Body> {
+    let mut response = Response::new(Body::from("Bad request."));
+    *response.status_mut() = StatusCode::BAD_REQUEST;
+    response
+}
+
+fn internal_error() -> Response<Body> {
+    let mut response = Response::new(Body::from("Server internal error."));
+    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+    response
+}
+
+fn error(msg: &'static str, status: StatusCode) -> Response<Body> {
+    let body = Body::from(msg);
+    let mut response = Response::new(body);
+    *response.status_mut() = status;
+    response
+}
+
+fn json_response<T: Serialize>(value: &T) -> Response<Body> {
+    match serde_json::to_vec(value) {
+        Ok(bytes) => {
+            Response::new(Body::from(bytes))
+        },
+        Err(_) => internal_error(),
+    }
+}
+
+async fn register(req: Request<Body>) -> Response<Body> {
+    use database::CreationError;
+
+    let body = hyper::body::to_bytes(req.into_body()).await.ok().and_then(|body_bytes| {
+        Some(serde_json::from_slice::<users::RegisterForm>(&*body_bytes).ok()?)
+    });
+    if body.is_none() {
+        return bad_request();
+    }
+    let form = body.unwrap();
+
+    let context = Context::get();
+    let register_result = context.pool.run(|mut db| async move {
+        let register_result = form.register(&mut db).await;
+        (register_result, db)
+    }).await;
+    match register_result {
+        Ok(user) => json_response(&user),
+        Err(CreationError::AlreadyExists) => error("This e-mail or username already exists.", StatusCode::CONFLICT),
+        _ => internal_error()
+    }
+}
+
+async fn router(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+    let path = req.uri().path();
+
+
+    if path == "/api" {
+        let response = Response::new(Body::from("Hello, world"));
+        return Ok(response);
+    }
+    if path == "/api/users/register" {
+        return Ok(register(req).await);
+    }
+
+    not_found(req).await
 }
 
 #[tokio::main]
