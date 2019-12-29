@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "media")]
 pub struct Media {
     id: Uuid,

@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::database::{CreationError, Querist, query};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "messages")]
 pub struct Message {
     id: Uuid,

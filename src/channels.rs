@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::database::{CreationError, FetchError, Querist, query};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "channels")]
 pub struct Channel {
     pub id: Uuid,
@@ -67,6 +68,7 @@ async fn channels_test() {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "channel_members")]
 pub struct ChannelMember {
     pub user_id: Uuid,

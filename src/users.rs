@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::database::{CreationError, FetchError, Querist, query};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "users")]
 pub struct User {
     pub id: Uuid,

@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::database::{CreationError, FetchError, Querist, query};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "spaces")]
 pub struct Space {
     pub id: Uuid,
@@ -76,6 +77,7 @@ async fn space_test() {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "space_members")]
 pub struct SpaceMember {
     pub user_id: Uuid,
@@ -158,6 +160,7 @@ async fn space_member() {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
 #[postgres(name = "restrained_members")]
 pub struct RestrainedMember {
     pub user_id: Uuid,
