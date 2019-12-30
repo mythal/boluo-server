@@ -14,11 +14,7 @@ pub fn pool() -> &'static Pool {
 
 fn env_bool<T: AsRef<str>>(s: T) -> bool {
     let s = s.as_ref().trim();
-    if s.is_empty() || s == "0" || s.to_ascii_lowercase() == "false" {
-        false
-    } else {
-        true
-    }
+    !(s.is_empty() || s == "0" || s.to_ascii_lowercase() == "false")
 }
 
 pub fn debug() -> bool {

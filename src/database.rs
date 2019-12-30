@@ -57,6 +57,8 @@ pub enum CreationError {
     QueryFail(#[from] tokio_postgres::Error),
     #[error("record already exists")]
     AlreadyExists,
+    #[error("validation failed: {0}")]
+    ValidationFail(String),
 }
 
 pub fn get_postgres_url() -> String {

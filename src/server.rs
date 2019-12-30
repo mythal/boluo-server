@@ -15,10 +15,10 @@ mod spaces;
 mod users;
 mod api;
 mod context;
+mod validator;
 
 
 async fn register(req: Request<Body>) -> api::Result {
-    use database::CreationError;
     if hyper::Method::POST != req.method() {
         return Err(api::Error::method_not_allowed());
     }
@@ -31,13 +31,7 @@ async fn register(req: Request<Body>) -> api::Result {
         .run(|mut db| async move {
             (form.register(&mut db).await, db)
         })
-        .await
-        .map_err(|e| {
-            match e {
-                CreationError::AlreadyExists => api::Error::new("This e-mail or username already exists.", StatusCode::CONFLICT),
-                e => e.into()
-            }
-        })?;
+        .await?;
     api::Return::new(&user)
         .status(StatusCode::CREATED)
         .build()

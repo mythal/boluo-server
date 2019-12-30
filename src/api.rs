@@ -1,11 +1,14 @@
 use std::convert::From;
 use std::error::Error as StdError;
+use std::fmt;
 use std::time;
 
 use hyper::{Body, Response, StatusCode};
+use serde::export::fmt::Display;
 use serde::Serialize;
 
 use crate::context::debug;
+use crate::database::CreationError;
 
 pub type Request = hyper::Request<hyper::Body>;
 pub type Result = std::result::Result<hyper::Response<hyper::Body>, Error>;
@@ -19,16 +22,14 @@ pub struct Error {
     pub status_code: u16,
 }
 
-impl<E: StdError> From<E> for Error {
-    fn from(e: E) -> Error {
-        let mut error = Error::internal();
-        if debug() {
-            error.message = e.to_string();
-            eprintln!("{}", e);
-        }
-        error
+
+impl Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.message.fmt(f)
     }
 }
+
+impl StdError for Error {}
 
 impl Error {
     pub fn new<T: ToString>(message: T, status: StatusCode) -> Error {
@@ -55,6 +56,14 @@ impl Error {
         Error::new("Method not allowed", StatusCode::METHOD_NOT_ALLOWED)
     }
 
+    pub fn unexpected(e: &dyn StdError) -> Error {
+        let mut error = Error::internal();
+        if debug() {
+            error.message = e.to_string();
+        }
+        error
+    }
+
     pub fn build(&self) -> Response<Body> {
         let bytes = serde_json::to_vec(self)
             .unwrap_or_else(|_| serde_json::to_vec(&Error::internal()).unwrap());
@@ -65,6 +74,16 @@ impl Error {
             .header(hyper::header::CONTENT_TYPE, "application/json")
             .body(Body::from(bytes))
             .expect("failed to build response")
+    }
+}
+
+impl From<CreationError> for Error {
+    fn from(e: CreationError) -> Error {
+        match e {
+            CreationError::AlreadyExists => Error::new("This record already exists.", StatusCode::CONFLICT),
+            CreationError::ValidationFail(message) => Error::new(message, StatusCode::FORBIDDEN),
+            e => Error::unexpected(&e),
+        }
     }
 }
 

@@ -32,6 +32,19 @@ impl User {
         nickname: &str,
         password: &str,
     ) -> Result<User, CreationError> {
+        use crate::validator::{EMAIL, NICKNAME, USERNAME, PASSWORD};
+
+        let username = username.trim();
+        let nickname = nickname.trim();
+        let email = email.to_ascii_lowercase();
+
+        let e = |s: &str| CreationError::ValidationFail(s.to_string());
+
+        EMAIL.run(&email).map_err(e)?;
+        NICKNAME.run(&nickname).map_err(e)?;
+        USERNAME.run(&username).map_err(e)?;
+        PASSWORD.run(&password).map_err(e)?;
+
         db.create(query::CREATE_USER.key, &[&email, &username, &nickname, &password])
             .await
             .map(|row| row.get(0))
@@ -43,6 +56,7 @@ impl User {
         email: Option<&str>,
         username: Option<&str>,
     ) -> Result<User, FetchError> {
+        let email = email.map(|s| s.to_ascii_lowercase());
         db.fetch(query::FETCH_USER.key, &[&id, &email, &username])
             .await
             .map(|row| row.get(0))
@@ -97,7 +111,6 @@ pub struct RegisterForm {
     pub username: String,
     pub nickname: String,
     pub password: String,
-    pub repeat_password: String,
 }
 
 impl RegisterForm {
