@@ -1,5 +1,5 @@
-use once_cell::sync::OnceCell;
-use regex::Regex;
+
+
 
 pub struct Validator<'a, T: ?Sized>(&'a [(&'static str, &'a (dyn Fn(&T) -> bool + Sync))]);
 
@@ -25,13 +25,6 @@ macro_rules! max {
     ($n: expr) => {
         |s| s.len() <= $n
     };
-}
-
-macro_rules! regex {
-    ($pattern: expr) => {{
-        static CELL: OnceCell<Regex> = OnceCell::new();
-        CELL.get_or_init(|| Regex::new($pattern).unwrap())
-    }};
 }
 
 macro_rules! is_match {

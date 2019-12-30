@@ -5,8 +5,10 @@ use std::net::SocketAddr;
 
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
+use hyper::{Body, Request, Response, Server};
 
+#[macro_use]
+mod utils;
 mod api;
 mod channels;
 mod context;
@@ -16,30 +18,13 @@ mod messages;
 mod spaces;
 mod users;
 mod validator;
-
-async fn register(req: Request<Body>) -> api::Result {
-    if hyper::Method::POST != req.method() {
-        return Err(api::Error::method_not_allowed());
-    }
-    let body = hyper::body::to_bytes(req.into_body())
-        .await
-        .map_err(|_| api::Error::bad_request())?;
-    let form: users::RegisterForm = serde_json::from_slice(&*body).map_err(|_| api::Error::bad_request())?;
-    let user = context::pool()
-        .run(|mut db| async move { (form.register(&mut db).await, db) })
-        .await?;
-    api::Return::new(&user).status(StatusCode::CREATED).build()
-}
+mod handlers;
 
 async fn router(req: Request<Body>) -> api::Result {
     let path = req.uri().path();
 
-    if path == "/api" {
-        let response = Response::new(Body::from("Hello, world"));
-        return Ok(response);
-    }
-    if path == "/api/users/register" {
-        return register(req).await;
+    if path.starts_with("/api/users") {
+        return handlers::users(req).await;
     }
     Err(api::Error::not_found())
 }

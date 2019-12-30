@@ -8,7 +8,7 @@ use serde::export::fmt::Display;
 use serde::Serialize;
 
 use crate::context::debug;
-use crate::database::CreationError;
+use crate::database::{CreationError, FetchError};
 
 pub type Request = hyper::Request<hyper::Body>;
 pub type Result = std::result::Result<hyper::Response<hyper::Body>, Error>;
@@ -79,6 +79,16 @@ impl From<CreationError> for Error {
         match e {
             CreationError::AlreadyExists => Error::new("This record already exists.", StatusCode::CONFLICT),
             CreationError::ValidationFail(message) => Error::new(message, StatusCode::FORBIDDEN),
+            e => Error::unexpected(&e),
+        }
+    }
+}
+
+
+impl From<FetchError> for Error {
+    fn from(e: FetchError) -> Error {
+        match e {
+            FetchError::NoSuchRecord => Error::new("Record not found.", StatusCode::NOT_FOUND),
             e => Error::unexpected(&e),
         }
     }
