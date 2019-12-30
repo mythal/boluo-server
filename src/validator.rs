@@ -1,11 +1,9 @@
 use once_cell::sync::OnceCell;
 use regex::Regex;
 
-pub type ValidationFunction<T> = &'static (dyn for<'r> Fn(&'r T) -> bool + Sync);
+pub struct Validator<'a, T: ?Sized>(&'a [(&'static str, &'a (dyn Fn(&T) -> bool + Sync))]);
 
-pub struct Validator<T: 'static + ?Sized>(&'static [(&'static str, ValidationFunction<T>)]);
-
-impl<T: ?Sized> Validator<T> {
+impl<'a, T: ?Sized> Validator<'a, T> {
     pub fn run<U: AsRef<T>>(&self, value: U) -> Result<(), &'static str> {
         let Validator(sub_validators) = *self;
         for (message, validator) in sub_validators {
