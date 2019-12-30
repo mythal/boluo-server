@@ -73,9 +73,9 @@ impl Pool {
     }
 
     pub async fn run<F, R, V>(&self, f: F) -> V
-        where
-            F: FnOnce(Client) -> R,
-            R: Future<Output=(V, Client)>,
+    where
+        F: FnOnce(Client) -> R,
+        R: Future<Output = (V, Client)>,
     {
         let (v, client) = f(self.get_client().await).await;
         self.put_client(client).await;

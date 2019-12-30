@@ -3,9 +3,7 @@ use regex::Regex;
 
 pub type ValidationFunction<T> = &'static (dyn for<'r> Fn(&'r T) -> bool + Sync);
 
-pub struct Validator<T: 'static + ?Sized> (
-    &'static [(&'static str, ValidationFunction<T>)]
-);
+pub struct Validator<T: 'static + ?Sized>(&'static [(&'static str, ValidationFunction<T>)]);
 
 impl<T: ?Sized> Validator<T> {
     pub fn run<U: AsRef<T>>(&self, value: U) -> Result<(), &'static str> {
@@ -19,24 +17,23 @@ impl<T: ?Sized> Validator<T> {
     }
 }
 
-
 macro_rules! min {
-    ($n: expr) => {|s| s.len() >= $n};
+    ($n: expr) => {
+        |s| s.len() >= $n
+    };
 }
 
 macro_rules! max {
-    ($n: expr) => {|s| s.len() <= $n};
+    ($n: expr) => {
+        |s| s.len() <= $n
+    };
 }
 
-
 macro_rules! regex {
-    ($pattern: expr) => (
-        {
-            static CELL: OnceCell<Regex> = OnceCell::new();
-            CELL
-                .get_or_init(|| Regex::new($pattern).unwrap())
-        }
-    );
+    ($pattern: expr) => {{
+        static CELL: OnceCell<Regex> = OnceCell::new();
+        CELL.get_or_init(|| Regex::new($pattern).unwrap())
+    }};
 }
 
 macro_rules! is_match {
@@ -44,7 +41,6 @@ macro_rules! is_match {
         |s| regex!($pattern).is_match(&*s)
     };
 }
-
 
 pub static PASSWORD: Validator<str> = Validator(&[
     ("Password length shall not be less than 8.", &min!(8)),
@@ -54,7 +50,10 @@ pub static PASSWORD: Validator<str> = Validator(&[
 pub static USERNAME: Validator<str> = Validator(&[
     ("Username length shall not be less than 3.", &min!(3)),
     ("Username length shall not be more than 32.", &max!(32)),
-    (r#"Username can only contain letters, "_" and numbers."#, &is_match!(r#"^[\w_\d]+$"#)),
+    (
+        r#"Username can only contain letters, "_" and numbers."#,
+        &is_match!(r#"^[\w_\d]+$"#),
+    ),
 ]);
 
 pub static NICKNAME: Validator<str> = Validator(&[
@@ -69,7 +68,6 @@ pub static EMAIL: Validator<str> = Validator(&[
     // https://stackoverflow.com/q/201323
     ("Invalid e-mail address", &is_match!(r"^\S+@\S+\.\S+$")),
 ]);
-
 
 #[test]
 fn validator_test() {

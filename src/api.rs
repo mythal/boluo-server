@@ -22,7 +22,6 @@ pub struct Error {
     pub status_code: u16,
 }
 
-
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.message.fmt(f)
@@ -65,10 +64,8 @@ impl Error {
     }
 
     pub fn build(&self) -> Response<Body> {
-        let bytes = serde_json::to_vec(self)
-            .unwrap_or_else(|_| serde_json::to_vec(&Error::internal()).unwrap());
-        let status = StatusCode::from_u16(self.status_code)
-            .expect("invalid struct code");
+        let bytes = serde_json::to_vec(self).unwrap_or_else(|_| serde_json::to_vec(&Error::internal()).unwrap());
+        let status = StatusCode::from_u16(self.status_code).expect("invalid struct code");
         Response::builder()
             .status(status)
             .header(hyper::header::CONTENT_TYPE, "application/json")
@@ -118,8 +115,7 @@ impl<'a, T: Serialize> Return<'a, T> {
     }
 
     pub fn build(&self) -> Result {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|_| Error::bad_request())?;
+        let bytes = serde_json::to_vec(self).map_err(|_| Error::bad_request())?;
 
         Response::builder()
             .header(hyper::header::CONTENT_TYPE, "application/json")
@@ -128,4 +124,3 @@ impl<'a, T: Serialize> Return<'a, T> {
             .map_err(|_| Error::internal())
     }
 }
-

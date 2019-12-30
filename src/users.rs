@@ -2,7 +2,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::database::{CreationError, FetchError, Querist, query};
+use crate::database::{query, CreationError, FetchError, Querist};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -32,7 +32,7 @@ impl User {
         nickname: &str,
         password: &str,
     ) -> Result<User, CreationError> {
-        use crate::validator::{EMAIL, NICKNAME, USERNAME, PASSWORD};
+        use crate::validator::{EMAIL, NICKNAME, PASSWORD, USERNAME};
 
         let username = username.trim();
         let nickname = nickname.trim();

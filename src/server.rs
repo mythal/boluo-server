@@ -3,20 +3,19 @@
 use std::env;
 use std::net::SocketAddr;
 
-use hyper::{Body, Request, Response, Server, StatusCode};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Request, Response, Server, StatusCode};
 
+mod api;
 mod channels;
+mod context;
 mod database;
 mod media;
 mod messages;
 mod spaces;
 mod users;
-mod api;
-mod context;
 mod validator;
-
 
 async fn register(req: Request<Body>) -> api::Result {
     if hyper::Method::POST != req.method() {
@@ -25,21 +24,15 @@ async fn register(req: Request<Body>) -> api::Result {
     let body = hyper::body::to_bytes(req.into_body())
         .await
         .map_err(|_| api::Error::bad_request())?;
-    let form: users::RegisterForm = serde_json::from_slice(&*body)
-        .map_err(|_| api::Error::bad_request())?;
+    let form: users::RegisterForm = serde_json::from_slice(&*body).map_err(|_| api::Error::bad_request())?;
     let user = context::pool()
-        .run(|mut db| async move {
-            (form.register(&mut db).await, db)
-        })
+        .run(|mut db| async move { (form.register(&mut db).await, db) })
         .await?;
-    api::Return::new(&user)
-        .status(StatusCode::CREATED)
-        .build()
+    api::Return::new(&user).status(StatusCode::CREATED).build()
 }
 
 async fn router(req: Request<Body>) -> api::Result {
     let path = req.uri().path();
-
 
     if path == "/api" {
         let response = Response::new(Body::from("Hello, world"));
