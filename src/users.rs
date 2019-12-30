@@ -32,7 +32,7 @@ impl User {
         nickname: &str,
         password: &str,
     ) -> Result<User, CreationError> {
-        use crate::validator::{EMAIL, NICKNAME, PASSWORD, USERNAME};
+        use crate::validators::{EMAIL, NICKNAME, PASSWORD, USERNAME};
 
         let username = username.trim();
         let nickname = nickname.trim();

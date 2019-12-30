@@ -17,7 +17,7 @@ mod media;
 mod messages;
 mod spaces;
 mod users;
-mod validator;
+mod validators;
 mod handlers;
 
 async fn router(req: Request<Body>) -> api::Result {
