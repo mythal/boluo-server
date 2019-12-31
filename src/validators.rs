@@ -1,6 +1,3 @@
-
-
-
 pub struct Validator<'a, T: ?Sized>(&'a [(&'static str, &'a (dyn Fn(&T) -> bool + Sync))]);
 
 impl<'a, T: ?Sized> Validator<'a, T> {

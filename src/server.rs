@@ -13,18 +13,20 @@ mod api;
 mod channels;
 mod context;
 mod database;
+mod handlers;
 mod media;
 mod messages;
+mod session;
 mod spaces;
 mod users;
 mod validators;
-mod handlers;
 
 async fn router(req: Request<Body>) -> api::Result {
-    let path = req.uri().path();
+    let path = req.uri().path().to_string();
 
-    if path.starts_with("/api/users") {
-        return handlers::users(req).await;
+    let users_prefix = "/api/users";
+    if path.starts_with(users_prefix) {
+        return handlers::users(req, &path[users_prefix.len()..]).await;
     }
     Err(api::Error::not_found())
 }

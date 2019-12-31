@@ -84,7 +84,6 @@ impl From<CreationError> for Error {
     }
 }
 
-
 impl From<FetchError> for Error {
     fn from(e: FetchError) -> Error {
         match e {

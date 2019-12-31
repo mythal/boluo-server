@@ -78,17 +78,20 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "cookie",
  "crc32fast",
  "dotenv",
  "futures",
  "hyper",
  "once_cell",
  "postgres-types",
+ "rand",
  "regex",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "thiserror",
+ "time",
  "tokio",
  "tokio-postgres",
  "uuid",
@@ -146,6 +149,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddfc5b9aa5d4507acaf872de71051dfd0e309860e88966e1051e462a077aac4f"
 dependencies = [
  "bitflags",
+]
+
+[[package]]
+name = "cookie"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "888604f00b3db336d2af898ec3c1d5d0ddf5e6d462220f2ededc33a87ac4bbd5"
+dependencies = [
+ "time",
 ]
 
 [[package]]
