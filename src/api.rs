@@ -55,6 +55,9 @@ impl Error {
         Error::new("Method not allowed", StatusCode::METHOD_NOT_ALLOWED)
     }
 
+    pub fn unauthorized() -> Error {
+        Error::new("Unauthorized", StatusCode::UNAUTHORIZED)
+    }
     pub fn unexpected(e: &dyn StdError) -> Error {
         let mut error = Error::internal();
         if debug() {

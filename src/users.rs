@@ -4,14 +4,16 @@ use uuid::Uuid;
 
 use crate::database::{query, CreationError, FetchError, Querist};
 
-#[derive(Debug, Serialize, Deserialize, FromSql)]
+#[derive(Debug, Serialize, FromSql)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "users")]
 pub struct User {
     pub id: Uuid,
+    #[serde(skip)]
     pub email: String,
     pub username: String,
     pub nickname: String,
+    #[serde(skip)]
     pub password: String,
     pub bio: String,
     pub joined: chrono::naive::NaiveDateTime,

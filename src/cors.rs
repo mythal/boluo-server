@@ -16,7 +16,7 @@ pub fn preflight_requests(res: Request<Body>) -> Response<Body> {
     let allow_headers = headers
         .get(ACCESS_CONTROL_REQUEST_HEADERS)
         .map(Clone::clone)
-        .unwrap_or(HeaderValue::from_static(""));
+        .unwrap_or_else(|| HeaderValue::from_static(""));
     let response = Response::builder()
         .header(
             ACCESS_CONTROL_ALLOW_METHODS,

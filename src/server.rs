@@ -34,7 +34,9 @@ async fn router(req: Request<Body>) -> api::Result {
 }
 
 async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
-    println!("{} {}", req.method(), req.uri());
+    use std::time::SystemTime;
+    print!("{} {} ", req.method(), req.uri());
+    let start = SystemTime::now();
     if context::debug() && req.method() == hyper::Method::OPTIONS {
         return Ok(cors::preflight_requests(req));
     }
@@ -42,6 +44,8 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     if debug() {
         response = cors::allow_origin(response);
     }
+    let elapsed = SystemTime::now().duration_since(start).unwrap();
+    println!("{}ms", elapsed.as_millis());
     Ok(response)
 }
 

@@ -6,6 +6,7 @@ use crate::database::pool::Pool;
 
 static POOL: OnceCell<Pool> = OnceCell::new();
 static DEBUG: OnceCell<bool> = OnceCell::new();
+static SECRET: OnceCell<String> = OnceCell::new();
 static NOT_INIT: &str = "not initialized";
 
 pub fn pool() -> &'static Pool {
@@ -19,6 +20,10 @@ fn env_bool<T: AsRef<str>>(s: T) -> bool {
 
 pub fn debug() -> bool {
     *DEBUG.get_or_init(|| env::var("DEBUG").map(env_bool).unwrap_or(false))
+}
+
+pub fn secret() -> &'static str {
+    &*SECRET.get_or_init(|| env::var("SECRET").unwrap())
 }
 
 pub async fn init() {

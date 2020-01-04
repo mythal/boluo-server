@@ -1,4 +1,5 @@
 use crate::context::pool;
+use crate::session::authenticate;
 use crate::users::{RegisterForm, User};
 use crate::{api, context};
 use hyper::http::uri::Uri;
@@ -33,9 +34,12 @@ fn test_get_uuid() {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginForm {
     pub username: String,
     pub password: String,
+    #[serde(default)]
+    pub with_token: bool,
 }
 
 async fn parse_body<T>(req: Request<Body>) -> Result<T, api::Error>
@@ -67,10 +71,12 @@ pub async fn get_users(query: IdQuery) -> api::Result {
     Err(api::Error::not_found())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CsrfToken {
+pub struct LoginReturn {
     csrf_token: String,
+    user: User,
+    token: Option<String>,
 }
 
 pub async fn login(req: Request<Body>) -> api::Result {
@@ -85,8 +91,8 @@ pub async fn login(req: Request<Body>) -> api::Result {
         .await?;
     let expires = time::now() + time::Duration::days(256);
     let session = SessionMap::get().start(&user.id).await;
-
-    let session_cookie = CookieBuilder::new("session", session.key.to_string())
+    let token = session.token();
+    let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)
         .secure(!context::debug())
         .http_only(true)
@@ -95,10 +101,15 @@ pub async fn login(req: Request<Body>) -> api::Result {
         .finish()
         .to_string();
 
-    let mut response = api::Return::new(&CsrfToken {
-        csrf_token: session.csrf_token.to_string(),
-    })
-    .build()?;
+    let csrf_token = session.csrf_token.to_string();
+    let token = if form.with_token { Some(token) } else { None };
+    let login_return = LoginReturn {
+        csrf_token,
+        user,
+        token,
+    };
+
+    let mut response = api::Return::new(&login_return).build()?;
     let headers = response.headers_mut();
     headers.insert(SET_COOKIE, HeaderValue::from_str(&*session_cookie).unwrap());
     Ok(response)
@@ -112,7 +123,8 @@ pub async fn users(req: Request<Body>, path: &str) -> api::Result {
         return register(req).await;
     }
     if req.method() == Method::GET {
-        let query = get_query::<IdQuery>(req.uri()).ok_or(api::Error::bad_request())?;
+        authenticate(&req).await?;
+        let query = get_query::<IdQuery>(req.uri()).ok_or_else(api::Error::bad_request)?;
         return get_users(query).await;
     }
     Err(api::Error::method_not_allowed())
