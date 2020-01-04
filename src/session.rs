@@ -1,4 +1,3 @@
-use crate::api::Error;
 use crate::utils::{id, sign, verify};
 use futures::lock::Mutex;
 use once_cell::sync::OnceCell;
@@ -10,7 +9,6 @@ use uuid::Uuid;
 pub struct Session {
     pub key: Uuid,
     pub user_id: Uuid,
-    pub csrf_token: Uuid,
 }
 
 impl Session {
@@ -18,23 +16,23 @@ impl Session {
         Session {
             key: id(),
             user_id: *user_id,
-            csrf_token: Uuid::new_v4(),
         }
     }
 
     pub fn token(&self) -> String {
-        let mut token = base64::encode(self.key.as_bytes());
-        let signed = sign(&*token);
+        // [sign].[body (base64)]
+        let body = base64::encode(self.key.as_bytes());
+        let mut token = sign(&*body);
         token.push('.');
-        token.push_str(&*signed);
+        token.push_str(&*body);
         token
     }
 
     pub fn verify(token: &str) -> Option<Uuid> {
         let mut iter = token.split('.');
+        let signature = iter.next()?;
         let key = iter.next()?;
-        let sign = iter.next()?;
-        verify(key, sign)?;
+        verify(key, signature)?;
         let key = base64::decode(key).ok()?;
         Uuid::from_slice(key.as_slice()).ok()
     }
@@ -83,32 +81,34 @@ impl SessionMap {
 
 fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
     static COOKIE_PATTERN: OnceCell<Regex> = OnceCell::new();
-    let cookie_pattern = COOKIE_PATTERN.get_or_init(|| Regex::new(r#"\bsession=(.+);"#).unwrap());
+    let cookie_pattern = COOKIE_PATTERN.get_or_init(|| Regex::new(r#"\bsession=([^;]+)"#).unwrap());
     let value = value.to_str().ok()?;
     cookie_pattern.captures(value)?.get(1).map(|m| m.as_str())
 }
 
 async fn get_session(value: &str) -> Option<Session> {
     let mut iter = value.split('.');
-    let session_id = iter.next()?;
-    let sign = iter.next()?;
-    verify(session_id, sign)?;
-    let bytes = base64::decode(session_id).ok()?;
-    let session_id = Uuid::from_slice(&*bytes).ok()?;
-    SessionMap::get().get_session(&session_id).await
+    let signature = iter.next()?;
+    let session_key = iter.next()?;
+    verify(session_key, signature)?;
+    let bytes = base64::decode(session_key).ok()?;
+    let session_key = Uuid::from_slice(&*bytes).ok()?;
+    SessionMap::get().get_session(&session_key).await
 }
 
-pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, Error> {
-    use hyper::header::{AUTHORIZATION, COOKIE};
+pub struct Unauthenticated;
+
+pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, Unauthenticated> {
+    use hyper::header::{HeaderValue, AUTHORIZATION, COOKIE};
 
     let headers = req.headers();
-    if let Some(token) = headers.get(AUTHORIZATION) {
-        let token = token.to_str().map_err(|_| Error::bad_request())?;
-        return get_session(token).await.ok_or_else(Error::unauthorized);
+    let authorization = headers.get(AUTHORIZATION).map(HeaderValue::to_str);
+
+    if let Some(Ok(token)) = authorization {
+        if let Some(session) = get_session(token).await {
+            return Ok(session);
+        }
     }
-    let cookie_value = headers
-        .get(COOKIE)
-        .and_then(get_cookie)
-        .ok_or_else(Error::unauthorized)?;
-    get_session(cookie_value).await.ok_or_else(Error::unauthorized)
+    let cookie_value = headers.get(COOKIE).and_then(get_cookie).ok_or(Unauthenticated)?;
+    get_session(cookie_value).await.ok_or(Unauthenticated)
 }

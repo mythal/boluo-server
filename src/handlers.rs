@@ -1,5 +1,5 @@
 use crate::context::pool;
-use crate::session::authenticate;
+use crate::csrf::authenticate as csrf_auth;
 use crate::users::{RegisterForm, User};
 use crate::{api, context};
 use hyper::http::uri::Uri;
@@ -74,7 +74,6 @@ pub async fn get_users(query: IdQuery) -> api::Result {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginReturn {
-    csrf_token: String,
     user: User,
     token: Option<String>,
 }
@@ -96,18 +95,13 @@ pub async fn login(req: Request<Body>) -> api::Result {
         .same_site(SameSite::Lax)
         .secure(!context::debug())
         .http_only(true)
-        .path("/")
+        .path("/api/")
         .expires(expires)
         .finish()
         .to_string();
 
-    let csrf_token = session.csrf_token.to_string();
     let token = if form.with_token { Some(token) } else { None };
-    let login_return = LoginReturn {
-        csrf_token,
-        user,
-        token,
-    };
+    let login_return = LoginReturn { user, token };
 
     let mut response = api::Return::new(&login_return).build()?;
     let headers = response.headers_mut();
@@ -123,7 +117,7 @@ pub async fn users(req: Request<Body>, path: &str) -> api::Result {
         return register(req).await;
     }
     if req.method() == Method::GET {
-        authenticate(&req).await?;
+        csrf_auth(&req).await?;
         let query = get_query::<IdQuery>(req.uri()).ok_or_else(api::Error::bad_request)?;
         return get_users(query).await;
     }

@@ -1,3 +1,4 @@
+//! Types for to help building APIs.
 use std::convert::From;
 use std::error::Error as StdError;
 use std::fmt;
@@ -9,6 +10,7 @@ use serde::Serialize;
 
 use crate::context::debug;
 use crate::database::{CreationError, FetchError};
+use crate::session::Unauthenticated;
 
 pub type Request = hyper::Request<hyper::Body>;
 pub type Result = std::result::Result<hyper::Response<hyper::Body>, Error>;
@@ -134,5 +136,11 @@ impl<'a, T: Serialize> Return<'a, T> {
             .status(StatusCode::from_u16(self.status_code).unwrap())
             .body(Body::from(bytes))
             .map_err(|_| Error::internal())
+    }
+}
+
+impl From<Unauthenticated> for Error {
+    fn from(_: Unauthenticated) -> Error {
+        Error::unauthorized()
     }
 }

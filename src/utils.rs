@@ -1,6 +1,7 @@
 use once_cell::sync::OnceCell;
 use ring::hmac;
 use ring::rand::SecureRandom;
+use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
 macro_rules! regex {
@@ -12,8 +13,14 @@ macro_rules! regex {
     }};
 }
 
+pub fn now_unix_duration() -> Duration {
+    use std::time::UNIX_EPOCH;
+
+    let now = SystemTime::now();
+    now.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!")
+}
+
 pub fn id() -> Uuid {
-    use std::time::SystemTime;
     use uuid::v1::Context as UuidContext;
     use uuid::v1::Timestamp;
 
@@ -24,9 +31,7 @@ pub fn id() -> Uuid {
         rng.fill(&mut id).unwrap();
         id
     });
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("SystemTime before UNIX EPOCH!");
+    let now = now_unix_duration();
     static CONTEXT: UuidContext = UuidContext::new(0);
     let timestamp = Timestamp::from_unix(&CONTEXT, now.as_secs(), now.subsec_nanos());
     Uuid::new_v1(timestamp, node_id).expect("failed to generate UUID")
@@ -43,18 +48,18 @@ fn key() -> &'static hmac::Key {
 }
 
 pub fn sign(message: &str) -> String {
-    let signed = hmac::sign(key(), message.as_bytes());
-    base64::encode(&signed)
+    let signature = hmac::sign(key(), message.as_bytes());
+    base64::encode(&signature)
 }
 
-pub fn verify(message: &str, sign: &str) -> Option<()> {
-    let sign = base64::decode(sign).ok()?;
-    hmac::verify(key(), message.as_bytes(), &*sign).ok()
+pub fn verify(message: &str, signature: &str) -> Option<()> {
+    let signature = base64::decode(signature).ok()?;
+    hmac::verify(key(), message.as_bytes(), &*signature).ok()
 }
 
 #[test]
 fn test_sign() {
     let message = "hello, world";
-    let signed = sign(message);
-    verify(message, &*signed).unwrap();
+    let signature = sign(message);
+    verify(message, &*signature).unwrap();
 }

@@ -14,6 +14,7 @@ mod api;
 mod channels;
 mod context;
 mod cors;
+mod csrf;
 mod database;
 mod handlers;
 mod media;
@@ -25,7 +26,9 @@ mod validators;
 
 async fn router(req: Request<Body>) -> api::Result {
     let path = req.uri().path().to_string();
-
+    if path == "/api/csrf-token" {
+        return csrf::get_csrf_token(req).await;
+    }
     let users_prefix = "/api/users";
     if path.starts_with(users_prefix) {
         return handlers::users(req, &path[users_prefix.len()..]).await;
