@@ -1,6 +1,7 @@
+use super::api::{LoginForm, RegisterForm};
+use super::models::User;
 use crate::context::pool;
 use crate::csrf::authenticate as csrf_auth;
-use crate::users::{RegisterForm, User};
 use crate::{api, context};
 use hyper::http::uri::Uri;
 use hyper::{Body, Method, Request, StatusCode};
@@ -31,15 +32,6 @@ fn test_get_uuid() {
     let uri = Uri::builder().path_and_query("/?id=&").build().unwrap();
     let query = get_query::<IdQuery>(&uri);
     assert_eq!(query, None);
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LoginForm {
-    pub username: String,
-    pub password: String,
-    #[serde(default)]
-    pub with_token: bool,
 }
 
 async fn parse_body<T>(req: Request<Body>) -> Result<T, api::Error>
@@ -84,10 +76,7 @@ pub async fn login(req: Request<Body>) -> api::Result {
     use hyper::header::{HeaderValue, SET_COOKIE};
 
     let form: LoginForm = parse_body(req).await?;
-    let username = form.username.clone();
-    let user = pool()
-        .run(|mut db| async move { (User::get_by_username(&mut db, &*username).await, db) })
-        .await?;
+    let user = pool().run(|mut db| async { (form.login(&mut db).await, db) }).await?;
     let expires = time::now() + time::Duration::days(256);
     let session = SessionMap::get().start(&user.id).await;
     let token = session.token();
@@ -109,7 +98,7 @@ pub async fn login(req: Request<Body>) -> api::Result {
     Ok(response)
 }
 
-pub async fn users(req: Request<Body>, path: &str) -> api::Result {
+pub async fn router(req: Request<Body>, path: &str) -> api::Result {
     if path == "/login" && req.method() == Method::POST {
         return login(req).await;
     }

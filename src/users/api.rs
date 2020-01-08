@@ -1,0 +1,33 @@
+use super::User;
+use crate::database::{CreationError, FetchError, Querist};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterForm {
+    pub email: String,
+    pub username: String,
+    pub nickname: String,
+    pub password: String,
+}
+
+impl RegisterForm {
+    pub async fn register<T: Querist>(&self, db: &mut T) -> Result<User, CreationError> {
+        User::create(db, &*self.email, &*self.username, &*self.nickname, &*self.password).await
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginForm {
+    pub username: String,
+    pub password: String,
+    #[serde(default)]
+    pub with_token: bool,
+}
+
+impl LoginForm {
+    pub async fn login<T: Querist>(&self, db: &mut T) -> Result<User, FetchError> {
+        User::get_by_username(db, &self.username).await
+    }
+}

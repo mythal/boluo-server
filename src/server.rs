@@ -16,7 +16,6 @@ mod context;
 mod cors;
 mod csrf;
 mod database;
-mod handlers;
 mod media;
 mod messages;
 mod session;
@@ -26,13 +25,18 @@ mod validators;
 
 async fn router(req: Request<Body>) -> api::Result {
     let path = req.uri().path().to_string();
+    macro_rules! table {
+        ($prefix: expr, $handler: expr) => {
+            let prefix = $prefix;
+            if path.starts_with(prefix) {
+                return $handler(req, &path[prefix.len()..]).await;
+            }
+        };
+    }
     if path == "/api/csrf-token" {
         return csrf::get_csrf_token(req).await;
     }
-    let users_prefix = "/api/users";
-    if path.starts_with(users_prefix) {
-        return handlers::users(req, &path[users_prefix.len()..]).await;
-    }
+    table!("/api/users", users::router);
     Err(api::Error::not_found())
 }
 
