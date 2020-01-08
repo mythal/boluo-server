@@ -1,18 +1,69 @@
 use std::collections::VecDeque;
 use std::env;
-use std::future::Future;
 use std::mem::drop;
-use std::sync::Arc;
+use std::ops::{Deref, DerefMut, Drop};
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::{Arc, Weak};
 
 use futures::channel::oneshot;
 use tokio::sync::{Mutex, MutexGuard};
 
 use crate::database::Client;
 
+static UNRELEASED: AtomicIsize = AtomicIsize::new(0);
+
+pub struct Connect {
+    connect: Option<Client>,
+    pool: Weak<SharedPool>,
+}
+
+impl Connect {
+    pub async fn release(mut self) {
+        let pool = self.pool.upgrade();
+        if let Some(pool) = pool {
+            let mut pool = pool.inner.lock().await;
+            pool.put_back(self.connect.take().unwrap());
+        }
+    }
+}
+
+impl Deref for Connect {
+    type Target = Client;
+
+    fn deref(&self) -> &Client {
+        self.connect.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for Connect {
+    fn deref_mut(&mut self) -> &mut Client {
+        self.connect.as_mut().unwrap()
+    }
+}
+
+impl Drop for Connect {
+    fn drop(&mut self) {
+        UNRELEASED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 struct InternalPool {
     waiters: VecDeque<oneshot::Sender<Client>>,
     conns: VecDeque<Client>,
     num: usize,
+}
+
+impl InternalPool {
+    fn put_back(&mut self, mut connect: Client) {
+        while let Some(waiter) = self.waiters.pop_front() {
+            if let Err(returned) = waiter.send(connect) {
+                connect = returned;
+            } else {
+                return;
+            }
+        }
+        self.conns.push_back(connect);
+    }
 }
 
 struct SharedPool {
@@ -45,46 +96,36 @@ impl Pool {
         }
     }
 
-    async fn get_client(&self) -> Client {
+    pub async fn get(&self) -> Connect {
         let mut internal: MutexGuard<InternalPool> = self.inner.inner.lock().await;
+        let pool = Arc::downgrade(&self.inner);
         if let Some(client) = internal.conns.pop_front() {
-            client
-        } else {
+            Connect {
+                connect: Some(client),
+                pool,
+            }
+        } else if UNRELEASED.fetch_sub(1, Ordering::Relaxed) <= 0 {
+            UNRELEASED.fetch_add(1, Ordering::Relaxed);
             let (tx, rx) = oneshot::channel::<Client>();
             internal.waiters.push_back(tx);
             drop(internal);
-            rx.await.unwrap()
-        }
-    }
-
-    async fn put_client(&self, mut client: Client) {
-        if client.client.is_closed() {
-            client = Client::with_config(&self.inner.config).await;
-        }
-        let mut internal: MutexGuard<InternalPool> = self.inner.inner.lock().await;
-        while let Some(waiter) = internal.waiters.pop_front() {
-            if let Err(returned) = waiter.send(client) {
-                client = returned;
-            } else {
-                return;
+            Connect {
+                connect: Some(rx.await.unwrap()),
+                pool,
+            }
+        } else {
+            let new = Client::with_config(&self.inner.config).await;
+            Connect {
+                connect: Some(new),
+                pool,
             }
         }
-        internal.conns.push_back(client);
-    }
-
-    pub async fn run<F, R, V>(&self, f: F) -> V
-    where
-        F: FnOnce(Client) -> R,
-        R: Future<Output = (V, Client)>,
-    {
-        let (v, client) = f(self.get_client().await).await;
-        self.put_client(client).await;
-        v
     }
 }
 
 #[tokio::test]
 async fn pool_test() {
     let pool = Pool::with_num(10).await;
-    pool.run(|conn| async { ((), conn) }).await;
+    let db = pool.get().await;
+    db.release().await;
 }

@@ -64,6 +64,22 @@ impl User {
             .map(|row| row.get(0))
     }
 
+    pub async fn login<T: Querist>(
+        db: &mut T,
+        email: Option<&str>,
+        username: Option<&str>,
+        password: &str,
+    ) -> Result<User, FetchError> {
+        let email = email.map(|s| s.to_ascii_lowercase());
+        let row = db.fetch(query::LOGIN.key, &[&email, &username, &password]).await?;
+        let password_matched = row.get(0);
+        if password_matched {
+            Ok(row.get(1))
+        } else {
+            Err(FetchError::NoPermission)
+        }
+    }
+
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<User, FetchError> {
         User::get(db, Some(id), None, None).await
     }
@@ -96,7 +112,7 @@ async fn user_test() {
         .unwrap();
     let user = User::get_by_id(&mut trans, &new_user.id).await.unwrap();
     assert_eq!(user.email, email);
-    let user = User::get_by_email(&mut trans, &new_user.email).await.unwrap();
+    let user = User::login(&mut trans, Some(email), None, password).await.unwrap();
     assert_eq!(user.nickname, nickname);
 
     let deleted_user = User::delete_by_id(&mut trans, &new_user.id).await.unwrap();

@@ -42,6 +42,7 @@ pub static SELECT_SPACES: Query = make!("select_spaces");
 pub static SELECT_USERS: Query = make!("select_users");
 pub static SET_CHANNEL_MEMBER: Query = make!("set_channel_member");
 pub static SET_SPACE_MEMBER: Query = make!("set_space_member");
+pub static LOGIN: Query = make!("login", &[Type::TEXT, Type::TEXT, Type::TEXT]);
 
 pub static ALL_QUERY: &[Query] = &[
     ADD_USER_TO_CHANNEL,
@@ -63,4 +64,5 @@ pub static ALL_QUERY: &[Query] = &[
     SELECT_USERS,
     SET_CHANNEL_MEMBER,
     SET_SPACE_MEMBER,
+    LOGIN,
 ];

@@ -93,6 +93,7 @@ impl From<FetchError> for Error {
     fn from(e: FetchError) -> Error {
         match e {
             FetchError::NoSuchRecord => Error::new("Record not found.", StatusCode::NOT_FOUND),
+            FetchError::NoPermission => Error::new("You have no permission to access.", StatusCode::UNAUTHORIZED),
             e => Error::unexpected(&e),
         }
     }

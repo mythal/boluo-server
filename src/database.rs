@@ -49,6 +49,8 @@ pub enum FetchError {
     QueryFail(#[from] tokio_postgres::Error),
     #[error("no such record")]
     NoSuchRecord,
+    #[error("no permission to access record")]
+    NoPermission,
 }
 
 #[derive(Error, Debug)]
