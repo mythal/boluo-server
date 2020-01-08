@@ -18,6 +18,7 @@ mod csrf;
 mod database;
 mod media;
 mod messages;
+mod pool;
 mod session;
 mod spaces;
 mod users;
@@ -59,7 +60,6 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().unwrap();
-    context::init().await;
     let port: u16 = env::var("PORT").unwrap().parse().unwrap();
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));

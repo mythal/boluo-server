@@ -10,6 +10,8 @@ use async_trait::async_trait;
 pub mod pool;
 pub mod query;
 
+pub use pool::get;
+
 #[async_trait]
 pub trait Querist: Send {
     async fn query(

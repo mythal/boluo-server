@@ -1,7 +1,7 @@
 use super::api::{Login, Register};
 use super::models::User;
-use crate::context::pool;
 use crate::csrf::authenticate as csrf_auth;
+use crate::database;
 use crate::{api, context};
 use hyper::http::uri::Uri;
 use hyper::{Body, Method, Request, StatusCode};
@@ -46,16 +46,15 @@ where
 
 async fn register(req: Request<Body>) -> api::Result {
     let form: Register = parse_body(req).await?;
-    let mut db = context::pool().get().await;
+    let mut db = database::get().await;
     let user = form.register(&mut *db).await?;
     db.release().await;
     api::Return::new(&user).status(StatusCode::CREATED).build()
 }
 
 pub async fn get_users(query: IdQuery) -> api::Result {
-    let pool = context::pool();
     if let IdQuery { id: Some(id), .. } = query {
-        let mut db = pool.get().await;
+        let mut db = database::get().await;
         let user = User::get_by_id(&mut *db, &id).await?;
         db.release().await;
         return api::Return::new(&user).build();
@@ -76,7 +75,7 @@ pub async fn login(req: Request<Body>) -> api::Result {
     use hyper::header::{HeaderValue, SET_COOKIE};
 
     let form: Login = parse_body(req).await?;
-    let mut db = pool().get().await;
+    let mut db = database::get().await;
     let user = form.login(&mut *db).await?;
     db.release().await;
     let expires = time::now() + time::Duration::days(256);

@@ -2,16 +2,9 @@ use std::env;
 
 use once_cell::sync::OnceCell;
 
-use crate::database::pool::Pool;
-
-static POOL: OnceCell<Pool> = OnceCell::new();
 static DEBUG: OnceCell<bool> = OnceCell::new();
 static SECRET: OnceCell<String> = OnceCell::new();
 static NOT_INIT: &str = "not initialized";
-
-pub fn pool() -> &'static Pool {
-    POOL.get().expect(NOT_INIT)
-}
 
 fn env_bool<T: AsRef<str>>(s: T) -> bool {
     let s = s.as_ref().trim();
@@ -24,8 +17,4 @@ pub fn debug() -> bool {
 
 pub fn secret() -> &'static str {
     &*SECRET.get_or_init(|| env::var("SECRET").unwrap())
-}
-
-pub async fn init() {
-    POOL.set(Pool::with_num(10).await).ok().unwrap();
 }
