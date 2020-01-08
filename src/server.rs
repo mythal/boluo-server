@@ -19,6 +19,7 @@ mod database;
 mod media;
 mod messages;
 mod pool;
+mod redis;
 mod session;
 mod spaces;
 mod users;

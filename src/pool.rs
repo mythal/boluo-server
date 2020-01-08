@@ -6,7 +6,7 @@ use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::Mutex;
 
 pub struct Connect<F: Factory>
 {
