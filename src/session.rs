@@ -20,21 +20,23 @@ impl Session {
     }
 
     pub fn token(&self) -> String {
-        // [sign].[body (base64)]
-        let body = base64::encode(self.key.as_bytes());
-        let mut token = sign(&*body);
-        token.push('.');
-        token.push_str(&*body);
-        token
+        // [body (base64)].[sign]
+        let mut buffer = String::with_capacity(64);
+        base64::encode_config_buf(self.key.as_bytes(), base64::STANDARD, &mut buffer);
+        let signature = sign(&*buffer);
+        buffer.push('.');
+        base64::encode_config_buf(&signature, base64::STANDARD, &mut buffer);
+        buffer
     }
 
-    pub fn verify(token: &str) -> Option<Uuid> {
+    pub fn verify(token: &str) -> Result<Uuid, Unauthenticated> {
+        use Unauthenticated::{AuthFailed, Unexpected};
         let mut iter = token.split('.');
-        let signature = iter.next()?;
-        let key = iter.next()?;
-        verify(key, signature)?;
-        let key = base64::decode(key).ok()?;
-        Uuid::from_slice(key.as_slice()).ok()
+        let token = iter.next().ok_or(Unexpected)?;
+        let signature = iter.next().ok_or(Unexpected)?;
+        verify(token, signature).ok_or(AuthFailed("Mismatched data and signature."))?;
+        let token = base64::decode(token).map_err(|_| Unexpected)?;
+        Uuid::from_slice(token.as_slice()).map_err(|_| Unexpected)
     }
 }
 
@@ -43,7 +45,7 @@ fn test_session_sign() {
     let user_id = Uuid::new_v4();
     let session = Session::new(&user_id);
     let token = session.token();
-    assert_eq!(Session::verify(""), None);
+    assert!(Session::verify("").is_err());
     let key = Session::verify(&*token).unwrap();
     assert_eq!(key, session.key);
 }
@@ -86,17 +88,21 @@ fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
     cookie_pattern.captures(value)?.get(1).map(|m| m.as_str())
 }
 
-async fn get_session(value: &str) -> Option<Session> {
-    let mut iter = value.split('.');
-    let signature = iter.next()?;
-    let session_key = iter.next()?;
-    verify(session_key, signature)?;
-    let bytes = base64::decode(session_key).ok()?;
-    let session_key = Uuid::from_slice(&*bytes).ok()?;
-    SessionMap::get().get_session(&session_key).await
+async fn get_session(token: &str) -> Result<Session, Unauthenticated> {
+    use Unauthenticated::AuthFailed;
+    let session_key = Session::verify(token)?;
+    SessionMap::get()
+        .get_session(&session_key)
+        .await
+        .ok_or_else(|| AuthFailed("Session key not found."))
 }
 
-pub struct Unauthenticated;
+#[derive(Debug)]
+pub enum Unauthenticated {
+    ParseFailed(&'static str),
+    AuthFailed(&'static str),
+    Unexpected,
+}
 
 pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, Unauthenticated> {
     use hyper::header::{HeaderValue, AUTHORIZATION, COOKIE};
@@ -105,10 +111,11 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     let authorization = headers.get(AUTHORIZATION).map(HeaderValue::to_str);
 
     if let Some(Ok(token)) = authorization {
-        if let Some(session) = get_session(token).await {
-            return Ok(session);
-        }
+        return get_session(token).await;
     }
-    let cookie_value = headers.get(COOKIE).and_then(get_cookie).ok_or(Unauthenticated)?;
-    get_session(cookie_value).await.ok_or(Unauthenticated)
+    let cookie_value = headers
+        .get(COOKIE)
+        .and_then(get_cookie)
+        .ok_or_else(|| Unauthenticated::ParseFailed("Can't retrieve session cookie."))?;
+    get_session(cookie_value).await
 }

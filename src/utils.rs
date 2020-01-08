@@ -47,9 +47,8 @@ fn key() -> &'static hmac::Key {
     })
 }
 
-pub fn sign(message: &str) -> String {
-    let signature = hmac::sign(key(), message.as_bytes());
-    base64::encode(&signature)
+pub fn sign(message: &str) -> hmac::Tag {
+    hmac::sign(key(), message.as_bytes())
 }
 
 pub fn verify(message: &str, signature: &str) -> Option<()> {
@@ -61,5 +60,6 @@ pub fn verify(message: &str, signature: &str) -> Option<()> {
 fn test_sign() {
     let message = "hello, world";
     let signature = sign(message);
+    let signature = base64::encode(&signature);
     verify(message, &*signature).unwrap();
 }
