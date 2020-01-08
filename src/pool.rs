@@ -8,14 +8,12 @@ use async_trait::async_trait;
 use futures::channel::oneshot;
 use tokio::sync::Mutex;
 
-pub struct Connect<F: Factory>
-{
+pub struct Connect<F: Factory> {
     connect: Option<F::Output>,
     pool: Weak<SharedPool<F>>,
 }
 
-impl<F: Factory> Connect<F>
-{
+impl<F: Factory> Connect<F> {
     pub async fn release(mut self) {
         let pool = self.pool.upgrade();
         if let Some(pool) = pool {
@@ -25,8 +23,7 @@ impl<F: Factory> Connect<F>
     }
 }
 
-impl<F: Factory> Deref for Connect<F>
-{
+impl<F: Factory> Deref for Connect<F> {
     type Target = F::Output;
 
     fn deref(&self) -> &F::Output {
@@ -34,15 +31,13 @@ impl<F: Factory> Deref for Connect<F>
     }
 }
 
-impl<F: Factory> DerefMut for Connect<F>
-{
+impl<F: Factory> DerefMut for Connect<F> {
     fn deref_mut(&mut self) -> &mut F::Output {
         self.connect.as_mut().unwrap()
     }
 }
 
-impl<F: Factory> Drop for Connect<F>
-{
+impl<F: Factory> Drop for Connect<F> {
     fn drop(&mut self) {
         if let Some(pool) = self.pool.upgrade() {
             pool.unreleased.fetch_add(1, Ordering::Relaxed);

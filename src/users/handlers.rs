@@ -2,6 +2,7 @@ use super::api::{Login, Register};
 use super::models::User;
 use crate::csrf::authenticate as csrf_auth;
 use crate::database;
+use crate::session::Unauthenticated::Unexpected;
 use crate::{api, context};
 use hyper::http::uri::Uri;
 use hyper::{Body, Method, Request, StatusCode};
@@ -70,7 +71,7 @@ pub struct LoginReturn {
 }
 
 pub async fn login(req: Request<Body>) -> api::Result {
-    use crate::session::SessionMap;
+    use crate::session;
     use cookie::{CookieBuilder, SameSite};
     use hyper::header::{HeaderValue, SET_COOKIE};
 
@@ -79,8 +80,8 @@ pub async fn login(req: Request<Body>) -> api::Result {
     let user = form.login(&mut *db).await?;
     db.release().await;
     let expires = time::now() + time::Duration::days(256);
-    let session = SessionMap::get().start(&user.id).await;
-    let token = session.token();
+    let session = session::start(&user.id).await.map_err(|_| Unexpected)?;
+    let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)
         .secure(!context::debug())

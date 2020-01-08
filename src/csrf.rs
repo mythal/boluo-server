@@ -26,12 +26,12 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, Unauthenticate
 
     let mut parts = body.split('.');
 
-    let session_key = parts
+    let session_id = parts
         .next()
         .and_then(|s| base64::decode(s).ok()) // decode.
         .and_then(|bytes: Vec<u8>| Uuid::from_slice(&*bytes).ok()) // convert bytes to UUID.
         .ok_or(ParseFailed("Can't retrieve session key"))?;
-    if session_key != session.key {
+    if session_id != session.id {
         return Err(AuthFailed("Invalid session key"));
     }
 
@@ -61,6 +61,6 @@ pub fn generate_csrf_token(session_key: &Uuid) -> String {
 
 pub async fn get_csrf_token(req: Request<Body>) -> api::Result {
     let session = session::authenticate(&req).await?;
-    let token = generate_csrf_token(&session.key);
+    let token = generate_csrf_token(&session.id);
     api::Return::new(&token).build()
 }

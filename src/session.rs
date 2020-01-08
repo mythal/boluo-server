@@ -1,84 +1,59 @@
-use crate::utils::{id, sign, verify};
-use futures::lock::Mutex;
+use crate::redis;
+use crate::utils::{self, id, sign};
+use ::redis::AsyncCommands;
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use std::collections::HashMap;
 use uuid::Uuid;
 
-#[derive(Clone)]
-pub struct Session {
-    pub key: Uuid,
-    pub user_id: Uuid,
+pub fn token(session: &Uuid) -> String {
+    // [body (base64)].[sign]
+    let mut buffer = String::with_capacity(64);
+    base64::encode_config_buf(session.as_bytes(), base64::STANDARD, &mut buffer);
+    let signature = sign(&*buffer);
+    buffer.push('.');
+    base64::encode_config_buf(&signature, base64::STANDARD, &mut buffer);
+    buffer
 }
 
-impl Session {
-    pub fn new(user_id: &Uuid) -> Session {
-        Session {
-            key: id(),
-            user_id: *user_id,
-        }
-    }
-
-    pub fn token(&self) -> String {
-        // [body (base64)].[sign]
-        let mut buffer = String::with_capacity(64);
-        base64::encode_config_buf(self.key.as_bytes(), base64::STANDARD, &mut buffer);
-        let signature = sign(&*buffer);
-        buffer.push('.');
-        base64::encode_config_buf(&signature, base64::STANDARD, &mut buffer);
-        buffer
-    }
-
-    pub fn verify(token: &str) -> Result<Uuid, Unauthenticated> {
-        use Unauthenticated::{AuthFailed, Unexpected};
-        let mut iter = token.split('.');
-        let token = iter.next().ok_or(Unexpected)?;
-        let signature = iter.next().ok_or(Unexpected)?;
-        verify(token, signature).ok_or(AuthFailed("Mismatched data and signature."))?;
-        let token = base64::decode(token).map_err(|_| Unexpected)?;
-        Uuid::from_slice(token.as_slice()).map_err(|_| Unexpected)
-    }
+pub fn token_verify(token: &str) -> Result<Uuid, Unauthenticated> {
+    use Unauthenticated::{AuthFailed, Unexpected};
+    let mut iter = token.split('.');
+    let session = iter.next().ok_or(Unexpected)?;
+    let signature = iter.next().ok_or(Unexpected)?;
+    utils::verify(session, signature).ok_or(AuthFailed("The session id and signature do not match."))?;
+    let session = base64::decode(session).map_err(|_| Unexpected)?;
+    Uuid::from_slice(session.as_slice()).map_err(|_| Unexpected)
 }
 
 #[test]
 fn test_session_sign() {
-    let user_id = Uuid::new_v4();
-    let session = Session::new(&user_id);
-    let token = session.token();
-    assert!(Session::verify("").is_err());
-    let key = Session::verify(&*token).unwrap();
-    assert_eq!(key, session.key);
+    let session = id();
+    assert!(token_verify("").is_err());
+    let session_2 = token_verify(&*token(&session)).unwrap();
+    assert_eq!(session, session_2);
 }
 
-pub struct SessionMap {
-    inner: Mutex<HashMap<Uuid, Session>>,
+fn make_key(session: &Uuid) -> Vec<u8> {
+    let mut key: Vec<u8> = Vec::with_capacity(64);
+    key.extend_from_slice(b"session:");
+    key.extend_from_slice(session.as_bytes());
+    key.extend_from_slice(b":user_id");
+    key
 }
 
-static SESSION_MAP: OnceCell<SessionMap> = OnceCell::new();
+pub async fn start(user_id: &Uuid) -> Result<Uuid, ::redis::RedisError> {
+    let session = id();
+    let key = make_key(&session);
+    let mut r = redis::get().await;
+    r.set::<_, _, ()>(key, user_id.as_bytes()).await?;
+    r.release().await;
+    Ok(session)
+}
 
-impl SessionMap {
-    pub fn new() -> SessionMap {
-        SessionMap {
-            inner: Mutex::new(HashMap::new()),
-        }
-    }
-
-    pub async fn start(&self, user_id: &Uuid) -> Session {
-        let mut inner = self.inner.lock().await;
-        let session = Session::new(user_id);
-        let key = session.key;
-        inner.insert(key, session.clone());
-        session
-    }
-
-    pub async fn get_session(&self, key: &Uuid) -> Option<Session> {
-        let inner = self.inner.lock().await;
-        inner.get(key).map(Clone::clone)
-    }
-
-    pub fn get() -> &'static SessionMap {
-        SESSION_MAP.get_or_init(SessionMap::new)
-    }
+#[derive(Debug)]
+pub struct Session {
+    pub id: Uuid,
+    pub user_id: Uuid,
 }
 
 fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
@@ -89,12 +64,19 @@ fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
 }
 
 async fn get_session(token: &str) -> Result<Session, Unauthenticated> {
-    use Unauthenticated::AuthFailed;
-    let session_key = Session::verify(token)?;
-    SessionMap::get()
-        .get_session(&session_key)
-        .await
-        .ok_or_else(|| AuthFailed("Session key not found."))
+    use Unauthenticated::{AuthFailed, Unexpected};
+
+    let id = token_verify(token)?;
+
+    let key = make_key(&id);
+    let mut r = redis::get().await;
+    let user_id: Uuid = {
+        let bytes: Option<Vec<u8>> = r.get(key).await.map_err(|_| Unexpected)?;
+        let bytes = bytes.ok_or(AuthFailed("The session can't be found."))?;
+        Uuid::from_slice(&*bytes).map_err(|_| Unexpected)?
+    };
+    r.release().await;
+    Ok(Session { id, user_id })
 }
 
 #[derive(Debug)]
