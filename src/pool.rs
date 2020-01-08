@@ -8,17 +8,13 @@ use async_trait::async_trait;
 use futures::channel::oneshot;
 use tokio::sync::{Mutex, MutexGuard};
 
-pub struct Connect<C, F>
-where
-    F: Factory<Output = C>,
+pub struct Connect<F: Factory>
 {
-    connect: Option<C>,
-    pool: Weak<SharedPool<C, F>>,
+    connect: Option<F::Output>,
+    pool: Weak<SharedPool<F>>,
 }
 
-impl<C, F> Connect<C, F>
-where
-    F: Factory<Output = C>,
+impl<F: Factory> Connect<F>
 {
     pub async fn release(mut self) {
         let pool = self.pool.upgrade();
@@ -29,29 +25,23 @@ where
     }
 }
 
-impl<C, F> Deref for Connect<C, F>
-where
-    F: Factory<Output = C>,
+impl<F: Factory> Deref for Connect<F>
 {
-    type Target = C;
+    type Target = F::Output;
 
-    fn deref(&self) -> &C {
+    fn deref(&self) -> &F::Output {
         self.connect.as_ref().unwrap()
     }
 }
 
-impl<C, F> DerefMut for Connect<C, F>
-where
-    F: Factory<Output = C>,
+impl<F: Factory> DerefMut for Connect<F>
 {
-    fn deref_mut(&mut self) -> &mut C {
+    fn deref_mut(&mut self) -> &mut F::Output {
         self.connect.as_mut().unwrap()
     }
 }
 
-impl<C, F> Drop for Connect<C, F>
-where
-    F: Factory<Output = C>,
+impl<F: Factory> Drop for Connect<F>
 {
     fn drop(&mut self) {
         if let Some(pool) = self.pool.upgrade() {
@@ -79,23 +69,20 @@ impl<C> InternalPool<C> {
     }
 }
 
-struct SharedPool<C, F: Factory<Output = C>> {
+struct SharedPool<F: Factory> {
     factory: F,
-    inner: Mutex<InternalPool<C>>,
+    inner: Mutex<InternalPool<F::Output>>,
     unreleased: AtomicIsize,
 }
 
 #[derive(Clone)]
-pub struct Pool<C, F: Factory<Output = C>> {
-    inner: Arc<SharedPool<C, F>>,
+pub struct Pool<F: Factory> {
+    inner: Arc<SharedPool<F>>,
 }
 
-impl<C, F> Pool<C, F>
-where
-    F: Factory<Output = C>,
-{
-    pub async fn with_num(num: usize, factory: F) -> Pool<C, F> {
-        let mut conns: VecDeque<C> = VecDeque::with_capacity(num);
+impl<F: Factory> Pool<F> {
+    pub async fn with_num(num: usize, factory: F) -> Pool<F> {
+        let mut conns: VecDeque<F::Output> = VecDeque::with_capacity(num);
         for _ in 0..num {
             conns.push_back(factory.make().await);
         }
@@ -111,8 +98,8 @@ where
         }
     }
 
-    pub async fn get(&self) -> Connect<C, F> {
-        let mut internal: MutexGuard<InternalPool<C>> = self.inner.inner.lock().await;
+    pub async fn get(&self) -> Connect<F> {
+        let mut internal = self.inner.inner.lock().await;
         let pool = Arc::downgrade(&self.inner);
         if let Some(conn) = internal.conns.pop_front() {
             Connect {
@@ -121,7 +108,7 @@ where
             }
         } else if self.inner.unreleased.fetch_sub(1, Ordering::Relaxed) <= 0 {
             self.inner.unreleased.fetch_add(1, Ordering::Relaxed);
-            let (tx, rx) = oneshot::channel::<C>();
+            let (tx, rx) = oneshot::channel::<F::Output>();
             internal.waiters.push_back(tx);
             drop(internal);
             Connect {
@@ -129,7 +116,7 @@ where
                 pool,
             }
         } else {
-            let new: C = self.inner.factory.make().await;
+            let new: F::Output = self.inner.factory.make().await;
             Connect {
                 connect: Some(new),
                 pool,

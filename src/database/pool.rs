@@ -11,7 +11,7 @@ impl PostgresFactory {
     pub fn new() -> PostgresFactory {
         use std::env::var;
         let config = var("DATABASE_URL")
-            .expect("Failed to load Postgres connect URL")
+            .expect("Failed to load Postgres URL")
             .parse()
             .unwrap();
         PostgresFactory { config }
@@ -27,8 +27,8 @@ impl Factory for PostgresFactory {
     }
 }
 
-pub async fn get() -> Connect<Client, PostgresFactory> {
-    static POOL: OnceCell<Pool<Client, PostgresFactory>> = OnceCell::new();
+pub async fn get() -> Connect<PostgresFactory> {
+    static POOL: OnceCell<Pool<PostgresFactory>> = OnceCell::new();
     if let Some(pool) = POOL.get() {
         pool.get().await
     } else {
