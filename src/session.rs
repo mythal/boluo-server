@@ -24,6 +24,12 @@ pub fn token_verify(token: &str) -> Result<Uuid, Unauthenticated> {
     Uuid::from_slice(session.as_slice()).map_err(|_| Unexpected)
 }
 
+pub async fn revoke_session(id: &Uuid) {
+    let key = make_key(id);
+    let mut redis = redis::get().await;
+    redis.remove(&*key).await.ok();
+}
+
 #[test]
 fn test_session_sign() {
     let session = id();

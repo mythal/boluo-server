@@ -6,7 +6,7 @@ use std::time;
 
 use hyper::{Body, Response, StatusCode};
 use serde::export::fmt::Display;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::context::debug;
 use crate::database::{CreationError, FetchError};
@@ -144,4 +144,12 @@ impl From<Unauthenticated> for Error {
     fn from(_: Unauthenticated) -> Error {
         Error::unauthorized()
     }
+}
+
+pub fn parse_query<T>(uri: &hyper::http::Uri) -> Option<T>
+    where
+            for<'de> T: Deserialize<'de>,
+{
+    let query = uri.query()?;
+    serde_urlencoded::from_str(query).ok()
 }

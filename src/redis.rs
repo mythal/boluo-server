@@ -39,6 +39,11 @@ impl Connection {
         let result = self.inner.set(key, value).await;
         self.handle(result)
     }
+
+    pub async fn remove(&mut self, key: &[u8]) -> Result<(), QueryError> {
+        let result = self.inner.del(key).await;
+        self.handle(result)
+    }
 }
 
 pub struct RedisFactory {

@@ -31,3 +31,11 @@ impl Login {
         User::login(db, None, Some(&self.username), &*self.password).await
     }
 }
+
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginReturn {
+    pub user: User,
+    pub token: Option<String>,
+}

@@ -1,38 +1,17 @@
-use super::api::{Login, Register};
+use super::api::{Login, Register, LoginReturn};
 use super::models::User;
-use crate::csrf::authenticate as csrf_auth;
 use crate::database;
 use crate::session::Unauthenticated::Unexpected;
 use crate::{api, context};
-use hyper::http::uri::Uri;
 use hyper::{Body, Method, Request, StatusCode};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use uuid::Uuid;
+use crate::session::revoke_session;
+use once_cell::sync::OnceCell;
 
 #[derive(Deserialize, Debug, Eq, PartialEq)]
 pub struct IdQuery {
     id: Option<Uuid>,
-}
-
-fn get_query<T>(uri: &Uri) -> Option<T>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    let query = uri.query()?;
-    serde_urlencoded::from_str(query).ok()
-}
-
-#[test]
-fn test_get_uuid() {
-    let uuid = Uuid::new_v4();
-    let path_and_query = format!("/?id={}", uuid.to_string());
-    let uri = Uri::builder().path_and_query(&*path_and_query).build().unwrap();
-    let query: IdQuery = get_query(&uri).unwrap();
-    assert_eq!(query.id, Some(uuid));
-
-    let uri = Uri::builder().path_and_query("/?id=&").build().unwrap();
-    let query = get_query::<IdQuery>(&uri);
-    assert_eq!(query, None);
 }
 
 async fn parse_body<T>(req: Request<Body>) -> Result<T, api::Error>
@@ -53,20 +32,13 @@ async fn register(req: Request<Body>) -> api::Result {
     api::Return::new(&user).status(StatusCode::CREATED).build()
 }
 
-pub async fn get_users(query: IdQuery) -> api::Result {
+pub async fn query_user(query: IdQuery) -> api::Result {
     if let IdQuery { id: Some(id), .. } = query {
         let mut db = database::get().await;
         let user = User::get_by_id(&mut *db, &id).await?;
         return api::Return::new(&user).build();
     }
     Err(api::Error::not_found())
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LoginReturn {
-    user: User,
-    token: Option<String>,
 }
 
 pub async fn login(req: Request<Body>) -> api::Result {
@@ -103,17 +75,55 @@ pub async fn login(req: Request<Body>) -> api::Result {
     Ok(response)
 }
 
+pub async fn logout(req: Request<Body>) -> api::Result {
+    use cookie::CookieBuilder;
+    use hyper::header::{SET_COOKIE, HeaderValue};
+    use crate::session::authenticate;
+
+    if let Ok(session) = authenticate(&req).await {
+        revoke_session(&session.id).await;
+    }
+    let mut response = api::Return::new(&true).build()?;
+    let header = response.headers_mut();
+
+    static HEADER_VALUE: OnceCell<HeaderValue> = OnceCell::new();
+    let header_value = HEADER_VALUE.get_or_init(|| {
+        let cookie = CookieBuilder::new("session", "")
+            .http_only(true)
+            .path("/api/")
+            .expires(time::empty_tm())
+            .finish()
+            .to_string();
+        HeaderValue::from_str(&*cookie).unwrap()
+    });
+    header.append(SET_COOKIE, header_value.clone());
+    Ok(response)
+}
+
 pub async fn router(req: Request<Body>, path: &str) -> api::Result {
-    if path == "/login" && req.method() == Method::POST {
-        return login(req).await;
+    match (path, req.method().clone()) {
+        ("/login", Method::POST) => login(req).await,
+        ("/register", Method::POST) => register(req).await,
+        ("/logout", _) => logout(req).await,
+        ("/", Method::GET) => {
+            let query = api::parse_query::<IdQuery>(req.uri())
+                .ok_or_else(api::Error::bad_request)?;
+            query_user(query).await
+        },
+        _ => Err(api::Error::not_found())
     }
-    if path == "/register" && req.method() == Method::POST {
-        return register(req).await;
-    }
-    if req.method() == Method::GET {
-        csrf_auth(&req).await?;
-        let query = get_query::<IdQuery>(req.uri()).ok_or_else(api::Error::bad_request)?;
-        return get_users(query).await;
-    }
-    Err(api::Error::method_not_allowed())
+}
+
+#[test]
+fn test_get_uuid() {
+    use hyper::Uri;
+    let uuid = Uuid::new_v4();
+    let path_and_query = format!("/?id={}", uuid.to_string());
+    let uri = Uri::builder().path_and_query(&*path_and_query).build().unwrap();
+    let query: IdQuery = api::parse_query(&uri).unwrap();
+    assert_eq!(query.id, Some(uuid));
+
+    let uri = Uri::builder().path_and_query("/?id=&").build().unwrap();
+    let query = api::parse_query::<IdQuery>(&uri);
+    assert_eq!(query, None);
 }
