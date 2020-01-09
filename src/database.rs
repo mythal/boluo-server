@@ -97,6 +97,11 @@ impl Client {
         self.broken
     }
 
+    fn mark_broken(&mut self) {
+        self.broken = true;
+        log::warn!("A postgres connection was broken.");
+    }
+
     async fn prepare(client: &mut tokio_postgres::Client) -> PrepareMap {
         let mut map = HashMap::with_capacity_and_hasher(20, CrcBuilder);
         for query in query::ALL_QUERY.iter() {
@@ -120,7 +125,7 @@ impl Client {
 
     pub async fn transaction(&'_ mut self) -> Result<Transaction<'_>, tokio_postgres::Error> {
         if self.client.is_closed() {
-            self.broken = true;
+            self.mark_broken()
         }
         let transaction = self.client.transaction().await?;
         let prepared = &self.prepared;
@@ -138,7 +143,7 @@ impl Querist for Client {
         let statement = self.prepared.get(&key).expect("Query not found");
         let result = self.client.query(statement, params).await;
         if result.is_err() && self.client.is_closed() {
-            self.broken = true;
+            self.mark_broken();
         }
         result
     }

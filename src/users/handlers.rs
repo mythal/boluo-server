@@ -49,6 +49,7 @@ async fn register(req: Request<Body>) -> api::Result {
     let form: Register = parse_body(req).await?;
     let mut db = database::get().await;
     let user = form.register(&mut *db).await?;
+    log::info!("{} ({}) was registered.", user.username, user.email);
     api::Return::new(&user).status(StatusCode::CREATED).build()
 }
 
@@ -71,11 +72,16 @@ pub struct LoginReturn {
 pub async fn login(req: Request<Body>) -> api::Result {
     use crate::session;
     use cookie::{CookieBuilder, SameSite};
+    use database::FetchError::NoPermission;
     use hyper::header::{HeaderValue, SET_COOKIE};
 
     let form: Login = parse_body(req).await?;
     let mut db = database::get().await;
-    let user = form.login(&mut *db).await?;
+    let login = form.login(&mut *db).await;
+    if let Err(NoPermission) = login {
+        log::warn!("Someone failed to try to login: {}", form.username);
+    }
+    let user = login?;
     let expires = time::now() + time::Duration::days(256);
     let session = session::start(&user.id).await.ok_or(Unexpected)?;
     let token = session::token(&session);

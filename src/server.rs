@@ -16,6 +16,7 @@ mod context;
 mod cors;
 mod csrf;
 mod database;
+mod logger;
 mod media;
 mod messages;
 mod pool;
@@ -44,8 +45,9 @@ async fn router(req: Request<Body>) -> api::Result {
 
 async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     use std::time::SystemTime;
-    print!("{} {} ", req.method(), req.uri());
     let start = SystemTime::now();
+    let method = req.method().clone();
+    let uri = req.uri().clone();
     if context::debug() && req.method() == hyper::Method::OPTIONS {
         return Ok(cors::preflight_requests(req));
     }
@@ -54,7 +56,7 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
         response = cors::allow_origin(response);
     }
     let elapsed = SystemTime::now().duration_since(start).unwrap();
-    println!("{}ms", elapsed.as_millis());
+    log::info!("{:>4}ms {:>5} {}", elapsed.as_millis(), method.as_str(), uri);
     Ok(response)
 }
 
@@ -62,15 +64,18 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
 async fn main() {
     dotenv::dotenv().unwrap();
     let port: u16 = env::var("PORT").unwrap().parse().unwrap();
+    logger::setup_logger(debug()).unwrap();
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
-    let make_svc = make_service_fn::<_, AddrStream, _>(move |_| async { Ok::<_, hyper::Error>(service_fn(handler)) });
+    let make_svc = make_service_fn(|_: &AddrStream| {
+        async { Ok::<_, hyper::Error>(service_fn(handler)) }
+    });
 
     let server = Server::bind(&addr).serve(make_svc);
 
     // Run this server for... forever!
     if let Err(e) = server.await {
-        eprintln!("server error: {}", e);
+        log::error!("server error: {}", e);
     }
 }

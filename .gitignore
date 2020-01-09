@@ -1,5 +1,6 @@
 .env
 /target
 **/*.rs.bk
+**/*.log
 .idea/
 **/.DS_Store

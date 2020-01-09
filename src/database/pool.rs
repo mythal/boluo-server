@@ -22,7 +22,7 @@ impl PostgresFactory {
 impl Factory for PostgresFactory {
     type Output = Client;
 
-    fn check(client: &Client) -> bool {
+    fn is_broken(client: &Client) -> bool {
         client.is_broken()
     }
 

@@ -19,10 +19,12 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, Unauthenticate
         .headers()
         .get(HeaderName::from_static("csrf-token"))
         .and_then(|header_value| header_value.to_str().ok())
-        .ok_or(ParseFailed("Can't get csrf-token in the headers."))?;
+        .ok_or_else(|| {
+            log::debug!(r#"Unable to retrieve the "csrf-token" from the HTTP headers."#);
+            ParseFailed
+        })?;
 
     let (body, signature) = token.rfind('.').map(|pos| token.split_at(pos)).ok_or(Unexpected)?;
-    verify(body, &signature[1..]).ok_or(AuthFailed("Mismatched CSRF token and signature."))?;
 
     let mut parts = body.split('.');
 
@@ -30,18 +32,24 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, Unauthenticate
         .next()
         .and_then(|s| base64::decode(s).ok()) // decode.
         .and_then(|bytes: Vec<u8>| Uuid::from_slice(&*bytes).ok()) // convert bytes to UUID.
-        .ok_or(ParseFailed("Can't retrieve session key"))?;
+        .ok_or(ParseFailed)?;
+
+    verify(body, &signature[1..]).ok_or_else(|| {
+        log::warn!("Session {}: failed to verify the signature of the CSRF token", session_id);
+        AuthFailed
+    })?;
+
     if session_id != session.id {
-        return Err(AuthFailed("Invalid session key"));
+        log::warn!("Session {}: Session not matching.", session_id);
+        return Err(AuthFailed);
     }
 
-    let timestamp: u64 = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or(ParseFailed("Can't retrieve timestamp"))?;
+    let timestamp: u64 = parts.next().and_then(|s| s.parse().ok()).ok_or(ParseFailed)?;
+
     let now = now_unix_duration().as_secs();
     if timestamp < now {
-        return Err(AuthFailed("Timeout"));
+        log::warn!("Session {}: The CSRF token has timeout", session_id);
+        return Err(AuthFailed);
     }
     Ok(session)
 }

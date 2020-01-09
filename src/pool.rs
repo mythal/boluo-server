@@ -32,7 +32,9 @@ impl<F: Factory> Drop for Connect<F> {
     fn drop(&mut self) {
         if let Some(pool) = self.pool.upgrade() {
             let mut tx = pool.connect_sender.clone();
-            tx.try_send(self.connect.take().unwrap()).ok();
+            if let Err(e) = tx.try_send(self.connect.take().unwrap()) {
+                log::error!("Unable to send the connection to `recycle`: {}", e);
+            }
         }
     }
 }
@@ -72,12 +74,14 @@ impl<F: Factory> Pool<F> {
         use futures::stream::StreamExt;
         while let Some(mut conn) = StreamExt::next(&mut rx).await {
             if let Some(shared) = shared.upgrade() {
-                if !F::check(&conn) {
+                if F::is_broken(&conn) {
+                    log::info!("Recreating connection");
                     conn = shared.factory.make().await;
                 }
                 let mut pool = shared.inner.lock().await;
                 pool.put_back(conn);
             } else {
+                log::info!("Pool was dropped, stop the recycle.");
                 break;
             }
         }
@@ -116,10 +120,8 @@ impl<F: Factory> Pool<F> {
             let (tx, rx) = oneshot::channel::<F::Output>();
             internal.waiters.push_back(tx);
             drop(internal);
-            Connect {
-                connect: Some(rx.await.unwrap()),
-                pool,
-            }
+            let connect = Some(rx.await.expect("Unable to receive new connection from the pool."));
+            Connect { connect, pool }
         }
     }
 }
@@ -136,6 +138,6 @@ async fn pool_test() {
 pub trait Factory: Send + Sync + 'static {
     type Output: Send;
 
-    fn check(connection: &Self::Output) -> bool;
+    fn is_broken(connection: &Self::Output) -> bool;
     async fn make(&self) -> Self::Output;
 }

@@ -141,10 +141,7 @@ impl<'a, T: Serialize> Return<'a, T> {
 }
 
 impl From<Unauthenticated> for Error {
-    fn from(e: Unauthenticated) -> Error {
-        if debug() {
-            eprintln!("Authenticate Failed: {:?}", e)
-        }
+    fn from(_: Unauthenticated) -> Error {
         Error::unauthorized()
     }
 }

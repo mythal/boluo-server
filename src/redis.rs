@@ -25,6 +25,7 @@ impl Connection {
             if e.is_connection_dropped() || e.is_connection_refusal() || e.is_timeout() || e.is_io_error() {
                 self.broken = true;
             }
+            log::error!("redis: {}", e);
         }
         Ok(result?)
     }
@@ -57,7 +58,7 @@ impl RedisFactory {
 impl Factory for RedisFactory {
     type Output = Connection;
 
-    fn check(connection: &Connection) -> bool {
+    fn is_broken(connection: &Connection) -> bool {
         connection.broken
     }
 
@@ -66,7 +67,7 @@ impl Factory for RedisFactory {
             .client
             .get_async_connection()
             .await
-            .expect("unable connect to redis");
+            .expect("Unable to connect to the Redis server");
         Connection::new(conn)
     }
 }

@@ -15,11 +15,11 @@ pub fn token(session: &Uuid) -> String {
 }
 
 pub fn token_verify(token: &str) -> Result<Uuid, Unauthenticated> {
-    use Unauthenticated::{AuthFailed, Unexpected};
+    use Unauthenticated::{AuthFailed, ParseFailed, Unexpected};
     let mut iter = token.split('.');
-    let session = iter.next().ok_or(Unexpected)?;
-    let signature = iter.next().ok_or(Unexpected)?;
-    utils::verify(session, signature).ok_or(AuthFailed("The session id and signature do not match."))?;
+    let session = iter.next().ok_or(ParseFailed)?;
+    let signature = iter.next().ok_or(ParseFailed)?;
+    utils::verify(session, signature).ok_or(AuthFailed)?;
     let session = base64::decode(session).map_err(|_| Unexpected)?;
     Uuid::from_slice(session.as_slice()).map_err(|_| Unexpected)
 }
@@ -61,43 +61,48 @@ fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
     cookie_pattern.captures(value)?.get(1).map(|m| m.as_str())
 }
 
-async fn get_session(token: &str) -> Result<Session, Unauthenticated> {
-    use Unauthenticated::{AuthFailed, Unexpected};
-
-    let id = token_verify(token)?;
-
-    let key = make_key(&id);
-    let mut r = redis::get().await;
-
-    let bytes: Vec<u8> = r
-        .get(&*key)
-        .await
-        .map_err(|_| Unexpected)?
-        .ok_or(AuthFailed("The session can't be found."))?;
-
-    let user_id: Uuid = Uuid::from_slice(&*bytes).map_err(|_| Unexpected)?;
-    Ok(Session { id, user_id })
-}
 
 #[derive(Debug)]
 pub enum Unauthenticated {
-    ParseFailed(&'static str),
-    AuthFailed(&'static str),
+    ParseFailed,
+    AuthFailed,
     Unexpected,
 }
 
 pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, Unauthenticated> {
     use hyper::header::{HeaderValue, AUTHORIZATION, COOKIE};
+    use Unauthenticated::{AuthFailed, Unexpected};
 
     let headers = req.headers();
     let authorization = headers.get(AUTHORIZATION).map(HeaderValue::to_str);
 
-    if let Some(Ok(token)) = authorization {
-        return get_session(token).await;
+    let token;
+    if let Some(Ok(t)) = authorization {
+        token = t;
+    } else {
+        token = headers.get(COOKIE).and_then(get_cookie).ok_or_else(|| {
+            log::debug!("Unable to retrieve session id from the cookie.");
+            Unauthenticated::AuthFailed
+        })?;
     }
-    let cookie_value = headers
-        .get(COOKIE)
-        .and_then(get_cookie)
-        .ok_or_else(|| Unauthenticated::ParseFailed("Can't retrieve session cookie."))?;
-    get_session(cookie_value).await
+
+    let verify_result = token_verify(token);
+    if let Err(AuthFailed) = verify_result {
+        log::warn!("Token verify failed: {}", token);
+    }
+    let id = verify_result?;
+
+    let key = make_key(&id);
+    let mut cache = redis::get().await;
+    let bytes: Vec<u8> = cache
+        .get(&*key)
+        .await
+        .map_err(|_| Unexpected)?
+        .ok_or_else(|| {
+            log::info!("Not found session id {} from the cache.", id);
+            AuthFailed
+        })?;
+
+    let user_id = Uuid::from_slice(&*bytes).map_err(|_| Unexpected)?;
+    Ok(Session { id, user_id })
 }
