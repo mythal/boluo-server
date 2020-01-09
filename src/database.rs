@@ -84,12 +84,17 @@ pub type PrepareMap = HashMap<query::Key, tokio_postgres::Statement, CrcBuilder>
 
 pub struct Client {
     pub client: tokio_postgres::Client,
+    broken: bool,
     prepared: PrepareMap,
 }
 
 impl Client {
     pub async fn new() -> Client {
         Client::with_config(&get_postgres_url().parse().unwrap()).await
+    }
+
+    pub fn is_broken(&self) -> bool {
+        self.broken
     }
 
     async fn prepare(client: &mut tokio_postgres::Client) -> PrepareMap {
@@ -105,10 +110,18 @@ impl Client {
         let (mut client, connection) = config.connect(tokio_postgres::NoTls).await.unwrap();
         tokio::spawn(connection);
         let prepared = Client::prepare(&mut client).await;
-        Client { client, prepared }
+        let broken = false;
+        Client {
+            client,
+            prepared,
+            broken,
+        }
     }
 
     pub async fn transaction(&'_ mut self) -> Result<Transaction<'_>, tokio_postgres::Error> {
+        if self.client.is_closed() {
+            self.broken = true;
+        }
         let transaction = self.client.transaction().await?;
         let prepared = &self.prepared;
         Ok(Transaction { transaction, prepared })
@@ -123,7 +136,11 @@ impl Querist for Client {
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
         let statement = self.prepared.get(&key).expect("Query not found");
-        self.client.query(statement, params).await
+        let result = self.client.query(statement, params).await;
+        if result.is_err() && self.client.is_closed() {
+            self.broken = true;
+        }
+        result
     }
 }
 

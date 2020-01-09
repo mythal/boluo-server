@@ -22,6 +22,10 @@ impl PostgresFactory {
 impl Factory for PostgresFactory {
     type Output = Client;
 
+    fn check(client: &Client) -> bool {
+        client.is_broken()
+    }
+
     async fn make(&self) -> Client {
         Client::with_config(&self.config).await
     }

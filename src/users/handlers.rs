@@ -49,7 +49,6 @@ async fn register(req: Request<Body>) -> api::Result {
     let form: Register = parse_body(req).await?;
     let mut db = database::get().await;
     let user = form.register(&mut *db).await?;
-    db.release().await;
     api::Return::new(&user).status(StatusCode::CREATED).build()
 }
 
@@ -57,7 +56,6 @@ pub async fn get_users(query: IdQuery) -> api::Result {
     if let IdQuery { id: Some(id), .. } = query {
         let mut db = database::get().await;
         let user = User::get_by_id(&mut *db, &id).await?;
-        db.release().await;
         return api::Return::new(&user).build();
     }
     Err(api::Error::not_found())
@@ -78,9 +76,8 @@ pub async fn login(req: Request<Body>) -> api::Result {
     let form: Login = parse_body(req).await?;
     let mut db = database::get().await;
     let user = form.login(&mut *db).await?;
-    db.release().await;
     let expires = time::now() + time::Duration::days(256);
-    let session = session::start(&user.id).await.map_err(|_| Unexpected)?;
+    let session = session::start(&user.id).await.ok_or(Unexpected)?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)

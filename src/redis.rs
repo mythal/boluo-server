@@ -1,7 +1,44 @@
 use crate::pool::{Connect, Factory, Pool};
 use async_trait::async_trait;
-use redis::aio::Connection;
 pub use redis::AsyncCommands;
+use thiserror::Error;
+
+pub struct Connection {
+    inner: redis::aio::Connection,
+    broken: bool,
+}
+
+#[derive(Error, Debug)]
+pub enum QueryError {
+    #[error("redis error")]
+    Redis(#[from] redis::RedisError),
+}
+
+impl Connection {
+    fn new(inner: redis::aio::Connection) -> Connection {
+        let broken = false;
+        Connection { inner, broken }
+    }
+
+    fn handle<T>(&mut self, result: Result<T, redis::RedisError>) -> Result<T, QueryError> {
+        if let Err(ref e) = result {
+            if e.is_connection_dropped() || e.is_connection_refusal() || e.is_timeout() || e.is_io_error() {
+                self.broken = true;
+            }
+        }
+        Ok(result?)
+    }
+
+    pub async fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, QueryError> {
+        let result = self.inner.get(key).await;
+        self.handle(result)
+    }
+
+    pub async fn set(&mut self, key: &[u8], value: &[u8]) -> Result<(), QueryError> {
+        let result = self.inner.set(key, value).await;
+        self.handle(result)
+    }
+}
 
 pub struct RedisFactory {
     client: redis::Client,
@@ -20,11 +57,17 @@ impl RedisFactory {
 impl Factory for RedisFactory {
     type Output = Connection;
 
+    fn check(connection: &Connection) -> bool {
+        connection.broken
+    }
+
     async fn make(&self) -> Connection {
-        self.client
+        let conn = self
+            .client
             .get_async_connection()
             .await
-            .expect("unable connect to redis")
+            .expect("unable connect to redis");
+        Connection::new(conn)
     }
 }
 

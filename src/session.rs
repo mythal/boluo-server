@@ -1,6 +1,5 @@
 use crate::redis;
 use crate::utils::{self, id, sign};
-use ::redis::AsyncCommands;
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use uuid::Uuid;
@@ -41,13 +40,12 @@ fn make_key(session: &Uuid) -> Vec<u8> {
     key
 }
 
-pub async fn start(user_id: &Uuid) -> Result<Uuid, ::redis::RedisError> {
+pub async fn start(user_id: &Uuid) -> Option<Uuid> {
     let session = id();
     let key = make_key(&session);
     let mut r = redis::get().await;
-    r.set::<_, _, ()>(key, user_id.as_bytes()).await?;
-    r.release().await;
-    Ok(session)
+    r.set(&key, user_id.as_bytes()).await.ok()?;
+    Some(session)
 }
 
 #[derive(Debug)]
@@ -70,12 +68,14 @@ async fn get_session(token: &str) -> Result<Session, Unauthenticated> {
 
     let key = make_key(&id);
     let mut r = redis::get().await;
-    let user_id: Uuid = {
-        let bytes: Option<Vec<u8>> = r.get(key).await.map_err(|_| Unexpected)?;
-        let bytes = bytes.ok_or(AuthFailed("The session can't be found."))?;
-        Uuid::from_slice(&*bytes).map_err(|_| Unexpected)?
-    };
-    r.release().await;
+
+    let bytes: Vec<u8> = r
+        .get(&*key)
+        .await
+        .map_err(|_| Unexpected)?
+        .ok_or(AuthFailed("The session can't be found."))?;
+
+    let user_id: Uuid = Uuid::from_slice(&*bytes).map_err(|_| Unexpected)?;
     Ok(Session { id, user_id })
 }
 
