@@ -67,7 +67,6 @@ fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
     cookie_pattern.captures(value)?.get(1).map(|m| m.as_str())
 }
 
-
 #[derive(Debug)]
 pub enum Unauthenticated {
     ParseFailed,
@@ -100,14 +99,10 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
 
     let key = make_key(&id);
     let mut cache = redis::get().await;
-    let bytes: Vec<u8> = cache
-        .get(&*key)
-        .await
-        .map_err(|_| Unexpected)?
-        .ok_or_else(|| {
-            log::info!("Not found session id {} from the cache.", id);
-            AuthFailed
-        })?;
+    let bytes: Vec<u8> = cache.get(&*key).await.map_err(|_| Unexpected)?.ok_or_else(|| {
+        log::info!("Not found session id {} from the cache.", id);
+        AuthFailed
+    })?;
 
     let user_id = Uuid::from_slice(&*bytes).map_err(|_| Unexpected)?;
     Ok(Session { id, user_id })

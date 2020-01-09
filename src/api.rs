@@ -1,4 +1,4 @@
-//! Types for to help building APIs.
+//! Types and functions for to help building APIs.
 use std::convert::From;
 use std::error::Error as StdError;
 use std::fmt;
@@ -147,9 +147,30 @@ impl From<Unauthenticated> for Error {
 }
 
 pub fn parse_query<T>(uri: &hyper::http::Uri) -> Option<T>
-    where
-            for<'de> T: Deserialize<'de>,
+where
+    for<'de> T: Deserialize<'de>,
 {
     let query = uri.query()?;
     serde_urlencoded::from_str(query).ok()
+}
+
+pub(crate) async fn parse_body<T>(req: hyper::Request<Body>) -> ::std::result::Result<T, Error>
+where
+    for<'de> T: Deserialize<'de>,
+{
+    let body = hyper::body::to_bytes(req.into_body())
+        .await
+        .map_err(|_| Error::bad_request())?;
+    serde_json::from_slice(&*body).map_err(|_| Error::bad_request())
+}
+
+#[derive(Deserialize, Debug, Eq, PartialEq)]
+pub struct IdQuery {
+    pub id: Option<uuid::Uuid>,
+}
+
+impl IdQuery {
+    pub fn from_request(req: &hyper::Request<Body>) -> ::std::result::Result<IdQuery, Error> {
+        parse_query::<IdQuery>(req.uri()).ok_or_else(Error::bad_request)
+    }
 }

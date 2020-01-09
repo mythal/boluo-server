@@ -32,7 +32,6 @@ impl Login {
     }
 }
 
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginReturn {

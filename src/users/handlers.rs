@@ -1,44 +1,29 @@
-use super::api::{Login, Register, LoginReturn};
+use super::api::{Login, LoginReturn, Register};
 use super::models::User;
+use crate::api::IdQuery;
 use crate::database;
+use crate::session::revoke_session;
 use crate::session::Unauthenticated::Unexpected;
 use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
-use serde::Deserialize;
-use uuid::Uuid;
-use crate::session::revoke_session;
 use once_cell::sync::OnceCell;
 
-#[derive(Deserialize, Debug, Eq, PartialEq)]
-pub struct IdQuery {
-    id: Option<Uuid>,
-}
-
-async fn parse_body<T>(req: Request<Body>) -> Result<T, api::Error>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    let body = hyper::body::to_bytes(req.into_body())
-        .await
-        .map_err(|_| api::Error::bad_request())?;
-    serde_json::from_slice(&*body).map_err(|_| api::Error::bad_request())
-}
-
 async fn register(req: Request<Body>) -> api::Result {
-    let form: Register = parse_body(req).await?;
+    let form: Register = api::parse_body(req).await?;
     let mut db = database::get().await;
     let user = form.register(&mut *db).await?;
     log::info!("{} ({}) was registered.", user.username, user.email);
     api::Return::new(&user).status(StatusCode::CREATED).build()
 }
 
-pub async fn query_user(query: IdQuery) -> api::Result {
+pub async fn query_user(req: Request<Body>) -> api::Result {
+    let query = IdQuery::from_request(&req)?;
     if let IdQuery { id: Some(id), .. } = query {
         let mut db = database::get().await;
         let user = User::get_by_id(&mut *db, &id).await?;
         return api::Return::new(&user).build();
     }
-    Err(api::Error::not_found())
+    Err(api::Error::bad_request())
 }
 
 pub async fn login(req: Request<Body>) -> api::Result {
@@ -47,7 +32,7 @@ pub async fn login(req: Request<Body>) -> api::Result {
     use database::FetchError::NoPermission;
     use hyper::header::{HeaderValue, SET_COOKIE};
 
-    let form: Login = parse_body(req).await?;
+    let form: Login = api::parse_body(req).await?;
     let mut db = database::get().await;
     let login = form.login(&mut *db).await;
     if let Err(NoPermission) = login {
@@ -76,9 +61,9 @@ pub async fn login(req: Request<Body>) -> api::Result {
 }
 
 pub async fn logout(req: Request<Body>) -> api::Result {
-    use cookie::CookieBuilder;
-    use hyper::header::{SET_COOKIE, HeaderValue};
     use crate::session::authenticate;
+    use cookie::CookieBuilder;
+    use hyper::header::{HeaderValue, SET_COOKIE};
 
     if let Ok(session) = authenticate(&req).await {
         revoke_session(&session.id).await;
@@ -105,18 +90,16 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
         ("/login", Method::POST) => login(req).await,
         ("/register", Method::POST) => register(req).await,
         ("/logout", _) => logout(req).await,
-        ("/", Method::GET) => {
-            let query = api::parse_query::<IdQuery>(req.uri())
-                .ok_or_else(api::Error::bad_request)?;
-            query_user(query).await
-        },
-        _ => Err(api::Error::not_found())
+        ("/", Method::GET) => query_user(req).await,
+        _ => Err(api::Error::not_found()),
     }
 }
 
 #[test]
 fn test_get_uuid() {
     use hyper::Uri;
+    use uuid::Uuid;
+
     let uuid = Uuid::new_v4();
     let path_and_query = format!("/?id={}", uuid.to_string());
     let uri = Uri::builder().path_and_query(&*path_and_query).build().unwrap();

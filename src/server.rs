@@ -39,7 +39,11 @@ async fn router(req: Request<Body>) -> api::Result {
     if path == "/api/csrf-token" {
         return csrf::get_csrf_token(req).await;
     }
+    table!("/api/messages", messages::router);
     table!("/api/users", users::router);
+    table!("/api/media", media::router);
+    table!("/api/channels", channels::router);
+    table!("/api/spaces", spaces::router);
     Err(api::Error::not_found())
 }
 
@@ -68,9 +72,7 @@ async fn main() {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
-    let make_svc = make_service_fn(|_: &AddrStream| {
-        async { Ok::<_, hyper::Error>(service_fn(handler)) }
-    });
+    let make_svc = make_service_fn(|_: &AddrStream| async { Ok::<_, hyper::Error>(service_fn(handler)) });
 
     let server = Server::bind(&addr).serve(make_svc);
 

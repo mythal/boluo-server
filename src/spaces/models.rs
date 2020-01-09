@@ -54,28 +54,6 @@ impl Space {
     }
 }
 
-#[tokio::test]
-async fn space_test() {
-    use crate::database::Client;
-    use crate::users::User;
-    let mut client = Client::new().await;
-    let mut trans = client.transaction().await.unwrap();
-    let email = "spaces@mythal.net";
-    let username = "space_test";
-    let password = "no password";
-    let nickname = "Space Test";
-    let space_name = "Pure Illusion";
-    let user = User::create(&mut trans, email, username, nickname, password)
-        .await
-        .unwrap();
-    let space = Space::create(&mut trans, space_name, &user.id, None).await.unwrap();
-    let space = Space::get_by_name(&mut trans, &space.name).await.unwrap();
-    let space = Space::get_by_id(&mut trans, &space.id).await.unwrap();
-    let space = Space::delete(&mut trans, &space.id).await.unwrap();
-    assert_eq!(space.name, space_name);
-    assert_eq!(space.owner_id, user.id);
-}
-
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "space_members")]
@@ -131,6 +109,42 @@ impl SpaceMember {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, FromSql)]
+#[serde(rename_all = "camelCase")]
+#[postgres(name = "restrained_members")]
+pub struct RestrainedMember {
+    pub user_id: Uuid,
+    pub space_id: Uuid,
+    pub blocked: bool,
+    pub muted: bool,
+    pub restrained_date: NaiveDateTime,
+    pub operator_id: Option<Uuid>,
+}
+
+impl RestrainedMember {}
+
+#[tokio::test]
+async fn space_test() {
+    use crate::database::Client;
+    use crate::users::User;
+    let mut client = Client::new().await;
+    let mut trans = client.transaction().await.unwrap();
+    let email = "spaces@mythal.net";
+    let username = "space_test";
+    let password = "no password";
+    let nickname = "Space Test";
+    let space_name = "Pure Illusion";
+    let user = User::create(&mut trans, email, username, nickname, password)
+        .await
+        .unwrap();
+    let space = Space::create(&mut trans, space_name, &user.id, None).await.unwrap();
+    let space = Space::get_by_name(&mut trans, &space.name).await.unwrap();
+    let space = Space::get_by_id(&mut trans, &space.id).await.unwrap();
+    let space = Space::delete(&mut trans, &space.id).await.unwrap();
+    assert_eq!(space.name, space_name);
+    assert_eq!(space.owner_id, user.id);
+}
+
 #[tokio::test]
 async fn space_member() {
     use crate::database::Client;
@@ -158,17 +172,3 @@ async fn space_member() {
     assert_eq!(member.user_id, user.id);
     assert_eq!(member.space_id, space.id);
 }
-
-#[derive(Debug, Serialize, Deserialize, FromSql)]
-#[serde(rename_all = "camelCase")]
-#[postgres(name = "restrained_members")]
-pub struct RestrainedMember {
-    pub user_id: Uuid,
-    pub space_id: Uuid,
-    pub blocked: bool,
-    pub muted: bool,
-    pub restrained_date: NaiveDateTime,
-    pub operator_id: Option<Uuid>,
-}
-
-impl RestrainedMember {}
