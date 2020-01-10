@@ -6,9 +6,16 @@ use crate::database::{self, Querist};
 use hyper::{Body, Request};
 use uuid::Uuid;
 
-async fn is_member<T: Querist>(db: &mut T, space: &Uuid, req: &Request<Body>) -> Result<SpaceMember, api::Error> {
+pub async fn is_member<T: Querist>(db: &mut T, space: &Uuid, req: &Request<Body>) -> Result<SpaceMember, api::Error> {
     let session = authenticate(&req).await?;
-    SpaceMember::fetch(db, &session.user_id, space).await.ok_or_else(api::Error::unauthorized)
+    log::warn!(
+        "The user {} failed to try access or modify a channel {}",
+        session.user_id,
+        space
+    );
+    SpaceMember::get(db, &session.user_id, space)
+        .await
+        .ok_or_else(api::Error::unauthorized)
 }
 
 async fn list(req: Request<Body>) -> api::Result {
@@ -58,7 +65,7 @@ async fn create(req: Request<Body>) -> api::Result {
     trans.commit().await?;
     let members = vec![member];
     let channels = vec![];
-    log::info!("a channel was just created");
+    log::info!("a channel ({}) was just created", space.id);
     api::Return::new(&SpaceWithRelated {
         space,
         members,
@@ -133,6 +140,7 @@ async fn delete(req: Request<Body>) -> api::Result {
         log::info!("a space ({}) was deleted", space.id);
         return api::Return::new(&space).build();
     }
+    log::warn!("The user {} failed to try delete a space {}", session.user_id, space.id);
     Err(api::Error::unauthorized())
 }
 

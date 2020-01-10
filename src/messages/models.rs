@@ -38,7 +38,7 @@ pub struct Message {
 }
 
 impl Message {
-    pub async fn get_messages<T: Querist>(
+    pub async fn get_by_channel<T: Querist>(
         db: &mut T,
         channel_id: &Uuid,
     ) -> Result<Vec<Message>, tokio_postgres::Error> {
@@ -46,7 +46,7 @@ impl Message {
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
-    pub async fn create_message<T: Querist>(
+    pub async fn create<T: Querist>(
         db: &mut T,
         channel_id: &Uuid,
         sender_id: &Uuid,
@@ -82,10 +82,10 @@ async fn message_test() {
     let channel = Channel::create(&mut trans, &space.id, channel_name, true)
         .await
         .unwrap();
-    let new_message = Message::create_message(&mut trans, &channel.id, &user.id, &*user.nickname, "hello, world")
+    let new_message = Message::create(&mut trans, &channel.id, &user.id, &*user.nickname, "hello, world")
         .await
         .unwrap();
-    let messages = Message::get_messages(&mut trans, &channel.id).await.unwrap();
+    let messages = Message::get_by_channel(&mut trans, &channel.id).await.unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, new_message.id);
 }

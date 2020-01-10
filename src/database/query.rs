@@ -41,6 +41,7 @@ pub static IS_SPACE_PUBLIC: Query = make!("is_space_public", &[Type::UUID, Type:
 pub static LOGIN: Query = make!("login", &[Type::TEXT, Type::TEXT, Type::TEXT]);
 pub static REMOVE_USER_FROM_CHANNEL: Query = make!("remove_user_from_channel");
 pub static REMOVE_USER_FROM_SPACE: Query = make!("remove_user_from_space");
+pub static SELECT_CHANNEL_MEMBERS: Query = make!("select_channel_members");
 pub static SELECT_MESSAGES: Query = make!("select_messages");
 pub static SELECT_SPACES_CHANNELS: Query = make!("select_space_channels");
 pub static SELECT_SPACE_MEMBERS: Query = make!("select_space_members");
@@ -67,6 +68,7 @@ pub static ALL_QUERY: &[Query] = &[
     IS_SPACE_PUBLIC,
     REMOVE_USER_FROM_CHANNEL,
     REMOVE_USER_FROM_SPACE,
+    SELECT_CHANNEL_MEMBERS,
     SELECT_MESSAGES,
     SELECT_SPACES_CHANNELS,
     SELECT_SPACE_MEMBERS,

@@ -175,3 +175,14 @@ impl Querist for Transaction<'_> {
         self.transaction.query(statement, params).await
     }
 }
+
+#[async_trait]
+impl Querist for crate::pool::Connect<crate::database::pool::PostgresFactory> {
+    async fn query(
+        &mut self,
+        key: query::Key,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
+        Client::query(&mut *self, key, params).await
+    }
+}

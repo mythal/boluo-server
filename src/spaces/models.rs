@@ -75,9 +75,7 @@ impl Space {
 
     pub async fn delete_caches(id: &Uuid) {
         use crate::redis::make_key;
-        let keys = [
-            make_key(b"spaces", id, b"is_public"),
-        ];
+        let keys = [make_key(b"spaces", id, b"is_public")];
         let mut r = redis::get().await;
         for key in keys.iter() {
             if let Err(e) = r.remove(key).await {
@@ -174,7 +172,7 @@ impl SpaceMember {
         Ok(row.get(1))
     }
 
-    pub async fn fetch<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Option<SpaceMember> {
+    pub async fn get<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Option<SpaceMember> {
         db.fetch(query::FETCH_SPACE_MEMBER.key, &[user_id, space_id])
             .await
             .map(|row| row.get(0))

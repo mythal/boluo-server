@@ -1,6 +1,6 @@
 WITH add(space_members) AS (
     INSERT INTO space_members (user_id, space_id, is_admin, is_master)
-        VALUES ($1, $2, $3, $3)
+        VALUES ($1, $2, $3, false)
         ON CONFLICT DO NOTHING
         RETURNING space_members
 )
