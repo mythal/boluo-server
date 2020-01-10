@@ -35,7 +35,10 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, Unauthenticate
         .ok_or(ParseFailed)?;
 
     verify(body, &signature[1..]).ok_or_else(|| {
-        log::warn!("Session {}: failed to verify the signature of the CSRF token", session_id);
+        log::warn!(
+            "Session {}: failed to verify the signature of the CSRF token",
+            session_id
+        );
         AuthFailed
     })?;
 

@@ -2,6 +2,7 @@ use crate::pool::{Connect, Factory, Pool};
 use async_trait::async_trait;
 pub use redis::AsyncCommands;
 use thiserror::Error;
+use uuid::Uuid;
 
 pub struct Connection {
     inner: redis::aio::Connection,
@@ -87,4 +88,14 @@ pub async fn get() -> Connect<RedisFactory> {
         let pool = Pool::with_num(8, factory).await;
         POOL.get_or_init(move || pool).get().await
     }
+}
+
+pub fn make_key(type_name: &[u8], id: &Uuid, field_name: &[u8]) -> Vec<u8> {
+    let mut buffer = Vec::with_capacity(type_name.len() + field_name.len() + 24);
+    buffer.extend_from_slice(type_name);
+    buffer.push(b':');
+    buffer.extend_from_slice(&*id.as_bytes());
+    buffer.push(b':');
+    buffer.extend_from_slice(field_name);
+    buffer
 }

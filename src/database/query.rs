@@ -33,16 +33,21 @@ pub static DELETE_CHANNEL: Query = make!("delete_channel");
 pub static DELETE_SPACE: Query = make!("delete_space");
 pub static DELETE_USER: Query = make!("delete_user");
 pub static FETCH_CHANNEL: Query = make!("fetch_channel", &[Type::UUID]);
+pub static FETCH_CHANNEL_MEMBER: Query = make!("fetch_channel_member");
 pub static FETCH_SPACE: Query = make!("fetch_space", &[Type::UUID, Type::TEXT, Type::BOOL]);
+pub static FETCH_SPACE_MEMBER: Query = make!("fetch_space_member");
 pub static FETCH_USER: Query = make!("fetch_user", &[Type::UUID, Type::TEXT, Type::TEXT]);
+pub static IS_SPACE_PUBLIC: Query = make!("is_space_public", &[Type::UUID, Type::TEXT, Type::TEXT]);
+pub static LOGIN: Query = make!("login", &[Type::TEXT, Type::TEXT, Type::TEXT]);
 pub static REMOVE_USER_FROM_CHANNEL: Query = make!("remove_user_from_channel");
 pub static REMOVE_USER_FROM_SPACE: Query = make!("remove_user_from_space");
 pub static SELECT_MESSAGES: Query = make!("select_messages");
+pub static SELECT_SPACES_CHANNELS: Query = make!("select_space_channels");
+pub static SELECT_SPACE_MEMBERS: Query = make!("select_space_members");
 pub static SELECT_SPACES: Query = make!("select_spaces");
 pub static SELECT_USERS: Query = make!("select_users");
 pub static SET_CHANNEL_MEMBER: Query = make!("set_channel_member");
 pub static SET_SPACE_MEMBER: Query = make!("set_space_member");
-pub static LOGIN: Query = make!("login", &[Type::TEXT, Type::TEXT, Type::TEXT]);
 
 pub static ALL_QUERY: &[Query] = &[
     ADD_USER_TO_CHANNEL,
@@ -55,11 +60,16 @@ pub static ALL_QUERY: &[Query] = &[
     DELETE_SPACE,
     DELETE_USER,
     FETCH_CHANNEL,
+    FETCH_CHANNEL_MEMBER,
     FETCH_SPACE,
+    FETCH_SPACE_MEMBER,
     FETCH_USER,
+    IS_SPACE_PUBLIC,
     REMOVE_USER_FROM_CHANNEL,
     REMOVE_USER_FROM_SPACE,
     SELECT_MESSAGES,
+    SELECT_SPACES_CHANNELS,
+    SELECT_SPACE_MEMBERS,
     SELECT_SPACES,
     SELECT_USERS,
     SET_CHANNEL_MEMBER,

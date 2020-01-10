@@ -1,6 +1,6 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::api::IdQuery;
+use crate::api::{parse_query, IdQuery};
 use crate::database;
 use crate::session::revoke_session;
 use crate::session::Unauthenticated::Unexpected;
@@ -17,13 +17,11 @@ async fn register(req: Request<Body>) -> api::Result {
 }
 
 pub async fn query_user(req: Request<Body>) -> api::Result {
-    let query = IdQuery::from_request(&req)?;
-    if let IdQuery { id: Some(id), .. } = query {
-        let mut db = database::get().await;
-        let user = User::get_by_id(&mut *db, &id).await?;
-        return api::Return::new(&user).build();
-    }
-    Err(api::Error::bad_request())
+    let query: IdQuery = parse_query(req.uri())?;
+
+    let mut db = database::get().await;
+    let user = User::get_by_id(&mut *db, &query.id).await?;
+    api::Return::new(&user).build()
 }
 
 pub async fn login(req: Request<Body>) -> api::Result {
@@ -104,9 +102,9 @@ fn test_get_uuid() {
     let path_and_query = format!("/?id={}", uuid.to_string());
     let uri = Uri::builder().path_and_query(&*path_and_query).build().unwrap();
     let query: IdQuery = api::parse_query(&uri).unwrap();
-    assert_eq!(query.id, Some(uuid));
+    assert_eq!(query.id, uuid);
 
     let uri = Uri::builder().path_and_query("/?id=&").build().unwrap();
     let query = api::parse_query::<IdQuery>(&uri);
-    assert_eq!(query, None);
+    assert!(query.is_err());
 }

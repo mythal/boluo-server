@@ -2,6 +2,7 @@
 use std::convert::From;
 use std::error::Error as StdError;
 use std::fmt;
+use std::result::Result as StdResult;
 use std::time;
 
 use hyper::{Body, Response, StatusCode};
@@ -82,7 +83,7 @@ impl Error {
 impl From<CreationError> for Error {
     fn from(e: CreationError) -> Error {
         match e {
-            CreationError::AlreadyExists => Error::new("This record already exists.", StatusCode::CONFLICT),
+            CreationError::EmptyResult => Error::new("This record already exists.", StatusCode::CONFLICT),
             CreationError::ValidationFail(message) => Error::new(message, StatusCode::FORBIDDEN),
             e => Error::unexpected(&e),
         }
@@ -96,6 +97,13 @@ impl From<FetchError> for Error {
             FetchError::NoPermission => Error::new("You have no permission to access.", StatusCode::UNAUTHORIZED),
             e => Error::unexpected(&e),
         }
+    }
+}
+
+impl From<tokio_postgres::Error> for Error {
+    fn from(e: tokio_postgres::Error) -> Error {
+        log::warn!("a unexpected database error: {}", e);
+        crate::api::Error::internal()
     }
 }
 
@@ -146,15 +154,21 @@ impl From<Unauthenticated> for Error {
     }
 }
 
-pub fn parse_query<T>(uri: &hyper::http::Uri) -> Option<T>
+pub fn parse_query<T>(uri: &hyper::http::Uri) -> StdResult<T, Error>
 where
     for<'de> T: Deserialize<'de>,
 {
-    let query = uri.query()?;
-    serde_urlencoded::from_str(query).ok()
+    let query = uri.query().unwrap_or("");
+    match serde_urlencoded::from_str(query) {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            log::debug!("failed to parse uri ({}): {}", uri, e);
+            Err(Error::bad_request())
+        }
+    }
 }
 
-pub(crate) async fn parse_body<T>(req: hyper::Request<Body>) -> ::std::result::Result<T, Error>
+pub(crate) async fn parse_body<T>(req: hyper::Request<Body>) -> StdResult<T, Error>
 where
     for<'de> T: Deserialize<'de>,
 {
@@ -166,11 +180,5 @@ where
 
 #[derive(Deserialize, Debug, Eq, PartialEq)]
 pub struct IdQuery {
-    pub id: Option<uuid::Uuid>,
-}
-
-impl IdQuery {
-    pub fn from_request(req: &hyper::Request<Body>) -> ::std::result::Result<IdQuery, Error> {
-        parse_query::<IdQuery>(req.uri()).ok_or_else(Error::bad_request)
-    }
+    pub id: uuid::Uuid,
 }

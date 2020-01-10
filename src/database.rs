@@ -41,7 +41,7 @@ pub trait Querist: Send {
             .await?
             .into_iter()
             .next()
-            .ok_or(CreationError::AlreadyExists)
+            .ok_or(CreationError::EmptyResult)
     }
 }
 
@@ -60,7 +60,7 @@ pub enum CreationError {
     #[error("unknown query error")]
     QueryFail(#[from] tokio_postgres::Error),
     #[error("record already exists")]
-    AlreadyExists,
+    EmptyResult,
     #[error("validation failed: {0}")]
     ValidationFail(String),
 }
@@ -155,11 +155,11 @@ pub struct Transaction<'a> {
 }
 
 impl<'a> Transaction<'a> {
-    async fn commit(self) -> Result<(), tokio_postgres::Error> {
+    pub async fn commit(self) -> Result<(), tokio_postgres::Error> {
         self.transaction.commit().await
     }
 
-    async fn rollback(self) -> Result<(), tokio_postgres::Error> {
+    pub async fn rollback(self) -> Result<(), tokio_postgres::Error> {
         self.transaction.rollback().await
     }
 }

@@ -1,16 +1,14 @@
 use super::Channel;
-use crate::api::{self, Error, IdQuery};
+use crate::api::{self, parse_query, IdQuery};
 use crate::database;
 use hyper::{Body, Request};
 
 async fn query(req: Request<Body>) -> api::Result {
-    let query = IdQuery::from_request(&req)?;
-    if let IdQuery { id: Some(id), .. } = query {
-        let mut db = database::get().await;
-        let channel = Channel::get_by_id(&mut *db, &id).await?;
-        return api::Return::new(&channel).build();
-    }
-    Err(Error::bad_request())
+    let query: IdQuery = parse_query(req.uri())?;
+
+    let mut db = database::get().await;
+    let channel = Channel::get_by_id(&mut *db, &query.id).await?;
+    return api::Return::new(&channel).build();
 }
 
 async fn create(req: Request<Body>) -> api::Result {

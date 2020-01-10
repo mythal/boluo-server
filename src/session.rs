@@ -39,11 +39,7 @@ fn test_session_sign() {
 }
 
 fn make_key(session: &Uuid) -> Vec<u8> {
-    let mut key: Vec<u8> = Vec::with_capacity(64);
-    key.extend_from_slice(b"session:");
-    key.extend_from_slice(session.as_bytes());
-    key.extend_from_slice(b":user_id");
-    key
+    redis::make_key(b"sessions", session, b"user_id")
 }
 
 pub async fn start(user_id: &Uuid) -> Option<Uuid> {
