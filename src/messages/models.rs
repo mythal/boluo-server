@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
-use crate::channels::ChannelMember;
-use crate::database::{query, CreationError, DbError, FetchError, Querist};
+use crate::database::{CreationError, DbError, FetchError, Querist};
 use crate::spaces::SpaceMember;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -42,11 +41,15 @@ pub struct Message {
 
 impl Message {
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, FetchError> {
-        db.fetch(query::FETCH_MESSAGE.key, &[id]).await.map(|row| row.get(0))
+        db.fetch(include_str!("fetch_message.sql"), &[], &[id])
+            .await
+            .map(|row| row.get(0))
     }
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Vec<Message>, DbError> {
-        let rows = db.query(query::SELECT_MESSAGES.key, &[channel_id]).await?;
+        let rows = db
+            .query(include_str!("select_messages.sql"), &[], &[channel_id])
+            .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -62,7 +65,8 @@ impl Message {
         is_action: bool,
     ) -> Result<Message, CreationError> {
         db.create(
-            query::CREATE_MESSAGE.key,
+            include_str!("create_message.sql"),
+            &[],
             &[
                 &message_id,
                 sender_id,
@@ -86,17 +90,23 @@ impl Message {
         in_game: Option<bool>,
         is_action: Option<bool>,
     ) -> Result<Message, FetchError> {
-        db.fetch(query::EDIT_MESSAGE.key, &[id, &text, &entities, &in_game, &is_action])
+        db.fetch(
+            include_str!("edit_message.sql"),
+            &[],
+            &[id, &text, &entities, &in_game, &is_action],
+        )
+        .await
+        .map(|row| row.get(0))
+    }
+
+    pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, FetchError> {
+        db.fetch(include_str!("remove_message.sql"), &[], &[id])
             .await
             .map(|row| row.get(0))
     }
 
-    pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, FetchError> {
-        db.fetch(query::REMOVE_MESSAGE.key, &[id]).await.map(|row| row.get(0))
-    }
-
     pub async fn get_member<T: Querist>(db: &mut T, id: &Uuid) -> Result<(Message, Option<SpaceMember>), FetchError> {
-        db.fetch(query::GET_MESSAGE_AND_SPACE_MEMBER.key, &[id])
+        db.fetch(include_str!("get_message_and_space_member.sql"), &[], &[id])
             .await
             .map(|row| (row.get(0), row.get(1)))
     }

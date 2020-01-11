@@ -3,7 +3,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::database::{query, CreationError, DbError, FetchError, Querist};
+use crate::database::{CreationError, DbError, FetchError, Querist};
 use crate::redis;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -30,24 +30,32 @@ impl Space {
         owner_id: &Uuid,
         password: Option<&str>,
     ) -> Result<Space, CreationError> {
-        db.create(query::CREATE_SPACE.key, &[&name, owner_id, &password])
+        db.create(include_str!("create_space.sql"), &[], &[&name, owner_id, &password])
             .await
             .map(|row| row.get(0))
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<Space, FetchError> {
-        db.fetch(query::DELETE_SPACE.key, &[id]).await.map(|row| row.get(0))
-    }
-
-    async fn get<T: Querist>(db: &mut T, id: Option<&Uuid>, name: Option<&str>) -> Result<Space, FetchError> {
-        let join_owner = false;
-        db.fetch(query::FETCH_SPACE.key, &[&id, &name, &join_owner])
+        use postgres_types::Type;
+        db.fetch(include_str!("delete_space.sql"), &[Type::UUID], &[id])
             .await
             .map(|row| row.get(0))
     }
 
+    async fn get<T: Querist>(db: &mut T, id: Option<&Uuid>, name: Option<&str>) -> Result<Space, FetchError> {
+        use postgres_types::Type;
+        let join_owner = false;
+        db.fetch(
+            include_str!("fetch_space.sql"),
+            &[Type::UUID, Type::TEXT, Type::BOOL],
+            &[&id, &name, &join_owner],
+        )
+        .await
+        .map(|row| row.get(0))
+    }
+
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<Space>, DbError> {
-        let rows = db.query(query::SELECT_SPACES.key, &[]).await?;
+        let rows = db.query(include_str!("select_spaces.sql"), &[], &[]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -85,12 +93,16 @@ impl Space {
     }
 
     pub async fn members<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMember>, DbError> {
-        let rows = db.query(query::SELECT_SPACE_MEMBERS.key, &[space_id]).await?;
+        let rows = db
+            .query(include_str!("select_space_members.sql"), &[], &[space_id])
+            .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
     pub async fn channels<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<crate::channels::Channel>, DbError> {
-        let rows = db.query(query::SELECT_SPACES_CHANNELS.key, &[space_id]).await?;
+        let rows = db
+            .query(include_str!("select_space_channels.sql"), &[], &[space_id])
+            .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 }
@@ -132,9 +144,13 @@ impl SpaceMember {
         is_admin: Option<bool>,
         is_master: Option<bool>,
     ) -> Result<SpaceMember, FetchError> {
-        db.fetch(query::SET_SPACE_MEMBER.key, &[&is_admin, &is_master, user_id, space_id])
-            .await
-            .map(|row| row.get(0))
+        db.fetch(
+            include_str!("set_space_member.sql"),
+            &[],
+            &[&is_admin, &is_master, user_id, space_id],
+        )
+        .await
+        .map(|row| row.get(0))
     }
 
     pub async fn remove_user<T: Querist>(
@@ -142,7 +158,7 @@ impl SpaceMember {
         user_id: &Uuid,
         space_id: &Uuid,
     ) -> Result<SpaceMember, FetchError> {
-        db.fetch(query::REMOVE_USER_FROM_SPACE.key, &[user_id, space_id])
+        db.fetch(include_str!("remove_user_from_space.sql"), &[], &[user_id, space_id])
             .await
             .map(|row| row.get(0))
     }
@@ -153,7 +169,7 @@ impl SpaceMember {
         space_id: &Uuid,
     ) -> Result<SpaceMember, CreationError> {
         let row = db
-            .create(query::ADD_USER_TO_SPACE.key, &[user_id, space_id, &true])
+            .create(include_str!("add_user_to_space.sql"), &[], &[user_id, space_id, &true])
             .await?;
         Ok(row.get(1))
     }
@@ -164,13 +180,13 @@ impl SpaceMember {
         space_id: &Uuid,
     ) -> Result<SpaceMember, CreationError> {
         let row = db
-            .create(query::ADD_USER_TO_SPACE.key, &[user_id, space_id, &false])
+            .create(include_str!("add_user_to_space.sql"), &[], &[user_id, space_id, &false])
             .await?;
         Ok(row.get(1))
     }
 
     pub async fn get<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Option<SpaceMember> {
-        db.fetch(query::FETCH_SPACE_MEMBER.key, &[user_id, space_id])
+        db.fetch(include_str!("fetch_space_member.sql"), &[], &[user_id, space_id])
             .await
             .map(|row| row.get(0))
             .ok()

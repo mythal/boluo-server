@@ -1,9 +1,8 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
-use crate::channels::{Channel, ChannelMember};
+use crate::channels::ChannelMember;
 use crate::csrf::authenticate;
 use crate::database::Querist;
-use crate::spaces::{Space, SpaceMember};
 use crate::{api, database};
 use hyper::{Body, Request};
 use uuid::Uuid;

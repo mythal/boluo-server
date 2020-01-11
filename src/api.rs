@@ -103,7 +103,7 @@ impl From<FetchError> for Error {
 impl From<DbError> for Error {
     fn from(e: DbError) -> Error {
         log::warn!("a unexpected database error: {}", e);
-        crate::api::Error::internal()
+        Error::internal()
     }
 }
 

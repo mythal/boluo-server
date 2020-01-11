@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::{From, Into};
 use std::env;
 use std::hash::BuildHasher;
 
@@ -8,40 +9,58 @@ pub use tokio_postgres::types::{ToSql, Type as SqlType};
 use async_trait::async_trait;
 
 pub mod pool;
-pub mod query;
 
 pub use pool::get;
+use tokio_postgres::Statement;
+
+// workaround: https://github.com/dtolnay/async-trait/issues/48
+#[derive(Eq, PartialEq, Hash, Copy, Clone)]
+pub struct Sql(&'static str);
+
+impl From<&'static str> for Sql {
+    fn from(s: &'static str) -> Sql {
+        Sql(s)
+    }
+}
 
 pub type DbError = tokio_postgres::Error;
 
 #[async_trait]
 pub trait Querist: Send {
-    async fn query(
+    async fn query<T: Into<Sql> + Send>(
         &mut self,
-        key: query::Key,
+        source: T,
+        types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<tokio_postgres::Row>, DbError>;
 
-    async fn execute(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<u64, DbError>;
-
-    async fn fetch(
+    async fn execute<T: Into<Sql> + Send>(
         &mut self,
-        key: query::Key,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, DbError>;
+
+    async fn fetch<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<tokio_postgres::Row, FetchError> {
-        self.query(key, params)
+        self.query(source, types, params)
             .await?
             .into_iter()
             .next()
             .ok_or(FetchError::NoSuchRecord)
     }
 
-    async fn create(
+    async fn create<T: Into<Sql> + Send>(
         &mut self,
-        key: query::Key,
+        source: T,
+        types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<tokio_postgres::Row, CreationError> {
-        self.query(key, params)
+        self.query(source, types, params)
             .await?
             .into_iter()
             .next()
@@ -84,7 +103,7 @@ impl BuildHasher for CrcBuilder {
     }
 }
 
-pub type PrepareMap = HashMap<query::Key, tokio_postgres::Statement, CrcBuilder>;
+pub type PrepareMap = HashMap<Sql, tokio_postgres::Statement, CrcBuilder>;
 
 pub struct Client {
     pub client: tokio_postgres::Client,
@@ -105,20 +124,10 @@ impl Client {
         self.broken = true;
         log::warn!("A postgres connection was broken.");
     }
-
-    async fn prepare(client: &mut tokio_postgres::Client) -> PrepareMap {
-        let mut map = HashMap::with_capacity_and_hasher(20, CrcBuilder);
-        for query in query::ALL_QUERY.iter() {
-            let statement = client.prepare_typed(query.source, query.types).await.unwrap();
-            map.insert(query.key, statement);
-        }
-        map
-    }
-
     pub async fn with_config(config: &tokio_postgres::Config) -> Client {
-        let (mut client, connection) = config.connect(tokio_postgres::NoTls).await.unwrap();
+        let (client, connection) = config.connect(tokio_postgres::NoTls).await.unwrap();
         tokio::spawn(connection);
-        let prepared = Client::prepare(&mut client).await;
+        let prepared = HashMap::with_capacity_and_hasher(64, CrcBuilder);
         let broken = false;
         Client {
             client,
@@ -132,29 +141,55 @@ impl Client {
             self.mark_broken()
         }
         let transaction = self.client.transaction().await?;
-        let prepared = &self.prepared;
+        let prepared = &mut self.prepared;
         Ok(Transaction { transaction, prepared })
+    }
+
+    async fn get_statement(&mut self, source: Sql, types: &[postgres_types::Type]) -> Result<Statement, DbError> {
+        if let Some(statement) = self.prepared.get(&source) {
+            Ok(statement.clone())
+        } else {
+            let prepared = self.client.prepare_typed(source.0, types).await;
+            match prepared {
+                Ok(statement) => {
+                    self.prepared.insert(source, statement.clone());
+                    Ok(statement)
+                }
+                Err(e) => {
+                    if self.client.is_closed() {
+                        self.mark_broken();
+                    }
+                    return Err(e);
+                }
+            }
+        }
     }
 }
 
 #[async_trait]
 impl Querist for Client {
-    async fn query(
+    async fn query<T: Into<Sql> + Send>(
         &mut self,
-        key: query::Key,
+        source: T,
+        types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<tokio_postgres::Row>, DbError> {
-        let statement = self.prepared.get(&key).expect("Query not found");
-        let result = self.client.query(statement, params).await;
+        let statement = self.get_statement(source.into(), types).await?;
+        let result = self.client.query(&statement, params).await;
         if result.is_err() && self.client.is_closed() {
-            self.mark_broken();
+            self.mark_broken()
         }
         result
     }
 
-    async fn execute(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<u64, DbError> {
-        let statement = self.prepared.get(&key).expect("Query not found");
-        let result = self.client.execute(statement, params).await;
+    async fn execute<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, DbError> {
+        let statement = self.get_statement(source.into(), types).await?;
+        let result = self.client.execute(&statement, params).await;
         if result.is_err() && self.client.is_closed() {
             self.mark_broken();
         }
@@ -164,7 +199,7 @@ impl Querist for Client {
 
 pub struct Transaction<'a> {
     pub transaction: tokio_postgres::Transaction<'a>,
-    prepared: &'a PrepareMap,
+    prepared: &'a mut PrepareMap,
 }
 
 impl<'a> Transaction<'a> {
@@ -175,21 +210,37 @@ impl<'a> Transaction<'a> {
     pub async fn rollback(self) -> Result<(), DbError> {
         self.transaction.rollback().await
     }
+
+    async fn get_statement(&mut self, source: Sql, types: &[postgres_types::Type]) -> Result<Statement, DbError> {
+        let mut statement = self.prepared.get(&source);
+        if statement.is_none() {
+            let prepared = self.transaction.prepare_typed(source.0, types).await?;
+            self.prepared.insert(source, prepared);
+            statement = self.prepared.get(&source);
+        }
+        Ok(statement.unwrap().clone())
+    }
 }
 
 #[async_trait]
 impl Querist for Transaction<'_> {
-    async fn query(
+    async fn query<T: Into<Sql> + Send>(
         &mut self,
-        key: query::Key,
+        source: T,
+        types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<tokio_postgres::Row>, DbError> {
-        let statement = self.prepared.get(&key).expect("Query not found");
-        self.transaction.query(statement, params).await
+        let statement = self.get_statement(source.into(), types).await?;
+        self.transaction.query(&statement, params).await
     }
 
-    async fn execute(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<u64, DbError> {
-        let statement = self.prepared.get(&key).expect("Query not found");
-        self.transaction.execute(statement, params).await
+    async fn execute<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, DbError> {
+        let statement = self.get_statement(source.into(), types).await?;
+        self.transaction.execute(&statement, params).await
     }
 }

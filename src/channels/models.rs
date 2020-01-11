@@ -3,7 +3,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::database::{query, CreationError, DbError, FetchError, Querist};
+use crate::database::{CreationError, DbError, FetchError, Querist};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -25,17 +25,22 @@ impl Channel {
         name: &str,
         is_public: bool,
     ) -> Result<Channel, CreationError> {
-        db.create(query::CREATE_CHANNEL.key, &[space_id, &name, &is_public])
+        db.create(include_str!("create_channel.sql"), &[], &[space_id, &name, &is_public])
             .await
             .map(|row| row.get(0))
     }
 
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Channel, FetchError> {
-        db.fetch(query::FETCH_CHANNEL.key, &[&id]).await.map(|row| row.get(0))
+        use postgres_types::Type;
+        db.fetch(include_str!("fetch_channel.sql"), &[Type::UUID], &[&id])
+            .await
+            .map(|row| row.get(0))
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<Channel, FetchError> {
-        db.fetch(query::DELETE_CHANNEL.key, &[id]).await.map(|row| row.get(0))
+        db.fetch(include_str!("delete_channel.sql"), &[], &[id])
+            .await
+            .map(|row| row.get(0))
     }
 }
 
@@ -55,18 +60,24 @@ impl ChannelMember {
         user_id: &Uuid,
         channel_id: &Uuid,
     ) -> Result<ChannelMember, CreationError> {
-        db.create(query::ADD_USER_TO_CHANNEL.key, &[user_id, channel_id, &""])
-            .await
-            .map(|row| row.get(1))
+        db.create(
+            include_str!("add_user_to_channel.sql"),
+            &[],
+            &[user_id, channel_id, &""],
+        )
+        .await
+        .map(|row| row.get(1))
     }
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<ChannelMember>, DbError> {
-        let rows = db.query(query::SELECT_CHANNEL_MEMBERS.key, &[channel]).await?;
+        let rows = db
+            .query(include_str!("select_channel_members.sql"), &[], &[channel])
+            .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
     pub async fn get<T: Querist>(db: &mut T, user: &Uuid, channel: &Uuid) -> Option<ChannelMember> {
-        db.fetch(query::FETCH_CHANNEL_MEMBER.key, &[user, channel])
+        db.fetch(include_str!("fetch_channel_member.sql"), &[], &[user, channel])
             .await
             .map(|row| row.get(0))
             .ok()
@@ -77,9 +88,13 @@ impl ChannelMember {
         user_id: &Uuid,
         channel_id: &Uuid,
     ) -> Result<ChannelMember, FetchError> {
-        db.fetch(query::REMOVE_USER_FROM_CHANNEL.key, &[user_id, channel_id])
-            .await
-            .map(|row| row.get(0))
+        db.fetch(
+            include_str!("remove_user_from_channel.sql"),
+            &[],
+            &[user_id, channel_id],
+        )
+        .await
+        .map(|row| row.get(0))
     }
 
     pub async fn set<T: Querist>(
@@ -88,14 +103,22 @@ impl ChannelMember {
         channel_id: &Uuid,
         character_name: &str,
     ) -> Result<ChannelMember, FetchError> {
-        db.fetch(query::SET_CHANNEL_MEMBER.key, &[user_id, channel_id, &character_name])
-            .await
-            .map(|row| row.get(0))
+        db.fetch(
+            include_str!("set_channel_member.sql"),
+            &[],
+            &[user_id, channel_id, &character_name],
+        )
+        .await
+        .map(|row| row.get(0))
     }
 
     pub async fn remove_by_space<T: Querist>(db: &mut T, user: &Uuid, space: &Uuid) -> Result<(), DbError> {
-        db.execute(query::REMOVE_USER_FROM_ALL_CHANNEL_OF_THE_SPACE.key, &[user, space])
-            .await?;
+        db.execute(
+            include_str!("remove_user_from_all_channel_of_the_space.sql"),
+            &[],
+            &[user, space],
+        )
+        .await?;
         Ok(())
     }
 }

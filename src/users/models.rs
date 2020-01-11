@@ -2,7 +2,7 @@ use postgres_types::FromSql;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::database::{query, CreationError, DbError, FetchError, Querist};
+use crate::database::{CreationError, DbError, FetchError, Querist};
 
 #[derive(Debug, Serialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +23,7 @@ pub struct User {
 
 impl User {
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<User>, DbError> {
-        let rows = db.query(query::SELECT_USERS.key, &[]).await?;
+        let rows = db.query(include_str!("select_users.sql"), &[], &[]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -47,9 +47,13 @@ impl User {
         USERNAME.run(&username).map_err(e)?;
         PASSWORD.run(&password).map_err(e)?;
 
-        db.create(query::CREATE_USER.key, &[&email, &username, &nickname, &password])
-            .await
-            .map(|row| row.get(0))
+        db.create(
+            include_str!("create_user.sql"),
+            &[],
+            &[&email, &username, &nickname, &password],
+        )
+        .await
+        .map(|row| row.get(0))
     }
 
     async fn get<T: Querist>(
@@ -58,10 +62,16 @@ impl User {
         email: Option<&str>,
         username: Option<&str>,
     ) -> Result<User, FetchError> {
+        use postgres_types::Type;
+
         let email = email.map(|s| s.to_ascii_lowercase());
-        db.fetch(query::FETCH_USER.key, &[&id, &email, &username])
-            .await
-            .map(|row| row.get(0))
+        db.fetch(
+            include_str!("fetch_user.sql"),
+            &[Type::UUID, Type::TEXT, Type::TEXT],
+            &[&id, &email, &username],
+        )
+        .await
+        .map(|row| row.get(0))
     }
 
     pub async fn login<T: Querist>(
@@ -70,8 +80,16 @@ impl User {
         username: Option<&str>,
         password: &str,
     ) -> Result<User, FetchError> {
+        use postgres_types::Type;
+
         let email = email.map(|s| s.to_ascii_lowercase());
-        let row = db.fetch(query::LOGIN.key, &[&email, &username, &password]).await?;
+        let row = db
+            .fetch(
+                include_str!("login.sql"),
+                &[Type::TEXT, Type::TEXT, Type::TEXT],
+                &[&email, &username, &password],
+            )
+            .await?;
         let password_matched = row.get(0);
         if password_matched {
             Ok(row.get(1))
@@ -93,7 +111,9 @@ impl User {
     }
 
     pub async fn delete_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<User, FetchError> {
-        db.fetch(query::DELETE_USER.key, &[id]).await.map(|row| row.get(0))
+        db.fetch(include_str!("delete_user.sql"), &[], &[id])
+            .await
+            .map(|row| row.get(0))
     }
 }
 
