@@ -3,7 +3,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::database::{query, CreationError, FetchError, Querist};
+use crate::database::{query, CreationError, DbError, FetchError, Querist};
 use crate::redis;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -46,7 +46,7 @@ impl Space {
             .map(|row| row.get(0))
     }
 
-    pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<Space>, tokio_postgres::Error> {
+    pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<Space>, DbError> {
         let rows = db.query(query::SELECT_SPACES.key, &[]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
@@ -84,15 +84,12 @@ impl Space {
         }
     }
 
-    pub async fn members<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMember>, tokio_postgres::Error> {
+    pub async fn members<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMember>, DbError> {
         let rows = db.query(query::SELECT_SPACE_MEMBERS.key, &[space_id]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
-    pub async fn channels<T: Querist>(
-        db: &mut T,
-        space_id: &Uuid,
-    ) -> Result<Vec<crate::channels::Channel>, tokio_postgres::Error> {
+    pub async fn channels<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<crate::channels::Channel>, DbError> {
         let rows = db.query(query::SELECT_SPACES_CHANNELS.key, &[space_id]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }

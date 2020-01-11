@@ -3,7 +3,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::database::{query, CreationError, FetchError, Querist};
+use crate::database::{query, CreationError, DbError, FetchError, Querist};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -60,10 +60,7 @@ impl ChannelMember {
             .map(|row| row.get(1))
     }
 
-    pub async fn get_by_channel<T: Querist>(
-        db: &mut T,
-        channel: &Uuid,
-    ) -> Result<Vec<ChannelMember>, tokio_postgres::Error> {
+    pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<ChannelMember>, DbError> {
         let rows = db.query(query::SELECT_CHANNEL_MEMBERS.key, &[channel]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
@@ -94,6 +91,12 @@ impl ChannelMember {
         db.fetch(query::SET_CHANNEL_MEMBER.key, &[user_id, channel_id, &character_name])
             .await
             .map(|row| row.get(0))
+    }
+
+    pub async fn remove_by_space<T: Querist>(db: &mut T, user: &Uuid, space: &Uuid) -> Result<(), DbError> {
+        db.execute(query::REMOVE_USER_FROM_ALL_CHANNEL_OF_THE_SPACE.key, &[user, space])
+            .await?;
+        Ok(())
     }
 }
 

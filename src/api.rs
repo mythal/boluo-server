@@ -10,7 +10,7 @@ use serde::export::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::context::debug;
-use crate::database::{CreationError, FetchError};
+use crate::database::{CreationError, DbError, FetchError};
 use crate::session::Unauthenticated;
 
 pub type Request = hyper::Request<hyper::Body>;
@@ -100,8 +100,8 @@ impl From<FetchError> for Error {
     }
 }
 
-impl From<tokio_postgres::Error> for Error {
-    fn from(e: tokio_postgres::Error) -> Error {
+impl From<DbError> for Error {
+    fn from(e: DbError) -> Error {
         log::warn!("a unexpected database error: {}", e);
         crate::api::Error::internal()
     }

@@ -1,6 +1,7 @@
 use super::api::{Create, SpaceWithRelated};
 use super::{Space, SpaceMember};
 use crate::api::{self, parse_query, IdQuery};
+use crate::channels::ChannelMember;
 use crate::csrf::authenticate;
 use crate::database::{self, Querist};
 use hyper::{Body, Request};
@@ -100,10 +101,13 @@ async fn leave(req: Request<Body>) -> api::Result {
     let session = authenticate(&req).await?;
     let query: IdQuery = parse_query(req.uri())?;
 
-    let mut db = database::get().await;
-    let db = &mut *db;
+    let mut conn = database::get().await;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
 
     SpaceMember::remove_user(db, &session.user_id, &query.id).await?;
+    ChannelMember::remove_by_space(db, &session.user_id, &query.id).await?;
+    trans.commit().await?;
     api::Return::new(&true).build()
 }
 

@@ -12,13 +12,17 @@ pub mod query;
 
 pub use pool::get;
 
+pub type DbError = tokio_postgres::Error;
+
 #[async_trait]
 pub trait Querist: Send {
     async fn query(
         &mut self,
         key: query::Key,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error>;
+    ) -> Result<Vec<tokio_postgres::Row>, DbError>;
+
+    async fn execute(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<u64, DbError>;
 
     async fn fetch(
         &mut self,
@@ -48,7 +52,7 @@ pub trait Querist: Send {
 #[derive(Error, Debug)]
 pub enum FetchError {
     #[error("unknown query error")]
-    QueryFail(#[from] tokio_postgres::Error),
+    QueryFail(#[from] DbError),
     #[error("no such record")]
     NoSuchRecord,
     #[error("no permission to access record")]
@@ -58,7 +62,7 @@ pub enum FetchError {
 #[derive(Error, Debug)]
 pub enum CreationError {
     #[error("unknown query error")]
-    QueryFail(#[from] tokio_postgres::Error),
+    QueryFail(#[from] DbError),
     #[error("record already exists")]
     EmptyResult,
     #[error("validation failed: {0}")]
@@ -123,7 +127,7 @@ impl Client {
         }
     }
 
-    pub async fn transaction(&'_ mut self) -> Result<Transaction<'_>, tokio_postgres::Error> {
+    pub async fn transaction(&'_ mut self) -> Result<Transaction<'_>, DbError> {
         if self.client.is_closed() {
             self.mark_broken()
         }
@@ -139,9 +143,18 @@ impl Querist for Client {
         &mut self,
         key: query::Key,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
+    ) -> Result<Vec<tokio_postgres::Row>, DbError> {
         let statement = self.prepared.get(&key).expect("Query not found");
         let result = self.client.query(statement, params).await;
+        if result.is_err() && self.client.is_closed() {
+            self.mark_broken();
+        }
+        result
+    }
+
+    async fn execute(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<u64, DbError> {
+        let statement = self.prepared.get(&key).expect("Query not found");
+        let result = self.client.execute(statement, params).await;
         if result.is_err() && self.client.is_closed() {
             self.mark_broken();
         }
@@ -155,11 +168,11 @@ pub struct Transaction<'a> {
 }
 
 impl<'a> Transaction<'a> {
-    pub async fn commit(self) -> Result<(), tokio_postgres::Error> {
+    pub async fn commit(self) -> Result<(), DbError> {
         self.transaction.commit().await
     }
 
-    pub async fn rollback(self) -> Result<(), tokio_postgres::Error> {
+    pub async fn rollback(self) -> Result<(), DbError> {
         self.transaction.rollback().await
     }
 }
@@ -170,19 +183,13 @@ impl Querist for Transaction<'_> {
         &mut self,
         key: query::Key,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
+    ) -> Result<Vec<tokio_postgres::Row>, DbError> {
         let statement = self.prepared.get(&key).expect("Query not found");
         self.transaction.query(statement, params).await
     }
-}
 
-#[async_trait]
-impl Querist for crate::pool::Connect<crate::database::pool::PostgresFactory> {
-    async fn query(
-        &mut self,
-        key: query::Key,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<tokio_postgres::Row>, tokio_postgres::Error> {
-        Client::query(&mut *self, key, params).await
+    async fn execute(&mut self, key: query::Key, params: &[&(dyn ToSql + Sync)]) -> Result<u64, DbError> {
+        let statement = self.prepared.get(&key).expect("Query not found");
+        self.transaction.execute(statement, params).await
     }
 }

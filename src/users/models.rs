@@ -2,7 +2,7 @@ use postgres_types::FromSql;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::database::{query, CreationError, FetchError, Querist};
+use crate::database::{query, CreationError, DbError, FetchError, Querist};
 
 #[derive(Debug, Serialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -22,7 +22,7 @@ pub struct User {
 }
 
 impl User {
-    pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<User>, tokio_postgres::Error> {
+    pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<User>, DbError> {
         let rows = db.query(query::SELECT_USERS.key, &[]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
