@@ -6,7 +6,7 @@ use crate::channels::api::EventQueue;
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
-use crate::messages::Message;
+use crate::messages::{user_id_and_whether_master, Message};
 use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use hyper::{Body, Request};
@@ -62,13 +62,20 @@ async fn members(req: Request<Body>) -> api::Result {
 }
 
 async fn messages(req: Request<Body>) -> api::Result {
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
 
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let channel = Channel::get_by_id(db, &query.id).await?;
-    let messages = Message::get_by_channel(db, &channel.id).await?;
+    let (user_id, is_master) = user_id_and_whether_master(db, &req, &id).await;
+
+    let channel = Channel::get_by_id(db, &id).await?;
+    let mut messages = Message::get_by_channel(db, &channel.id).await?;
+    if !is_master {
+        for message in messages.iter_mut() {
+            message.mask(user_id.as_ref());
+        }
+    }
     api::Return::new(&messages).build()
 }
 

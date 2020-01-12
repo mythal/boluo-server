@@ -81,12 +81,24 @@ impl ChannelMember {
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
+    pub async fn is_master<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<bool, DbError> {
+        let is_master = db
+            .query(include_str!("sql/is_master.sql"), &[user_id, channel_id])
+            .await?
+            .into_iter()
+            .next()
+            .map(|row| row.get(0))
+            .unwrap_or(false);
+        Ok(is_master)
+    }
+
     pub async fn get_with_space_member<T: Querist>(
         db: &mut T,
-        channel: &Uuid,
+        user_id: &Uuid,
+        channel_id: &Uuid,
     ) -> Result<Option<(ChannelMember, SpaceMember)>, DbError> {
         let mut rows = db
-            .query(include_str!("sql/get_with_space_member.sql"), &[channel])
+            .query(include_str!("sql/get_with_space_member.sql"), &[user_id, channel_id])
             .await?;
         Ok(rows.pop().map(|row| (row.get(0), row.get(1))))
     }
@@ -180,7 +192,9 @@ async fn channels_test() {
     let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true).await.unwrap();
     ChannelMember::add_user(db, &user.id, &channel_2.id).await.unwrap();
     ChannelMember::remove_by_space(db, &user.id, &space.id).await.unwrap();
-    ChannelMember::get_with_space_member(db, &channel.id).await.unwrap();
+    ChannelMember::get_with_space_member(db, &user.id, &channel.id)
+        .await
+        .unwrap();
     assert!(ChannelMember::get(db, &user.id, &channel.id).await.is_none());
     assert!(ChannelMember::get(db, &user.id, &channel_2.id).await.is_none());
 

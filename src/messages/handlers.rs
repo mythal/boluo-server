@@ -9,6 +9,24 @@ use crate::{api, database};
 use hyper::{Body, Request};
 use uuid::Uuid;
 
+pub async fn user_id_and_whether_master<T: Querist>(
+    db: &mut T,
+    req: &Request<Body>,
+    channel_id: &Uuid,
+) -> (Option<Uuid>, bool) {
+    let mut is_master = false;
+    let session = authenticate(req).await;
+    let user_id = if let Ok(session) = session {
+        is_master = ChannelMember::is_master(db, &session.user_id, &channel_id)
+            .await
+            .unwrap_or(false);
+        Some(session.user_id)
+    } else {
+        None
+    };
+    (user_id, is_master)
+}
+
 async fn channel_member<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<ChannelMember, AppError> {
     let channel_member = ChannelMember::get(db, &user_id, &channel_id)
         .await
@@ -80,7 +98,11 @@ async fn query(req: Request<Body>) -> api::Result {
     let api::IdQuery { id } = api::parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let message = Message::get(db, &id).await?;
+    let mut message = Message::get(db, &id).await?;
+    let (user_id, is_master) = user_id_and_whether_master(db, &req, &message.channel_id).await;
+    if !is_master {
+        message.mask(user_id.as_ref());
+    }
     api::Return::new(&message).build()
 }
 
@@ -114,7 +136,7 @@ async fn send_preview(req: Request<Body>) -> api::Result {
     let db = &mut *conn;
     let channel_id = preview.channel_id.clone();
 
-    ChannelMember::get_with_space_member(db, &channel_id)
+    ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
     fire(&channel_id, Event::message_preview(channel_id.clone(), preview));

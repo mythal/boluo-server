@@ -108,6 +108,21 @@ impl Message {
             .await
             .map(|row| (row.get(0), row.get(1)))
     }
+
+    pub fn mask(&mut self, user_id: Option<&Uuid>) {
+        if let Some(ref whisper_to) = self.whisper_to_users {
+            if let Some(user_id) = user_id {
+                if user_id == &self.sender_id {
+                    return;
+                } else if whisper_to.iter().find(|id| *id == user_id).is_some() {
+                    return;
+                }
+            }
+            self.text = String::new();
+            self.entities = serde_json::Value::Array(vec![]);
+            self.seed = vec![];
+        }
+    }
 }
 
 #[tokio::test]
