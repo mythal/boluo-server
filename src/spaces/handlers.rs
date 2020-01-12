@@ -151,16 +151,16 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/list/", Method::GET) => query(req).await,
-        ("/query/", Method::GET) => query(req).await,
-        ("/query_with_related/", Method::GET) => query(req).await,
-        ("/create/", Method::POST) => create(req).await,
-        ("/edit/", Method::POST) => edit(req).await,
-        ("/join/", Method::POST) => join(req).await,
-        ("/leave/", Method::POST) => leave(req).await,
-        ("/members/", Method::POST) => members(req).await,
-        ("/channels/", Method::POST) => channels(req).await,
-        ("/delete/", Method::DELETE) => delete(req).await,
-        _ => Err(AppError::NotFound),
+        ("/list", Method::GET) => query(req).await,
+        ("/query", Method::GET) => query(req).await,
+        ("/query_with_related", Method::GET) => query(req).await,
+        ("/create", Method::POST) => create(req).await,
+        ("/edit", Method::POST) => edit(req).await,
+        ("/join", Method::POST) => join(req).await,
+        ("/leave", Method::POST) => leave(req).await,
+        ("/members", Method::POST) => members(req).await,
+        ("/channels", Method::POST) => channels(req).await,
+        ("/delete", Method::DELETE) => delete(req).await,
+        _ => Err(AppError::missing()),
     }
 }

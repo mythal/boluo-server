@@ -95,10 +95,10 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/query/", Method::GET) => query(req).await,
-        ("/send/", Method::POST) => send(req).await,
-        ("/delete/", Method::DELETE) => delete(req).await,
-        ("/edit/", Method::POST) => edit(req).await,
-        _ => Err(AppError::NotFound),
+        ("/query", Method::GET) => query(req).await,
+        ("/send", Method::POST) => send(req).await,
+        ("/delete", Method::DELETE) => delete(req).await,
+        ("/edit", Method::POST) => edit(req).await,
+        _ => Err(AppError::missing()),
     }
 }

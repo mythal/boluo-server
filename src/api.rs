@@ -77,3 +77,19 @@ where
 pub struct IdQuery {
     pub id: uuid::Uuid,
 }
+
+#[test]
+fn test_get_uuid() {
+    use hyper::Uri;
+    use uuid::Uuid;
+
+    let uuid = Uuid::new_v4();
+    let path_and_query = format!("/?id={}", uuid.to_string());
+    let uri = Uri::builder().path_and_query(&*path_and_query).build().unwrap();
+    let query: IdQuery = parse_query(&uri).unwrap();
+    assert_eq!(query.id, uuid);
+
+    let uri = Uri::builder().path_and_query("/?id=&").build().unwrap();
+    let query = parse_query::<IdQuery>(&uri);
+    assert!(query.is_err());
+}

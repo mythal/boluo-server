@@ -88,23 +88,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
         ("/login", Method::POST) => login(req).await,
         ("/register", Method::POST) => register(req).await,
         ("/logout", _) => logout(req).await,
-        ("/", Method::GET) => query_user(req).await,
-        _ => Err(AppError::NotFound),
+        ("/query", Method::GET) => query_user(req).await,
+        _ => Err(AppError::missing()),
     }
-}
-
-#[test]
-fn test_get_uuid() {
-    use hyper::Uri;
-    use uuid::Uuid;
-
-    let uuid = Uuid::new_v4();
-    let path_and_query = format!("/?id={}", uuid.to_string());
-    let uri = Uri::builder().path_and_query(&*path_and_query).build().unwrap();
-    let query: IdQuery = api::parse_query(&uri).unwrap();
-    assert_eq!(query.id, uuid);
-
-    let uri = Uri::builder().path_and_query("/?id=&").build().unwrap();
-    let query = api::parse_query::<IdQuery>(&uri);
-    assert!(query.is_err());
 }
