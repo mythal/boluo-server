@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
-use crate::database::{CreationError, DbError, FetchError, Querist};
+use crate::database::Querist;
+use crate::error::{AppError, DbError};
 use crate::spaces::SpaceMember;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -40,7 +41,7 @@ pub struct Message {
 }
 
 impl Message {
-    pub async fn get<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, FetchError> {
+    pub async fn get<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, AppError> {
         db.fetch(include_str!("sql/get.sql"), &[id]).await.map(|row| row.get(0))
     }
 
@@ -59,22 +60,23 @@ impl Message {
         entities: &serde_json::Value,
         in_game: bool,
         is_action: bool,
-    ) -> Result<Message, CreationError> {
-        db.create(
-            include_str!("sql/create.sql"),
-            &[
-                &message_id,
-                sender_id,
-                channel_id,
-                &name,
-                &text,
-                entities,
-                &in_game,
-                &is_action,
-            ],
-        )
-        .await
-        .map(|row| row.get(0))
+    ) -> Result<Message, AppError> {
+        let mut rows = db
+            .query(
+                include_str!("sql/create.sql"),
+                &[
+                    &message_id,
+                    sender_id,
+                    channel_id,
+                    &name,
+                    &text,
+                    entities,
+                    &in_game,
+                    &is_action,
+                ],
+            )
+            .await?;
+        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
     }
 
     pub async fn edit<T: Querist>(
@@ -85,7 +87,7 @@ impl Message {
         entities: &Option<JsonValue>,
         in_game: Option<bool>,
         is_action: Option<bool>,
-    ) -> Result<Message, FetchError> {
+    ) -> Result<Message, AppError> {
         db.fetch(
             include_str!("sql/edit.sql"),
             &[id, &name, &text, &entities, &in_game, &is_action],
@@ -101,7 +103,7 @@ impl Message {
     pub async fn get_with_space_member<T: Querist>(
         db: &mut T,
         id: &Uuid,
-    ) -> Result<(Message, Option<SpaceMember>), FetchError> {
+    ) -> Result<(Message, Option<SpaceMember>), AppError> {
         db.fetch(include_str!("sql/get_with_space_member.sql"), &[id])
             .await
             .map(|row| (row.get(0), row.get(1)))

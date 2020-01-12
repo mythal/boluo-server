@@ -4,7 +4,6 @@ use once_cell::sync::OnceCell;
 
 static DEBUG: OnceCell<bool> = OnceCell::new();
 static SECRET: OnceCell<String> = OnceCell::new();
-static NOT_INIT: &str = "not initialized";
 
 fn env_bool<T: AsRef<str>>(s: T) -> bool {
     let s = s.as_ref().trim();

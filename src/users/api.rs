@@ -1,5 +1,6 @@
 use super::User;
-use crate::database::{CreationError, FetchError, Querist};
+use crate::database::Querist;
+use crate::AppError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -12,7 +13,7 @@ pub struct Register {
 }
 
 impl Register {
-    pub async fn register<T: Querist>(&self, db: &mut T) -> Result<User, CreationError> {
+    pub async fn register<T: Querist>(&self, db: &mut T) -> Result<User, AppError> {
         User::create(db, &*self.email, &*self.username, &*self.nickname, &*self.password).await
     }
 }
@@ -27,7 +28,7 @@ pub struct Login {
 }
 
 impl Login {
-    pub async fn login<T: Querist>(&self, db: &mut T) -> Result<User, FetchError> {
+    pub async fn login<T: Querist>(&self, db: &mut T) -> Result<User, AppError> {
         User::login(db, None, Some(&self.username), &*self.password).await
     }
 }

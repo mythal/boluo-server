@@ -3,7 +3,8 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::database::{CreationError, DbError, FetchError, Querist};
+use crate::database::Querist;
+use crate::error::{AppError, DbError};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -24,13 +25,14 @@ impl Channel {
         space_id: &Uuid,
         name: &str,
         is_public: bool,
-    ) -> Result<Channel, CreationError> {
-        db.create(include_str!("sql/create_channel.sql"), &[space_id, &name, &is_public])
-            .await
-            .map(|row| row.get(0))
+    ) -> Result<Channel, AppError> {
+        let mut rows = db
+            .query(include_str!("sql/create_channel.sql"), &[space_id, &name, &is_public])
+            .await?;
+        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
     }
 
-    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Channel, FetchError> {
+    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Channel, AppError> {
         db.fetch(include_str!("sql/fetch_channel.sql"), &[&id])
             .await
             .map(|row| row.get(0))
@@ -61,10 +63,14 @@ impl ChannelMember {
         db: &mut T,
         user_id: &Uuid,
         channel_id: &Uuid,
-    ) -> Result<ChannelMember, CreationError> {
-        db.create(include_str!("sql/add_user_to_channel.sql"), &[user_id, channel_id, &""])
-            .await
-            .map(|row| row.get(1))
+    ) -> Result<ChannelMember, AppError> {
+        let mut rows = db
+            .query(include_str!("sql/add_user_to_channel.sql"), &[user_id, channel_id, &""])
+            .await?;
+        Ok(rows
+            .pop()
+            .ok_or_else(unexpected!("the database returned empty result"))?
+            .get(1))
     }
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<ChannelMember>, DbError> {
@@ -85,7 +91,7 @@ impl ChannelMember {
         db: &mut T,
         user_id: &Uuid,
         channel_id: &Uuid,
-    ) -> Result<ChannelMember, FetchError> {
+    ) -> Result<ChannelMember, AppError> {
         db.fetch(include_str!("sql/remove_user_from_channel.sql"), &[user_id, channel_id])
             .await
             .map(|row| row.get(0))
@@ -96,7 +102,7 @@ impl ChannelMember {
         user_id: &Uuid,
         channel_id: &Uuid,
         character_name: &str,
-    ) -> Result<ChannelMember, FetchError> {
+    ) -> Result<ChannelMember, AppError> {
         db.fetch(
             include_str!("sql/set_member.sql"),
             &[user_id, channel_id, &character_name],

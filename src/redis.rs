@@ -1,18 +1,12 @@
+use crate::error::CacheError;
 use crate::pool::{Connect, Factory, Pool};
 use async_trait::async_trait;
 pub use redis::AsyncCommands;
-use thiserror::Error;
 use uuid::Uuid;
 
 pub struct Connection {
     inner: redis::aio::Connection,
     broken: bool,
-}
-
-#[derive(Error, Debug)]
-pub enum QueryError {
-    #[error("redis error")]
-    Redis(#[from] redis::RedisError),
 }
 
 impl Connection {
@@ -21,29 +15,29 @@ impl Connection {
         Connection { inner, broken }
     }
 
-    fn handle<T>(&mut self, result: Result<T, redis::RedisError>) -> Result<T, QueryError> {
+    fn check<T>(&mut self, result: Result<T, CacheError>) -> Result<T, CacheError> {
         if let Err(ref e) = result {
             if e.is_connection_dropped() || e.is_connection_refusal() || e.is_timeout() || e.is_io_error() {
                 self.broken = true;
             }
             log::error!("redis: {}", e);
         }
-        Ok(result?)
+        result
     }
 
-    pub async fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, QueryError> {
+    pub async fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, CacheError> {
         let result = self.inner.get(key).await;
-        self.handle(result)
+        self.check(result)
     }
 
-    pub async fn set(&mut self, key: &[u8], value: &[u8]) -> Result<(), QueryError> {
+    pub async fn set(&mut self, key: &[u8], value: &[u8]) -> Result<(), CacheError> {
         let result = self.inner.set(key, value).await;
-        self.handle(result)
+        self.check(result)
     }
 
-    pub async fn remove(&mut self, key: &[u8]) -> Result<(), QueryError> {
+    pub async fn remove(&mut self, key: &[u8]) -> Result<(), CacheError> {
         let result = self.inner.del(key).await;
-        self.handle(result)
+        self.check(result)
     }
 }
 

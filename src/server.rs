@@ -10,6 +10,8 @@ use hyper::{Body, Request, Response, Server};
 
 #[macro_use]
 mod utils;
+#[macro_use]
+mod error;
 mod api;
 mod channels;
 mod context;
@@ -17,7 +19,7 @@ mod cors;
 mod csrf;
 mod database;
 mod logger;
-mod media;
+//mod media;
 mod messages;
 mod pool;
 mod redis;
@@ -25,6 +27,8 @@ mod session;
 mod spaces;
 mod users;
 mod validators;
+
+use error::AppError;
 
 async fn router(req: Request<Body>) -> api::Result {
     let path = req.uri().path().to_string();
@@ -39,12 +43,26 @@ async fn router(req: Request<Body>) -> api::Result {
     if path == "/api/csrf-token" {
         return csrf::get_csrf_token(req).await;
     }
-    table!("/api/messages", messages::router);
+    //    table!("/api/messages", messages::router);
     table!("/api/users", users::router);
-    table!("/api/media", media::router);
-    table!("/api/channels", channels::router);
-    table!("/api/spaces", spaces::router);
-    Err(api::Error::not_found())
+    //    table!("/api/media", media::router);
+    //    table!("/api/channels", channels::router);
+    //    table!("/api/spaces", spaces::router);
+    Err(AppError::NotFound)
+}
+
+fn error_response(e: AppError) -> Response<Body> {
+    fn last_resort(e2: AppError) -> Response<Body> {
+        log::error!("An error occurred while processing the error: {}", e2);
+        Response::builder()
+            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("An error occurred while processing the error."))
+            .unwrap()
+    }
+
+    api::Return::<String>::form_error(&e)
+        .build()
+        .unwrap_or_else(last_resort)
 }
 
 async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
@@ -55,7 +73,7 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     if context::debug() && req.method() == hyper::Method::OPTIONS {
         return Ok(cors::preflight_requests(req));
     }
-    let mut response = router(req).await.unwrap_or_else(|e| e.build());
+    let mut response = router(req).await.unwrap_or_else(error_response);
     if debug() {
         response = cors::allow_origin(response);
     }

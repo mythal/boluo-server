@@ -3,7 +3,8 @@ use super::models::User;
 use crate::api::{parse_query, IdQuery};
 use crate::database;
 use crate::session::revoke_session;
-use crate::session::Unauthenticated::Unexpected;
+
+use crate::error::AppError;
 use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
 use once_cell::sync::OnceCell;
@@ -13,7 +14,7 @@ async fn register(req: Request<Body>) -> api::Result {
     let mut db = database::get().await;
     let user = form.register(&mut *db).await?;
     log::info!("{} ({}) was registered.", user.username, user.email);
-    api::Return::new(&user).status(StatusCode::CREATED).build()
+    api::Return::new(user).status(StatusCode::CREATED).build()
 }
 
 pub async fn query_user(req: Request<Body>) -> api::Result {
@@ -21,24 +22,23 @@ pub async fn query_user(req: Request<Body>) -> api::Result {
 
     let mut db = database::get().await;
     let user = User::get_by_id(&mut *db, &query.id).await?;
-    api::Return::new(&user).build()
+    api::Return::new(user).build()
 }
 
 pub async fn login(req: Request<Body>) -> api::Result {
     use crate::session;
     use cookie::{CookieBuilder, SameSite};
-    use database::FetchError::NoPermission;
     use hyper::header::{HeaderValue, SET_COOKIE};
 
     let form: Login = api::parse_body(req).await?;
     let mut db = database::get().await;
     let login = form.login(&mut *db).await;
-    if let Err(NoPermission) = login {
+    if let Err(AppError::NoPermission) = &login {
         log::warn!("Someone failed to try to login: {}", form.username);
     }
     let user = login?;
     let expires = time::now() + time::Duration::days(256);
-    let session = session::start(&user.id).await.ok_or(Unexpected)?;
+    let session = session::start(&user.id).await.map_err(unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)
@@ -89,7 +89,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
         ("/register", Method::POST) => register(req).await,
         ("/logout", _) => logout(req).await,
         ("/", Method::GET) => query_user(req).await,
-        _ => Err(api::Error::not_found()),
+        _ => Err(AppError::NotFound),
     }
 }
 

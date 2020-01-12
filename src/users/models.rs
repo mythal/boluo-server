@@ -2,7 +2,8 @@ use postgres_types::FromSql;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::database::{CreationError, DbError, FetchError, Querist};
+use crate::database::Querist;
+use crate::error::{AppError, DbError};
 
 #[derive(Debug, Serialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -33,26 +34,27 @@ impl User {
         username: &str,
         nickname: &str,
         password: &str,
-    ) -> Result<User, CreationError> {
+    ) -> Result<User, AppError> {
         use crate::validators::{EMAIL, NICKNAME, PASSWORD, USERNAME};
 
         let username = username.trim();
         let nickname = nickname.trim();
         let email = email.to_ascii_lowercase();
 
-        let e = |s: &str| CreationError::ValidationFail(s.to_string());
+        let e = |s: &str| AppError::ValidationFail(s.to_string());
 
         EMAIL.run(&email).map_err(e)?;
         NICKNAME.run(&nickname).map_err(e)?;
         USERNAME.run(&username).map_err(e)?;
         PASSWORD.run(&password).map_err(e)?;
 
-        db.create(
-            include_str!("sql/create.sql"),
-            &[&email, &username, &nickname, &password],
-        )
-        .await
-        .map(|row| row.get(0))
+        let mut rows = db
+            .query(
+                include_str!("sql/create.sql"),
+                &[&email, &username, &nickname, &password],
+            )
+            .await?;
+        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
     }
 
     async fn get<T: Querist>(
@@ -60,7 +62,7 @@ impl User {
         id: Option<&Uuid>,
         email: Option<&str>,
         username: Option<&str>,
-    ) -> Result<User, FetchError> {
+    ) -> Result<User, AppError> {
         use postgres_types::Type;
 
         let email = email.map(|s| s.to_ascii_lowercase());
@@ -78,7 +80,7 @@ impl User {
         email: Option<&str>,
         username: Option<&str>,
         password: &str,
-    ) -> Result<User, FetchError> {
+    ) -> Result<User, AppError> {
         use postgres_types::Type;
 
         let email = email.map(|s| s.to_ascii_lowercase());
@@ -93,19 +95,19 @@ impl User {
         if password_matched {
             Ok(row.get(1))
         } else {
-            Err(FetchError::NoPermission)
+            Err(AppError::NoPermission)
         }
     }
 
-    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<User, FetchError> {
+    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<User, AppError> {
         User::get(db, Some(id), None, None).await
     }
 
-    pub async fn get_by_email<T: Querist>(db: &mut T, email: &str) -> Result<User, FetchError> {
+    pub async fn get_by_email<T: Querist>(db: &mut T, email: &str) -> Result<User, AppError> {
         User::get(db, None, Some(email), None).await
     }
 
-    pub async fn get_by_username<T: Querist>(db: &mut T, username: &str) -> Result<User, FetchError> {
+    pub async fn get_by_username<T: Querist>(db: &mut T, username: &str) -> Result<User, AppError> {
         User::get(db, None, None, Some(username)).await
     }
 

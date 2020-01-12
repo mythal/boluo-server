@@ -4,10 +4,11 @@ use crate::api::{self, parse_query, IdQuery};
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::database::{self, Querist};
+use crate::error::AppError;
 use hyper::{Body, Request};
 use uuid::Uuid;
 
-pub async fn is_member<T: Querist>(db: &mut T, space: &Uuid, req: &Request<Body>) -> Result<SpaceMember, api::Error> {
+pub async fn is_member<T: Querist>(db: &mut T, space: &Uuid, req: &Request<Body>) -> Result<SpaceMember, AppError> {
     let session = authenticate(&req).await?;
     log::warn!(
         "The user {} failed to try access or modify a channel {}",
@@ -16,7 +17,7 @@ pub async fn is_member<T: Querist>(db: &mut T, space: &Uuid, req: &Request<Body>
     );
     SpaceMember::get(db, &session.user_id, space)
         .await
-        .ok_or_else(api::Error::unauthorized)
+        .ok_or(AppError::Unauthenticated)
 }
 
 async fn list(req: Request<Body>) -> api::Result {
@@ -88,7 +89,7 @@ async fn join(req: Request<Body>) -> api::Result {
 
     let space = Space::get_by_id(db, &id).await?;
     if !space.is_public {
-        return Err(api::Error::unauthorized());
+        return Err(AppError::Unauthenticated);
     }
     let user_id = &session.user_id;
     let member = SpaceMember::add_user(db, user_id, &id).await?;
@@ -143,7 +144,7 @@ async fn delete(req: Request<Body>) -> api::Result {
         return api::Return::new(&space).build();
     }
     log::warn!("The user {} failed to try delete a space {}", session.user_id, space.id);
-    Err(api::Error::unauthorized())
+    Err(AppError::Unauthenticated)
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> api::Result {
@@ -160,6 +161,6 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
         ("/members/", Method::POST) => members(req).await,
         ("/channels/", Method::POST) => channels(req).await,
         ("/delete/", Method::DELETE) => delete(req).await,
-        _ => Err(api::Error::not_found()),
+        _ => Err(AppError::NotFound),
     }
 }

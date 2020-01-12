@@ -1,5 +1,6 @@
 use crate::api;
-use crate::session::{self, Session, Unauthenticated};
+use crate::error::AppError::{self, BadRequest, Unauthenticated};
+use crate::session::{self, Session};
 use crate::utils::{now_unix_duration, sign, verify};
 use hyper::header::{HeaderName, AUTHORIZATION};
 use hyper::{Body, Request};
@@ -7,8 +8,7 @@ use uuid::Uuid;
 
 // csrf-token:[session key(base 64)].[timestamp].[signature]
 
-pub async fn authenticate(req: &Request<Body>) -> Result<Session, Unauthenticated> {
-    use crate::session::Unauthenticated::{AuthFailed, ParseFailed, Unexpected};
+pub async fn authenticate(req: &Request<Body>) -> Result<Session, AppError> {
     use hyper::Method;
     let session = session::authenticate(req).await?;
     let method = req.method();
@@ -19,12 +19,14 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, Unauthenticate
         .headers()
         .get(HeaderName::from_static("csrf-token"))
         .and_then(|header_value| header_value.to_str().ok())
-        .ok_or_else(|| {
-            log::debug!(r#"Unable to retrieve the "csrf-token" from the HTTP headers."#);
-            ParseFailed
-        })?;
+        .ok_or_else(|| BadRequest(format!("Not found CSRF token in the headers.")))?;
 
-    let (body, signature) = token.rfind('.').map(|pos| token.split_at(pos)).ok_or(Unexpected)?;
+    let (body, signature) = token
+        .rfind('.')
+        .map(|pos| token.split_at(pos))
+        .ok_or_else(|| BadRequest(format!("Malformed token.")))?;
+    // signature: .[...]
+    let signature = &signature[1..];
 
     let mut parts = body.split('.');
 
@@ -32,27 +34,27 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, Unauthenticate
         .next()
         .and_then(|s| base64::decode(s).ok()) // decode.
         .and_then(|bytes: Vec<u8>| Uuid::from_slice(&*bytes).ok()) // convert bytes to UUID.
-        .ok_or(ParseFailed)?;
+        .ok_or_else(|| BadRequest(format!("Failed to parse CSRF token.")))?;
 
-    verify(body, &signature[1..]).ok_or_else(|| {
-        log::warn!(
-            "Session {}: failed to verify the signature of the CSRF token",
-            session_id
-        );
-        AuthFailed
+    verify(body, &signature).ok_or_else(|| {
+        log::warn!("Session {}: Failed to verify the signature of CSRF token", session_id);
+        Unauthenticated
     })?;
 
     if session_id != session.id {
-        log::warn!("Session {}: Session not matching.", session_id);
-        return Err(AuthFailed);
+        log::warn!("Session {}: CSRF and session is not matching.", session_id);
+        return Err(Unauthenticated);
     }
 
-    let timestamp: u64 = parts.next().and_then(|s| s.parse().ok()).ok_or(ParseFailed)?;
+    let timestamp: u64 = parts
+        .next()
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| BadRequest(format!("Failed to parse timestamp")))?;
 
     let now = now_unix_duration().as_secs();
     if timestamp < now {
-        log::warn!("Session {}: The CSRF token has timeout", session_id);
-        return Err(AuthFailed);
+        log::info!("Session {}: The CSRF token has timeout", session_id);
+        return Err(Unauthenticated);
     }
     Ok(session)
 }

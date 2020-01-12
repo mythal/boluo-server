@@ -4,6 +4,7 @@ use super::Channel;
 use crate::api::{self, parse_query, IdQuery};
 use crate::csrf::authenticate;
 use crate::database;
+use crate::error::AppError;
 use crate::messages::Message;
 use crate::spaces::{Space, SpaceMember};
 use hyper::{Body, Request};
@@ -42,7 +43,7 @@ async fn create(req: Request<Body>) -> api::Result {
         session.user_id,
         space.id
     );
-    Err(api::Error::unauthorized())
+    Err(AppError::Unauthenticated)
 }
 
 async fn edit(req: Request<Body>) -> api::Result {
@@ -79,7 +80,7 @@ async fn join(req: Request<Body>) -> api::Result {
     let channel = Channel::get_by_id(db, &id).await?;
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await
-        .ok_or_else(api::Error::unauthorized)?;
+        .ok_or(AppError::Unauthenticated)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
 
     api::Return::new(&member).build()
@@ -114,7 +115,7 @@ async fn delete(req: Request<Body>) -> api::Result {
         session.user_id,
         channel.id
     );
-    Err(api::Error::unauthorized())
+    Err(AppError::Unauthenticated)
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> api::Result {
@@ -129,6 +130,6 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
         ("/join/", Method::POST) => join(req).await,
         ("/leave/", Method::POST) => leave(req).await,
         ("/delete/", Method::DELETE) => delete(req).await,
-        _ => Err(api::Error::not_found()),
+        _ => Err(AppError::NotFound),
     }
 }

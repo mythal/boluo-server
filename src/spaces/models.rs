@@ -3,7 +3,8 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::database::{CreationError, DbError, FetchError, Querist};
+use crate::database::Querist;
+use crate::error::{AppError, DbError};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -28,17 +29,18 @@ impl Space {
         name: &str,
         owner_id: &Uuid,
         password: Option<&str>,
-    ) -> Result<Space, CreationError> {
-        db.create(include_str!("sql/create.sql"), &[&name, owner_id, &password])
-            .await
-            .map(|row| row.get(0))
+    ) -> Result<Space, AppError> {
+        let mut rows = db
+            .query(include_str!("sql/create.sql"), &[&name, owner_id, &password])
+            .await?;
+        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<(), DbError> {
         db.execute(include_str!("sql/delete.sql"), &[id]).await.map(|_| ())
     }
 
-    async fn get<T: Querist>(db: &mut T, id: Option<&Uuid>, name: Option<&str>) -> Result<Space, FetchError> {
+    async fn get<T: Querist>(db: &mut T, id: Option<&Uuid>, name: Option<&str>) -> Result<Space, AppError> {
         use postgres_types::Type;
         let join_owner = false;
         db.fetch_typed(
@@ -55,15 +57,15 @@ impl Space {
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
-    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Space, FetchError> {
+    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Space, AppError> {
         Space::get(db, Some(id), None).await
     }
 
-    pub async fn get_by_name<T: Querist>(db: &mut T, name: &str) -> Result<Space, FetchError> {
+    pub async fn get_by_name<T: Querist>(db: &mut T, name: &str) -> Result<Space, AppError> {
         Space::get(db, None, Some(name)).await
     }
 
-    pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<bool, FetchError> {
+    pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<bool, AppError> {
         db.fetch(include_str!("sql/is_public.sql"), &[id])
             .await
             .map(|row| row.get(0))
@@ -87,7 +89,7 @@ impl SpaceMember {
         user_id: &Uuid,
         space_id: &Uuid,
         is_master: bool,
-    ) -> Result<SpaceMember, FetchError> {
+    ) -> Result<SpaceMember, AppError> {
         SpaceMember::set(db, user_id, space_id, None, Some(is_master)).await
     }
 
@@ -96,7 +98,7 @@ impl SpaceMember {
         user_id: &Uuid,
         space_id: &Uuid,
         is_admin: bool,
-    ) -> Result<SpaceMember, FetchError> {
+    ) -> Result<SpaceMember, AppError> {
         SpaceMember::set(db, user_id, space_id, Some(is_admin), None).await
     }
 
@@ -106,7 +108,7 @@ impl SpaceMember {
         space_id: &Uuid,
         is_admin: Option<bool>,
         is_master: Option<bool>,
-    ) -> Result<SpaceMember, FetchError> {
+    ) -> Result<SpaceMember, AppError> {
         db.fetch(
             include_str!("sql/set_space_member.sql"),
             &[&is_admin, &is_master, user_id, space_id],
@@ -120,25 +122,23 @@ impl SpaceMember {
             .await
     }
 
-    pub async fn add_owner<T: Querist>(
-        db: &mut T,
-        user_id: &Uuid,
-        space_id: &Uuid,
-    ) -> Result<SpaceMember, CreationError> {
-        let row = db
-            .create(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &true])
+    pub async fn add_owner<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, AppError> {
+        let mut rows = db
+            .query(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &true])
             .await?;
+        let row = rows
+            .pop()
+            .ok_or_else(unexpected!("The database returned empty result set."))?;
         Ok(row.get(1))
     }
 
-    pub async fn add_user<T: Querist>(
-        db: &mut T,
-        user_id: &Uuid,
-        space_id: &Uuid,
-    ) -> Result<SpaceMember, CreationError> {
-        let row = db
-            .create(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &false])
+    pub async fn add_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, AppError> {
+        let mut rows = db
+            .query(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &false])
             .await?;
+        let row = rows
+            .pop()
+            .ok_or_else(unexpected!("The database returned empty result set."))?;
         Ok(row.get(1))
     }
 

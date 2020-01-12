@@ -1,9 +1,8 @@
+use crate::error::{AppError, DbError};
 use std::collections::HashMap;
 use std::convert::{From, Into};
 use std::env;
 use std::hash::BuildHasher;
-
-use thiserror::Error;
 pub use tokio_postgres::types::{ToSql, Type as SqlType};
 
 use async_trait::async_trait;
@@ -22,8 +21,6 @@ impl From<&'static str> for Sql {
         Sql(s)
     }
 }
-
-pub type DbError = tokio_postgres::Error;
 
 #[async_trait]
 pub trait Querist: Send {
@@ -62,62 +59,21 @@ pub trait Querist: Send {
         source: T,
         types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<tokio_postgres::Row, FetchError> {
+    ) -> Result<tokio_postgres::Row, AppError> {
         self.query_typed(source, types, params)
             .await?
             .into_iter()
             .next()
-            .ok_or(FetchError::NoSuchRecord)
+            .ok_or(AppError::NotFound)
     }
 
     async fn fetch<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<tokio_postgres::Row, FetchError> {
+    ) -> Result<tokio_postgres::Row, AppError> {
         self.fetch_typed(source, &[], params).await
     }
-
-    async fn create_typed<T: Into<Sql> + Send>(
-        &mut self,
-        source: T,
-        types: &[postgres_types::Type],
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<tokio_postgres::Row, CreationError> {
-        self.query_typed(source, types, params)
-            .await?
-            .into_iter()
-            .next()
-            .ok_or(CreationError::EmptyResult)
-    }
-
-    async fn create<T: Into<Sql> + Send>(
-        &mut self,
-        source: T,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<tokio_postgres::Row, CreationError> {
-        self.create_typed(source, &[], params).await
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum FetchError {
-    #[error("unknown query error")]
-    QueryFail(#[from] DbError),
-    #[error("no such record")]
-    NoSuchRecord,
-    #[error("no permission to access record")]
-    NoPermission,
-}
-
-#[derive(Error, Debug)]
-pub enum CreationError {
-    #[error("unknown query error")]
-    QueryFail(#[from] DbError),
-    #[error("record already exists")]
-    EmptyResult,
-    #[error("validation failed: {0}")]
-    ValidationFail(String),
 }
 
 pub fn get_postgres_url() -> String {
