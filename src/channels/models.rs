@@ -110,14 +110,9 @@ impl ChannelMember {
             .ok()
     }
 
-    pub async fn remove_user<T: Querist>(
-        db: &mut T,
-        user_id: &Uuid,
-        channel_id: &Uuid,
-    ) -> Result<ChannelMember, AppError> {
-        db.fetch(include_str!("sql/remove_user_from_channel.sql"), &[user_id, channel_id])
+    pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<u64, DbError> {
+        db.execute(include_str!("sql/remove_user_from_channel.sql"), &[user_id, channel_id])
             .await
-            .map(|row| row.get(0))
     }
 
     pub async fn set<T: Querist>(
@@ -183,9 +178,9 @@ async fn channels_test() {
         .next()
         .unwrap();
     assert_eq!(member_fetched.join_date, member_altered.join_date);
-
-    let member = ChannelMember::remove_user(db, &user.id, &channel.id).await.unwrap();
     assert_eq!(member.join_date, member_fetched.join_date);
+
+    ChannelMember::remove_user(db, &user.id, &channel.id).await.unwrap();
     assert_eq!(ChannelMember::get_by_channel(db, &channel.id).await.unwrap().len(), 0);
 
     ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();

@@ -30,7 +30,7 @@ mod validators;
 
 use error::AppError;
 
-async fn router(req: Request<Body>) -> api::Result {
+async fn router(req: Request<Body>) -> api::AppResult {
     let path = req.uri().path().to_string();
     macro_rules! table {
         ($prefix: expr, $handler: expr) => {

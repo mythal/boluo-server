@@ -5,13 +5,24 @@ use crate::api::{self, parse_query, IdQuery};
 use crate::channels::api::EventQueue;
 use crate::csrf::authenticate;
 use crate::database;
+use crate::database::Querist;
 use crate::error::AppError;
-use crate::messages::{user_id_and_whether_master, Message};
 use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use hyper::{Body, Request};
+use uuid::Uuid;
 
-async fn query(req: Request<Body>) -> api::Result {
+async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
+    let member = SpaceMember::get(db, user_id, space_id)
+        .await
+        .ok_or(AppError::Unauthenticated)?;
+    if member.is_admin {
+        return Err(AppError::Unauthenticated);
+    }
+    Ok(())
+}
+
+async fn query(req: Request<Body>) -> api::AppResult {
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut db = database::get().await;
@@ -19,67 +30,40 @@ async fn query(req: Request<Body>) -> api::Result {
     return api::Return::new(&channel).build();
 }
 
-async fn create(req: Request<Body>) -> api::Result {
+async fn create(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
-    let form: Create = api::parse_body(req).await?;
+    let Create { space_id, name } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let space = Space::get_by_id(db, &form.space_id).await?;
-    let member = SpaceMember::get(db, &session.user_id, &form.space_id).await;
-    if let Some(member) = member {
-        if member.is_admin {
-            let channel = Channel::create(db, &form.space_id, &*form.name, true).await?;
-            let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
-            trans.commit().await?;
-            let channel_with_related = ChannelWithRelated {
-                channel,
-                members: vec![channel_member],
-                space,
-            };
-            return api::Return::new(&channel_with_related).build();
-        }
-    }
-    log::warn!(
-        "The user {} failed to try create a channel in the space {}",
-        session.user_id,
-        space.id
-    );
-    Err(AppError::Unauthenticated)
+    let space = Space::get_by_id(db, &space_id).await?;
+    admin_only(db, &session.user_id, &space_id).await?;
+
+    let channel = Channel::create(db, &space_id, &*name, true).await?;
+    let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
+    trans.commit().await?;
+    let channel_with_related = ChannelWithRelated {
+        channel,
+        members: vec![channel_member],
+        space,
+    };
+    api::Return::new(&channel_with_related).build()
 }
 
-async fn edit(_req: Request<Body>) -> api::Result {
+async fn edit(_req: Request<Body>) -> api::AppResult {
     todo!()
 }
 
-async fn members(req: Request<Body>) -> api::Result {
-    let query: IdQuery = parse_query(req.uri())?;
+async fn members(req: Request<Body>) -> api::AppResult {
+    let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let members = ChannelMember::get_by_channel(db, &query.id).await?;
+    let members = ChannelMember::get_by_channel(db, &id).await?;
     api::Return::new(&members).build()
 }
 
-async fn messages(req: Request<Body>) -> api::Result {
-    let IdQuery { id } = parse_query(req.uri())?;
-
-    let mut db = database::get().await;
-    let db = &mut *db;
-
-    let (user_id, is_master) = user_id_and_whether_master(db, &req, &id).await;
-
-    let channel = Channel::get_by_id(db, &id).await?;
-    let mut messages = Message::get_by_channel(db, &channel.id).await?;
-    if !is_master {
-        for message in messages.iter_mut() {
-            message.mask(user_id.as_ref());
-        }
-    }
-    api::Return::new(&messages).build()
-}
-
-async fn join(req: Request<Body>) -> api::Result {
+async fn join(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
@@ -95,7 +79,7 @@ async fn join(req: Request<Body>) -> api::Result {
     api::Return::new(&member).build()
 }
 
-async fn leave(req: Request<Body>) -> api::Result {
+async fn leave(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
@@ -103,7 +87,7 @@ async fn leave(req: Request<Body>) -> api::Result {
     api::Return::new(&true).build()
 }
 
-async fn delete(req: Request<Body>) -> api::Result {
+async fn delete(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
@@ -111,24 +95,16 @@ async fn delete(req: Request<Body>) -> api::Result {
     let db = &mut *conn;
 
     let channel = Channel::get_by_id(db, &id).await?;
-    let member = SpaceMember::get(db, &session.user_id, &channel.space_id).await;
-    if let Some(member) = member {
-        if member.is_admin {
-            Channel::delete(db, &id).await?;
-            log::info!("channel {} was deleted.", &id);
-            fire(&channel.id, Event::channel_deleted(id));
-            return api::Return::new(true).build();
-        }
-    }
-    log::warn!(
-        "The user {} failed to try delete a channel {}",
-        session.user_id,
-        channel.id
-    );
-    Err(AppError::Unauthenticated)
+
+    admin_only(db, &session.user_id, &channel.space_id).await?;
+
+    Channel::delete(db, &id).await?;
+    log::info!("channel {} was deleted.", &id);
+    fire(&channel.id, Event::channel_deleted(id));
+    return api::Return::new(true).build();
 }
 
-async fn subscript(req: Request<Body>) -> api::Result {
+async fn subscript(req: Request<Body>) -> api::AppResult {
     use tokio::sync::broadcast::RecvError;
 
     let IdQuery { id } = parse_query(req.uri())?;
@@ -152,15 +128,23 @@ async fn subscript(req: Request<Body>) -> api::Result {
     }
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> api::Result {
+async fn by_space(req: Request<Body>) -> api::AppResult {
+    let IdQuery { id } = parse_query(req.uri())?;
+    let mut conn = database::get().await;
+    let db = &mut *conn;
+    let channels = Channel::get_by_space(db, &id).await?;
+    return api::Return::new(&channels).build();
+}
+
+pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
     use hyper::Method;
 
     match (path, req.method().clone()) {
         ("/query", Method::GET) => query(req).await,
+        ("/by_space", Method::GET) => by_space(req).await,
         ("/create", Method::POST) => create(req).await,
         ("/edit", Method::POST) => edit(req).await,
         ("/members", Method::GET) => members(req).await,
-        ("/messages", Method::GET) => messages(req).await,
         ("/join", Method::POST) => join(req).await,
         ("/leave", Method::POST) => leave(req).await,
         ("/delete", Method::DELETE) => delete(req).await,

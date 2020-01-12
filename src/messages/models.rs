@@ -60,6 +60,7 @@ impl Message {
         entities: &serde_json::Value,
         in_game: bool,
         is_action: bool,
+        is_master: bool,
     ) -> Result<Message, AppError> {
         let mut rows = db
             .query(
@@ -73,6 +74,7 @@ impl Message {
                     entities,
                     &in_game,
                     &is_action,
+                    &is_master,
                 ],
             )
             .await?;
@@ -100,13 +102,10 @@ impl Message {
         db.execute(include_str!("sql/delete.sql"), &[id]).await
     }
 
-    pub async fn get_with_space_member<T: Querist>(
-        db: &mut T,
-        id: &Uuid,
-    ) -> Result<(Message, Option<SpaceMember>), AppError> {
-        db.fetch(include_str!("sql/get_with_space_member.sql"), &[id])
-            .await
-            .map(|row| (row.get(0), row.get(1)))
+    pub fn hide(&mut self) {
+        self.text = String::new();
+        self.entities = serde_json::Value::Array(vec![]);
+        self.seed = vec![];
     }
 
     pub fn mask(&mut self, user_id: Option<&Uuid>) {
@@ -118,9 +117,7 @@ impl Message {
                     return;
                 }
             }
-            self.text = String::new();
-            self.entities = serde_json::Value::Array(vec![]);
-            self.seed = vec![];
+            self.hide()
         }
     }
 }
@@ -160,6 +157,7 @@ async fn message_test() {
         &entities,
         true,
         false,
+        true,
     )
     .await
     .unwrap();
@@ -173,9 +171,6 @@ async fn message_test() {
     let messages = Message::get_by_channel(db, &channel.id).await.unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, message.id);
-    let (got_message, space_member) = Message::get_with_space_member(db, &message.id).await.unwrap();
-    assert_eq!(got_message.id, message.id);
-    assert_eq!(space_member.unwrap().space_id, space.id);
     Message::delete(db, &message.id).await.unwrap();
     assert!(Message::get(db, &message.id).await.is_err());
 }

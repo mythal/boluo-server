@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 
 pub type Request = hyper::Request<hyper::Body>;
-pub type Result = std::result::Result<hyper::Response<hyper::Body>, AppError>;
+pub type AppResult = std::result::Result<hyper::Response<hyper::Body>, AppError>;
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ impl<T: Serialize> Return<T> {
         Return { status_code, ..self }
     }
 
-    pub fn build(&self) -> Result {
+    pub fn build(&self) -> AppResult {
         let bytes = serde_json::to_vec(self).map_err(unexpected!())?;
 
         Response::builder()

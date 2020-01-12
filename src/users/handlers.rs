@@ -9,7 +9,7 @@ use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
 use once_cell::sync::OnceCell;
 
-async fn register(req: Request<Body>) -> api::Result {
+async fn register(req: Request<Body>) -> api::AppResult {
     let form: Register = api::parse_body(req).await?;
     let mut db = database::get().await;
     let user = form.register(&mut *db).await?;
@@ -17,7 +17,7 @@ async fn register(req: Request<Body>) -> api::Result {
     api::Return::new(user).status(StatusCode::CREATED).build()
 }
 
-pub async fn query_user(req: Request<Body>) -> api::Result {
+pub async fn query_user(req: Request<Body>) -> api::AppResult {
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut db = database::get().await;
@@ -25,7 +25,7 @@ pub async fn query_user(req: Request<Body>) -> api::Result {
     api::Return::new(user).build()
 }
 
-pub async fn login(req: Request<Body>) -> api::Result {
+pub async fn login(req: Request<Body>) -> api::AppResult {
     use crate::session;
     use cookie::{CookieBuilder, SameSite};
     use hyper::header::{HeaderValue, SET_COOKIE};
@@ -58,7 +58,7 @@ pub async fn login(req: Request<Body>) -> api::Result {
     Ok(response)
 }
 
-pub async fn logout(req: Request<Body>) -> api::Result {
+pub async fn logout(req: Request<Body>) -> api::AppResult {
     use crate::session::authenticate;
     use cookie::CookieBuilder;
     use hyper::header::{HeaderValue, SET_COOKIE};
@@ -83,7 +83,7 @@ pub async fn logout(req: Request<Body>) -> api::Result {
     Ok(response)
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> api::Result {
+pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
     match (path, req.method().clone()) {
         ("/login", Method::POST) => login(req).await,
         ("/register", Method::POST) => register(req).await,
