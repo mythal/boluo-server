@@ -164,3 +164,22 @@ async fn message_test() {
     Message::delete(db, &message.id).await.unwrap();
     assert!(Message::get(db, &message.id).await.is_err());
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Preview {
+    pub id: Uuid,
+    pub sender_id: Uuid,
+    pub channel_id: Uuid,
+    pub parent_message_id: Option<Uuid>,
+    pub name: String,
+    pub media_id: Option<Uuid>,
+    pub in_game: bool,
+    pub is_action: bool,
+    pub is_master: bool,
+    pub text: String,
+    pub whisper_to_users: Option<Vec<Uuid>>,
+    pub entities: JsonValue,
+    pub metadata: Option<serde_json::Value>,
+    pub start: NaiveDateTime,
+}

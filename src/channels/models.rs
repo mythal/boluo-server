@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{AppError, DbError};
+use crate::spaces::SpaceMember;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +70,7 @@ impl ChannelMember {
             .await?;
         Ok(rows
             .pop()
-            .ok_or_else(unexpected!("the database returned empty result"))?
+            .ok_or_else(|| unexpected!("the database returned empty result"))?
             .get(1))
     }
 
@@ -78,6 +79,16 @@ impl ChannelMember {
             .query(include_str!("sql/get_members_of_channel.sql"), &[channel])
             .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
+    }
+
+    pub async fn get_with_space_member<T: Querist>(
+        db: &mut T,
+        channel: &Uuid,
+    ) -> Result<Option<(ChannelMember, SpaceMember)>, DbError> {
+        let mut rows = db
+            .query(include_str!("sql/get_with_space_member.sql"), &[channel])
+            .await?;
+        Ok(rows.pop().map(|row| (row.get(0), row.get(1))))
     }
 
     pub async fn get<T: Querist>(db: &mut T, user: &Uuid, channel: &Uuid) -> Option<ChannelMember> {
@@ -169,6 +180,7 @@ async fn channels_test() {
     let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true).await.unwrap();
     ChannelMember::add_user(db, &user.id, &channel_2.id).await.unwrap();
     ChannelMember::remove_by_space(db, &user.id, &space.id).await.unwrap();
+    ChannelMember::get_with_space_member(db, &channel.id).await.unwrap();
     assert!(ChannelMember::get(db, &user.id, &channel.id).await.is_none());
     assert!(ChannelMember::get(db, &user.id, &channel_2.id).await.is_none());
 

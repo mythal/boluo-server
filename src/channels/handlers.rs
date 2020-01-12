@@ -1,12 +1,14 @@
-use super::api::{ChannelWithRelated, Create};
+use super::api::{fire, get_receiver, ChannelWithRelated, Create, Event};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_query, IdQuery};
+use crate::channels::api::EventQueue;
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
 use crate::messages::Message;
 use crate::spaces::{Space, SpaceMember};
+use crate::utils::timestamp;
 use hyper::{Body, Request};
 
 async fn query(req: Request<Body>) -> api::Result {
@@ -46,7 +48,7 @@ async fn create(req: Request<Body>) -> api::Result {
     Err(AppError::Unauthenticated)
 }
 
-async fn edit(req: Request<Body>) -> api::Result {
+async fn edit(_req: Request<Body>) -> api::Result {
     todo!()
 }
 
@@ -105,9 +107,10 @@ async fn delete(req: Request<Body>) -> api::Result {
     let member = SpaceMember::get(db, &session.user_id, &channel.space_id).await;
     if let Some(member) = member {
         if member.is_admin {
-            let deleted_channel = Channel::delete(db, &id).await?;
+            Channel::delete(db, &id).await?;
             log::info!("channel {} was deleted.", &id);
-            return api::Return::new(&deleted_channel).build();
+            fire(&channel.id, Event::channel_deleted(id));
+            return api::Return::new(true).build();
         }
     }
     log::warn!(
@@ -116,6 +119,30 @@ async fn delete(req: Request<Body>) -> api::Result {
         channel.id
     );
     Err(AppError::Unauthenticated)
+}
+
+async fn subscript(req: Request<Body>) -> api::Result {
+    use tokio::sync::broadcast::RecvError;
+
+    let IdQuery { id } = parse_query(req.uri())?;
+    let mut rx = get_receiver(&id).await;
+    let start = timestamp();
+    loop {
+        match rx.recv().await {
+            Ok(()) | Err(RecvError::Lagged(_)) => {
+                let queue = EventQueue::get().read().await;
+                let events = queue.get_events(0, &id);
+                if events.len() > 0 {
+                    return api::Return::new(events).build();
+                }
+                let now = timestamp();
+                if start + 6000 < now {
+                    return api::Return::<Vec<()>>::new(vec![]).build();
+                }
+            }
+            Err(RecvError::Closed) => return Err(unexpected!("The subscription channel was closed")),
+        }
+    }
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> api::Result {
@@ -130,6 +157,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
         ("/join", Method::POST) => join(req).await,
         ("/leave", Method::POST) => leave(req).await,
         ("/delete", Method::DELETE) => delete(req).await,
+        ("/subscript", Method::GET) => subscript(req).await,
         _ => Err(AppError::missing()),
     }
 }

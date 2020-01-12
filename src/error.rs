@@ -61,11 +61,9 @@ macro_rules! unexpected {
             crate::error::AppError::Unexpected(e.into())
         }
     };
-    ($msg: expr) => {
-        || {
-            let msg = $msg.to_string();
-            ::log::error!("Unexpected error: [{}][{}]{}", file!(), line!(), msg);
-            crate::error::AppError::Unexpected(::anyhow::anyhow!(msg))
-        }
-    };
+    ($msg: expr) => {{
+        let msg = $msg.to_string();
+        ::log::error!("Unexpected error: [{}][{}]{}", file!(), line!(), msg);
+        crate::error::AppError::Unexpected(::anyhow::anyhow!(msg))
+    }};
 }

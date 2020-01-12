@@ -56,6 +56,11 @@ pub fn verify(message: &str, signature: &str) -> Option<()> {
     hmac::verify(key(), message.as_bytes(), &*signature).ok()
 }
 
+pub fn timestamp() -> i64 {
+    use chrono::Local;
+    Local::now().timestamp_millis()
+}
+
 #[test]
 fn test_sign() {
     let message = "hello, world";

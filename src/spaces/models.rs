@@ -128,7 +128,7 @@ impl SpaceMember {
             .await?;
         let row = rows
             .pop()
-            .ok_or_else(unexpected!("The database returned empty result set."))?;
+            .ok_or_else(|| unexpected!("The database returned empty result set."))?;
         Ok(row.get(1))
     }
 
@@ -138,7 +138,7 @@ impl SpaceMember {
             .await?;
         let row = rows
             .pop()
-            .ok_or_else(unexpected!("The database returned empty result set."))?;
+            .ok_or_else(|| unexpected!("The database returned empty result set."))?;
         Ok(row.get(1))
     }
 

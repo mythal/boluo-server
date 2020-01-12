@@ -1,9 +1,10 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
-use crate::channels::ChannelMember;
+use crate::channels::{fire, ChannelMember, Event};
 use crate::csrf::authenticate;
 use crate::database::Querist;
 use crate::error::AppError;
+use crate::messages::Preview;
 use crate::{api, database};
 use hyper::{Body, Request};
 use uuid::Uuid;
@@ -42,7 +43,9 @@ async fn send(req: Request<Body>) -> api::Result {
         is_action,
     )
     .await?;
-    api::Return::new(&message).build()
+    let result = api::Return::new(&message).build();
+    fire(&channel_id, Event::new_message(message));
+    result
 }
 
 async fn edit(req: Request<Body>) -> api::Result {
@@ -67,7 +70,10 @@ async fn edit(req: Request<Body>) -> api::Result {
     let text = text.as_ref().map(String::as_str);
     let name = name.as_ref().map(String::as_str);
     let message = Message::edit(db, name, &message_id, text, &entities, in_game, is_action).await?;
-    api::Return::new(&message).build()
+    let result = api::Return::new(&message).build();
+    let channel_id = message.channel_id.clone();
+    fire(&channel_id, Event::message_edited(channel_id, message));
+    result
 }
 
 async fn query(req: Request<Body>) -> api::Result {
@@ -85,10 +91,34 @@ async fn delete(req: Request<Body>) -> api::Result {
     let db = &mut *conn;
     let (message, space_member) = Message::get_with_space_member(db, &id).await?;
     let space_member = space_member.ok_or(AppError::Unauthenticated)?;
-    if message.sender_id == session.user_id || space_member.is_admin {
-        Message::delete(db, &id).await?;
+    if !(message.sender_id == session.user_id || space_member.is_admin) {
+        return Err(AppError::Unauthenticated);
     }
-    Err(AppError::Unauthenticated)
+    Message::delete(db, &id).await?;
+    let channel_id = message.channel_id.clone();
+    let event = Event::message_deleted(channel_id, message.id.clone());
+    fire(&message.channel_id, event);
+    api::Return::new(true).build()
+}
+
+async fn send_preview(req: Request<Body>) -> api::Result {
+    let session = authenticate(&req).await?;
+    let preview: Preview = api::parse_body(req).await?;
+
+    if preview.sender_id != session.user_id {
+        log::warn!("The user {} attempts to forge preview message.", session.user_id);
+        return Err(AppError::BadRequest(format!("You are forging message")));
+    }
+
+    let mut conn = database::get().await;
+    let db = &mut *conn;
+    let channel_id = preview.channel_id.clone();
+
+    ChannelMember::get_with_space_member(db, &channel_id)
+        .await?
+        .ok_or(AppError::Unauthenticated)?;
+    fire(&channel_id, Event::message_preview(channel_id.clone(), preview));
+    api::Return::new(true).build()
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> api::Result {
@@ -99,6 +129,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::Result {
         ("/send", Method::POST) => send(req).await,
         ("/delete", Method::DELETE) => delete(req).await,
         ("/edit", Method::POST) => edit(req).await,
+        ("/preview", Method::POST) => send_preview(req).await,
         _ => Err(AppError::missing()),
     }
 }
