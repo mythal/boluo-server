@@ -27,44 +27,76 @@ pub type DbError = tokio_postgres::Error;
 
 #[async_trait]
 pub trait Querist: Send {
-    async fn query<T: Into<Sql> + Send>(
+    async fn query_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<tokio_postgres::Row>, DbError>;
 
-    async fn execute<T: Into<Sql> + Send>(
+    async fn query<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<tokio_postgres::Row>, DbError> {
+        self.query_typed(source, &[], params).await
+    }
+
+    async fn execute_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, DbError>;
 
-    async fn fetch<T: Into<Sql> + Send>(
+    async fn execute<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, DbError> {
+        self.execute_typed(source, &[], params).await
+    }
+
+    async fn fetch_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<tokio_postgres::Row, FetchError> {
-        self.query(source, types, params)
+        self.query_typed(source, types, params)
             .await?
             .into_iter()
             .next()
             .ok_or(FetchError::NoSuchRecord)
     }
 
-    async fn create<T: Into<Sql> + Send>(
+    async fn fetch<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<tokio_postgres::Row, FetchError> {
+        self.fetch_typed(source, &[], params).await
+    }
+
+    async fn create_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<tokio_postgres::Row, CreationError> {
-        self.query(source, types, params)
+        self.query_typed(source, types, params)
             .await?
             .into_iter()
             .next()
             .ok_or(CreationError::EmptyResult)
+    }
+
+    async fn create<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<tokio_postgres::Row, CreationError> {
+        self.create_typed(source, &[], params).await
     }
 }
 
@@ -168,7 +200,7 @@ impl Client {
 
 #[async_trait]
 impl Querist for Client {
-    async fn query<T: Into<Sql> + Send>(
+    async fn query_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],
@@ -182,7 +214,7 @@ impl Querist for Client {
         result
     }
 
-    async fn execute<T: Into<Sql> + Send>(
+    async fn execute_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],
@@ -224,7 +256,7 @@ impl<'a> Transaction<'a> {
 
 #[async_trait]
 impl Querist for Transaction<'_> {
-    async fn query<T: Into<Sql> + Send>(
+    async fn query_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],
@@ -234,7 +266,7 @@ impl Querist for Transaction<'_> {
         self.transaction.query(&statement, params).await
     }
 
-    async fn execute<T: Into<Sql> + Send>(
+    async fn execute_typed<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         types: &[postgres_types::Type],

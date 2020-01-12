@@ -1,7 +1,7 @@
 use super::api::{Create, SpaceWithRelated};
 use super::{Space, SpaceMember};
 use crate::api::{self, parse_query, IdQuery};
-use crate::channels::ChannelMember;
+use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::database::{self, Querist};
 use hyper::{Body, Request};
@@ -26,10 +26,10 @@ async fn list(req: Request<Body>) -> api::Result {
 }
 
 async fn query(req: Request<Body>) -> api::Result {
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &query.id).await?;
+    let space = Space::get_by_id(db, &id).await?;
     if !space.is_public {
         is_member(db, &space.id, &req).await?;
     }
@@ -37,15 +37,15 @@ async fn query(req: Request<Body>) -> api::Result {
 }
 
 async fn query_with_related(req: Request<Body>) -> api::Result {
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &query.id).await?;
+    let space = Space::get_by_id(db, &id).await?;
     if !space.is_public {
         is_member(db, &space.id, &req).await?;
     }
-    let members = Space::members(db, &space.id).await?;
-    let channels = Space::channels(db, &space.id).await?;
+    let members = SpaceMember::get_by_space(db, &id).await?;
+    let channels = Channel::get_by_space(db, &id).await?;
     let with_related = SpaceWithRelated {
         space,
         members,
@@ -76,71 +76,69 @@ async fn create(req: Request<Body>) -> api::Result {
 }
 
 async fn edit(req: Request<Body>) -> api::Result {
-    let session = authenticate(&req).await?;
     todo!()
 }
 
 async fn join(req: Request<Body>) -> api::Result {
     let session = authenticate(&req).await?;
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
 
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let space = Space::get_by_id(db, &query.id).await?;
+    let space = Space::get_by_id(db, &id).await?;
     if !space.is_public {
         return Err(api::Error::unauthorized());
     }
     let user_id = &session.user_id;
-    let space_id = &space.id;
-    let member = SpaceMember::add_user(db, user_id, space_id).await?;
+    let member = SpaceMember::add_user(db, user_id, &id).await?;
     api::Return::new(&member).build()
 }
 
 async fn leave(req: Request<Body>) -> api::Result {
     let session = authenticate(&req).await?;
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
-    SpaceMember::remove_user(db, &session.user_id, &query.id).await?;
-    ChannelMember::remove_by_space(db, &session.user_id, &query.id).await?;
+    SpaceMember::remove_user(db, &session.user_id, &id).await?;
+    ChannelMember::remove_by_space(db, &session.user_id, &id).await?;
     trans.commit().await?;
     api::Return::new(&true).build()
 }
 
 async fn members(req: Request<Body>) -> api::Result {
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
     let db = &mut *db;
-    if !Space::is_public(db, &query.id).await? {
-        is_member(db, &query.id, &req).await?;
+    if !Space::is_public(db, &id).await? {
+        is_member(db, &id, &req).await?;
     }
-    let members = Space::members(&mut *db, &query.id).await?;
+    let members = SpaceMember::get_by_space(&mut *db, &id).await?;
     api::Return::new(&members).build()
 }
 
 async fn channels(req: Request<Body>) -> api::Result {
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    if !Space::is_public(db, &query.id).await? {
-        is_member(db, &query.id, &req).await?;
+    if !Space::is_public(db, &id).await? {
+        is_member(db, &id, &req).await?;
     }
-    let channels = Space::channels(db, &query.id).await?;
+    let channels = Channel::get_by_space(db, &id).await?;
     return api::Return::new(&channels).build();
 }
 
 async fn delete(req: Request<Body>) -> api::Result {
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let session = authenticate(&req).await?;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &query.id).await?;
+    let space = Space::get_by_id(db, &id).await?;
     if space.owner_id == session.user_id {
-        Space::delete(db, &query.id).await?;
+        Space::delete(db, &id).await?;
         log::info!("a space ({}) was deleted", space.id);
         return api::Return::new(&space).build();
     }

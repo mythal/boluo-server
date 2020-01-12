@@ -60,7 +60,7 @@ async fn edit(req: Request<Body>) -> api::Result {
     } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let (message, _) = Message::get_member(db, &message_id)
+    let (message, _) = Message::get_with_space_member(db, &message_id)
         .await
         .map_err(|_| api::Error::unauthorized())?;
     if message.sender_id == session.user_id {
@@ -68,19 +68,16 @@ async fn edit(req: Request<Body>) -> api::Result {
     }
 
     let text = text.as_ref().map(String::as_str);
-    let message = Message::edit(db, &message_id, text, &entities, in_game, is_action).await?;
+    let name = name.as_ref().map(String::as_str);
+    let message = Message::edit(db, name, &message_id, text, &entities, in_game, is_action).await?;
     api::Return::new(&message).build()
 }
 
 async fn query(req: Request<Body>) -> api::Result {
-    let session = authenticate(&req).await?;
     let api::IdQuery { id } = api::parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let (message, member) = Message::get_member(db, &id).await?;
-    if member.is_none() {
-        return Err(api::Error::unauthorized());
-    }
+    let message = Message::get(db, &id).await?;
     api::Return::new(&message).build()
 }
 
@@ -89,7 +86,7 @@ async fn delete(req: Request<Body>) -> api::Result {
     let api::IdQuery { id } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let (message, space_member) = Message::get_member(db, &id).await?;
+    let (message, space_member) = Message::get_with_space_member(db, &id).await?;
     let space_member = space_member.ok_or_else(api::Error::unauthorized)?;
     if message.sender_id == session.user_id || space_member.is_admin {
         Message::delete(db, &id).await?;

@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::database::{CreationError, DbError, FetchError, Querist};
-use crate::redis;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -30,23 +29,20 @@ impl Space {
         owner_id: &Uuid,
         password: Option<&str>,
     ) -> Result<Space, CreationError> {
-        db.create(include_str!("create_space.sql"), &[], &[&name, owner_id, &password])
+        db.create(include_str!("sql/create.sql"), &[&name, owner_id, &password])
             .await
             .map(|row| row.get(0))
     }
 
-    pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<Space, FetchError> {
-        use postgres_types::Type;
-        db.fetch(include_str!("delete_space.sql"), &[Type::UUID], &[id])
-            .await
-            .map(|row| row.get(0))
+    pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<(), DbError> {
+        db.execute(include_str!("sql/delete.sql"), &[id]).await.map(|_| ())
     }
 
     async fn get<T: Querist>(db: &mut T, id: Option<&Uuid>, name: Option<&str>) -> Result<Space, FetchError> {
         use postgres_types::Type;
         let join_owner = false;
-        db.fetch(
-            include_str!("fetch_space.sql"),
+        db.fetch_typed(
+            include_str!("sql/get.sql"),
             &[Type::UUID, Type::TEXT, Type::BOOL],
             &[&id, &name, &join_owner],
         )
@@ -55,7 +51,7 @@ impl Space {
     }
 
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<Space>, DbError> {
-        let rows = db.query(include_str!("select_spaces.sql"), &[], &[]).await?;
+        let rows = db.query(include_str!("sql/all.sql"), &[]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -68,42 +64,9 @@ impl Space {
     }
 
     pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<bool, FetchError> {
-        let mut cache = redis::get().await;
-        let key = redis::make_key(b"spaces", id, b"is_public");
-        if let Ok(Some(_)) = cache.get(&*key).await {
-            Ok(true)
-        } else {
-            let space = Space::get_by_id(db, id).await?;
-            if space.is_public {
-                cache.set(&*key, &[]).await.ok();
-            }
-            Ok(space.is_public)
-        }
-    }
-
-    pub async fn delete_caches(id: &Uuid) {
-        use crate::redis::make_key;
-        let keys = [make_key(b"spaces", id, b"is_public")];
-        let mut r = redis::get().await;
-        for key in keys.iter() {
-            if let Err(e) = r.remove(key).await {
-                log::warn!("redis error in delete cache: {}", e);
-            }
-        }
-    }
-
-    pub async fn members<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMember>, DbError> {
-        let rows = db
-            .query(include_str!("select_space_members.sql"), &[], &[space_id])
-            .await?;
-        Ok(rows.into_iter().map(|row| row.get(0)).collect())
-    }
-
-    pub async fn channels<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<crate::channels::Channel>, DbError> {
-        let rows = db
-            .query(include_str!("select_space_channels.sql"), &[], &[space_id])
-            .await?;
-        Ok(rows.into_iter().map(|row| row.get(0)).collect())
+        db.fetch(include_str!("sql/is_public.sql"), &[id])
+            .await
+            .map(|row| row.get(0))
     }
 }
 
@@ -145,22 +108,16 @@ impl SpaceMember {
         is_master: Option<bool>,
     ) -> Result<SpaceMember, FetchError> {
         db.fetch(
-            include_str!("set_space_member.sql"),
-            &[],
+            include_str!("sql/set_space_member.sql"),
             &[&is_admin, &is_master, user_id, space_id],
         )
         .await
         .map(|row| row.get(0))
     }
 
-    pub async fn remove_user<T: Querist>(
-        db: &mut T,
-        user_id: &Uuid,
-        space_id: &Uuid,
-    ) -> Result<SpaceMember, FetchError> {
-        db.fetch(include_str!("remove_user_from_space.sql"), &[], &[user_id, space_id])
+    pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<u64, DbError> {
+        db.execute(include_str!("sql/remove_user_from_space.sql"), &[user_id, space_id])
             .await
-            .map(|row| row.get(0))
     }
 
     pub async fn add_owner<T: Querist>(
@@ -169,7 +126,7 @@ impl SpaceMember {
         space_id: &Uuid,
     ) -> Result<SpaceMember, CreationError> {
         let row = db
-            .create(include_str!("add_user_to_space.sql"), &[], &[user_id, space_id, &true])
+            .create(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &true])
             .await?;
         Ok(row.get(1))
     }
@@ -180,16 +137,23 @@ impl SpaceMember {
         space_id: &Uuid,
     ) -> Result<SpaceMember, CreationError> {
         let row = db
-            .create(include_str!("add_user_to_space.sql"), &[], &[user_id, space_id, &false])
+            .create(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &false])
             .await?;
         Ok(row.get(1))
     }
 
     pub async fn get<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Option<SpaceMember> {
-        db.fetch(include_str!("fetch_space_member.sql"), &[], &[user_id, space_id])
+        db.fetch(include_str!("sql/get_space_member.sql"), &[user_id, space_id])
             .await
             .map(|row| row.get(0))
             .ok()
+    }
+
+    pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMember>, DbError> {
+        let rows = db
+            .query(include_str!("sql/get_members_by_spaces.sql"), &[space_id])
+            .await?;
+        Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 }
 
@@ -214,49 +178,31 @@ async fn space_test() {
     let mut client = Client::new().await;
     let mut trans = client.transaction().await.unwrap();
     let db = &mut trans;
-    let email = "spaces@mythal.net";
-    let username = "space_test";
+    let email = "test@mythal.net";
+    let username = "test_user";
     let password = "no password";
-    let nickname = "Space Test";
+    let nickname = "Test User";
     let space_name = "Pure Illusion";
     let user = User::create(db, email, username, nickname, password).await.unwrap();
     let space = Space::create(db, space_name, &user.id, None).await.unwrap();
     let space = Space::get_by_name(db, &space.name).await.unwrap();
     let space = Space::get_by_id(db, &space.id).await.unwrap();
     assert!(Space::is_public(db, &space.id).await.unwrap());
-    assert!(Space::is_public(db, &space.id).await.unwrap());
-    Space::delete_caches(&space.id).await;
     let spaces = Space::all(db).await.unwrap();
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
-    let space = Space::delete(db, &space.id).await.unwrap();
-    assert_eq!(space.name, space_name);
-    assert_eq!(space.owner_id, user.id);
-}
 
-#[tokio::test]
-async fn space_member() {
-    use crate::database::Client;
-    use crate::users::User;
-
-    let mut client = Client::new().await;
-    let mut trans = client.transaction().await.unwrap();
-    let email = "spaces_member@mythal.net";
-    let username = "space_member_test";
-    let password = "no password";
-    let nickname = "Space Member Test User";
-    let space_name = "Space Member Test";
-    let user = User::create(&mut trans, email, username, nickname, password)
-        .await
-        .unwrap();
-    let space = Space::create(&mut trans, space_name, &user.id, None).await.unwrap();
-    let _member = SpaceMember::add_owner(&mut trans, &user.id, &space.id).await.unwrap();
-    SpaceMember::set_admin(&mut trans, &user.id, &space.id, true)
-        .await
-        .unwrap();
-    SpaceMember::set_master(&mut trans, &user.id, &space.id, true)
-        .await
-        .unwrap();
-    let member = SpaceMember::remove_user(&mut trans, &user.id, &space.id).await.unwrap();
+    // members
+    SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();
+    SpaceMember::get(db, &user.id, &space.id).await.unwrap();
+    SpaceMember::set_admin(db, &user.id, &space.id, true).await.unwrap();
+    SpaceMember::set_master(db, &user.id, &space.id, true).await.unwrap();
+    let mut members = SpaceMember::get_by_space(db, &space.id).await.unwrap();
+    let member = members.pop().unwrap();
     assert_eq!(member.user_id, user.id);
     assert_eq!(member.space_id, space.id);
+    SpaceMember::remove_user(db, &user.id, &space.id).await.unwrap();
+    assert!(SpaceMember::get(db, &user.id, &space.id).await.is_none());
+
+    // delete
+    Space::delete(db, &space.id).await.unwrap();
 }

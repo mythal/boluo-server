@@ -23,7 +23,7 @@ pub struct User {
 
 impl User {
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<User>, DbError> {
-        let rows = db.query(include_str!("select_users.sql"), &[], &[]).await?;
+        let rows = db.query_typed(include_str!("sql/all.sql"), &[], &[]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -48,8 +48,7 @@ impl User {
         PASSWORD.run(&password).map_err(e)?;
 
         db.create(
-            include_str!("create_user.sql"),
-            &[],
+            include_str!("sql/create.sql"),
             &[&email, &username, &nickname, &password],
         )
         .await
@@ -65,8 +64,8 @@ impl User {
         use postgres_types::Type;
 
         let email = email.map(|s| s.to_ascii_lowercase());
-        db.fetch(
-            include_str!("fetch_user.sql"),
+        db.fetch_typed(
+            include_str!("sql/get.sql"),
             &[Type::UUID, Type::TEXT, Type::TEXT],
             &[&id, &email, &username],
         )
@@ -84,8 +83,8 @@ impl User {
 
         let email = email.map(|s| s.to_ascii_lowercase());
         let row = db
-            .fetch(
-                include_str!("login.sql"),
+            .fetch_typed(
+                include_str!("sql/login.sql"),
                 &[Type::TEXT, Type::TEXT, Type::TEXT],
                 &[&email, &username, &password],
             )
@@ -110,10 +109,8 @@ impl User {
         User::get(db, None, None, Some(username)).await
     }
 
-    pub async fn delete_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<User, FetchError> {
-        db.fetch(include_str!("delete_user.sql"), &[], &[id])
-            .await
-            .map(|row| row.get(0))
+    pub async fn delete_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
+        db.execute(include_str!("sql/delete_by_id.sql"), &[id]).await
     }
 }
 
@@ -135,8 +132,7 @@ async fn user_test() {
     let user = User::login(&mut trans, Some(email), None, password).await.unwrap();
     assert_eq!(user.nickname, nickname);
 
-    let deleted_user = User::delete_by_id(&mut trans, &new_user.id).await.unwrap();
-    assert_eq!(deleted_user.id, user.id);
+    User::delete_by_id(&mut trans, &new_user.id).await.unwrap();
 
     let all_users = User::all(&mut trans).await.unwrap();
     assert!(all_users.into_iter().find(|u| u.id == user.id).is_none());

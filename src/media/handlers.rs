@@ -1,4 +1,3 @@
-use super::Media;
 use crate::api;
 use hyper::{Body, Request};
 

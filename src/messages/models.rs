@@ -40,16 +40,12 @@ pub struct Message {
 }
 
 impl Message {
-    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, FetchError> {
-        db.fetch(include_str!("fetch_message.sql"), &[], &[id])
-            .await
-            .map(|row| row.get(0))
+    pub async fn get<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, FetchError> {
+        db.fetch(include_str!("sql/get.sql"), &[id]).await.map(|row| row.get(0))
     }
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Vec<Message>, DbError> {
-        let rows = db
-            .query(include_str!("select_messages.sql"), &[], &[channel_id])
-            .await?;
+        let rows = db.query(include_str!("sql/get_by_channel.sql"), &[channel_id]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -65,8 +61,7 @@ impl Message {
         is_action: bool,
     ) -> Result<Message, CreationError> {
         db.create(
-            include_str!("create_message.sql"),
-            &[],
+            include_str!("sql/create.sql"),
             &[
                 &message_id,
                 sender_id,
@@ -84,6 +79,7 @@ impl Message {
 
     pub async fn edit<T: Querist>(
         db: &mut T,
+        name: Option<&str>,
         id: &Uuid,
         text: Option<&str>,
         entities: &Option<JsonValue>,
@@ -91,22 +87,22 @@ impl Message {
         is_action: Option<bool>,
     ) -> Result<Message, FetchError> {
         db.fetch(
-            include_str!("edit_message.sql"),
-            &[],
-            &[id, &text, &entities, &in_game, &is_action],
+            include_str!("sql/edit.sql"),
+            &[id, &name, &text, &entities, &in_game, &is_action],
         )
         .await
         .map(|row| row.get(0))
     }
 
-    pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, FetchError> {
-        db.fetch(include_str!("remove_message.sql"), &[], &[id])
-            .await
-            .map(|row| row.get(0))
+    pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
+        db.execute(include_str!("sql/delete.sql"), &[id]).await
     }
 
-    pub async fn get_member<T: Querist>(db: &mut T, id: &Uuid) -> Result<(Message, Option<SpaceMember>), FetchError> {
-        db.fetch(include_str!("get_message_and_space_member.sql"), &[], &[id])
+    pub async fn get_with_space_member<T: Querist>(
+        db: &mut T,
+        id: &Uuid,
+    ) -> Result<(Message, Option<SpaceMember>), FetchError> {
+        db.fetch(include_str!("sql/get_with_space_member.sql"), &[id])
             .await
             .map(|row| (row.get(0), row.get(1)))
     }
@@ -114,7 +110,7 @@ impl Message {
 
 #[tokio::test]
 async fn message_test() {
-    use crate::channels::Channel;
+    use crate::channels::{Channel, ChannelMember};
     use crate::database::Client;
     use crate::spaces::Space;
     use crate::users::User;
@@ -122,19 +118,19 @@ async fn message_test() {
     let mut client = Client::new().await;
     let mut trans = client.transaction().await.unwrap();
     let db = &mut trans;
-    let email = "channels@mythal.net";
-    let username = "channel_test";
+    let email = "test@mythal.net";
+    let username = "test_user";
     let password = "no password";
-    let nickname = "Channel Test User";
-    let space_name = "Channel Test Space";
+    let nickname = "Test User";
+    let space_name = "Test Space";
 
     let user = User::create(db, email, username, nickname, password).await.unwrap();
     let space = Space::create(db, space_name, &user.id, None).await.unwrap();
-    let space_member = SpaceMember::add_user(db, &user.id, &space.id).await.unwrap();
+    SpaceMember::add_user(db, &user.id, &space.id).await.unwrap();
 
     let channel_name = "Test Channel";
     let channel = Channel::create(db, &space.id, channel_name, true).await.unwrap();
-    let channel_member = ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();
+    ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();
     let entities = serde_json::Value::Array(vec![]);
     let text = "hello, world";
     let message = Message::create(
@@ -152,15 +148,17 @@ async fn message_test() {
     .unwrap();
     assert_eq!(message.text, text);
     let new_text = "cocona";
-    let edited = Message::edit(db, &message.id, Some(new_text), &Some(entities), None, None)
+    let edited = Message::edit(db, None, &message.id, Some(new_text), &Some(entities), None, None)
         .await
         .unwrap();
     assert_eq!(edited.text, new_text);
-    let message = Message::get_by_id(db, &message.id).await.unwrap();
+    let message = Message::get(db, &message.id).await.unwrap();
     let messages = Message::get_by_channel(db, &channel.id).await.unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, message.id);
+    let (got_message, space_member) = Message::get_with_space_member(db, &message.id).await.unwrap();
+    assert_eq!(got_message.id, message.id);
+    assert_eq!(space_member.unwrap().space_id, space.id);
     Message::delete(db, &message.id).await.unwrap();
-    assert!(Message::get_by_id(db, &message.id).await.is_err());
-    let (_, _) = Message::get_member(db, &message.id).await.unwrap();
+    assert!(Message::get(db, &message.id).await.is_err());
 }

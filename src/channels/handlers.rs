@@ -50,7 +50,6 @@ async fn edit(req: Request<Body>) -> api::Result {
 }
 
 async fn members(req: Request<Body>) -> api::Result {
-    let session = authenticate(&req).await?;
     let query: IdQuery = parse_query(req.uri())?;
     let mut db = database::get().await;
     let db = &mut *db;
@@ -60,7 +59,6 @@ async fn members(req: Request<Body>) -> api::Result {
 }
 
 async fn messages(req: Request<Body>) -> api::Result {
-    let session = authenticate(&req).await?;
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut db = database::get().await;
@@ -73,13 +71,13 @@ async fn messages(req: Request<Body>) -> api::Result {
 
 async fn join(req: Request<Body>) -> api::Result {
     let session = authenticate(&req).await?;
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
 
     let mut conn = database::get().await;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &query.id).await?;
-    let space_member = SpaceMember::get(db, &session.user_id, &channel.space_id)
+    let channel = Channel::get_by_id(db, &id).await?;
+    SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await
         .ok_or_else(api::Error::unauthorized)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
@@ -89,25 +87,25 @@ async fn join(req: Request<Body>) -> api::Result {
 
 async fn leave(req: Request<Body>) -> api::Result {
     let session = authenticate(&req).await?;
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
-    ChannelMember::remove_user(&mut *db, &session.user_id, &query.id).await?;
+    ChannelMember::remove_user(&mut *db, &session.user_id, &id).await?;
     api::Return::new(&true).build()
 }
 
 async fn delete(req: Request<Body>) -> api::Result {
     let session = authenticate(&req).await?;
-    let query: IdQuery = parse_query(req.uri())?;
+    let IdQuery { id } = parse_query(req.uri())?;
 
     let mut conn = database::get().await;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &query.id).await?;
+    let channel = Channel::get_by_id(db, &id).await?;
     let member = SpaceMember::get(db, &session.user_id, &channel.space_id).await;
     if let Some(member) = member {
         if member.is_admin {
-            let deleted_channel = Channel::delete(db, &query.id).await?;
-            log::info!("channel {} was deleted.", deleted_channel.id);
+            let deleted_channel = Channel::delete(db, &id).await?;
+            log::info!("channel {} was deleted.", &id);
             return api::Return::new(&deleted_channel).build();
         }
     }
