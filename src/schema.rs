@@ -4,6 +4,7 @@ table! {
         channel_id -> Uuid,
         join_date -> Timestamp,
         character_name -> Text,
+        is_master -> Bool,
     }
 }
 
@@ -74,7 +75,6 @@ table! {
     space_members (user_id, space_id) {
         user_id -> Uuid,
         space_id -> Uuid,
-        is_master -> Bool,
         is_admin -> Bool,
         join_date -> Timestamp,
     }

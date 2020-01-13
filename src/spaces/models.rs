@@ -78,28 +78,18 @@ impl Space {
 pub struct SpaceMember {
     pub user_id: Uuid,
     pub space_id: Uuid,
-    pub is_master: bool,
     pub is_admin: bool,
     pub join_date: NaiveDateTime,
 }
 
 impl SpaceMember {
-    pub async fn set_master<T: Querist>(
-        db: &mut T,
-        user_id: &Uuid,
-        space_id: &Uuid,
-        is_master: bool,
-    ) -> Result<SpaceMember, AppError> {
-        SpaceMember::set(db, user_id, space_id, None, Some(is_master)).await
-    }
-
     pub async fn set_admin<T: Querist>(
         db: &mut T,
         user_id: &Uuid,
         space_id: &Uuid,
         is_admin: bool,
     ) -> Result<SpaceMember, AppError> {
-        SpaceMember::set(db, user_id, space_id, Some(is_admin), None).await
+        SpaceMember::set(db, user_id, space_id, Some(is_admin)).await
     }
 
     async fn set<T: Querist>(
@@ -107,11 +97,10 @@ impl SpaceMember {
         user_id: &Uuid,
         space_id: &Uuid,
         is_admin: Option<bool>,
-        is_master: Option<bool>,
     ) -> Result<SpaceMember, AppError> {
         db.fetch(
             include_str!("sql/set_space_member.sql"),
-            &[&is_admin, &is_master, user_id, space_id],
+            &[&is_admin, user_id, space_id],
         )
         .await
         .map(|row| row.get(0))
@@ -195,7 +184,6 @@ async fn space_test() {
     SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();
     SpaceMember::get(db, &user.id, &space.id).await.unwrap();
     SpaceMember::set_admin(db, &user.id, &space.id, true).await.unwrap();
-    SpaceMember::set_master(db, &user.id, &space.id, true).await.unwrap();
     let mut members = SpaceMember::get_by_space(db, &space.id).await.unwrap();
     let member = members.pop().unwrap();
     assert_eq!(member.user_id, user.id);

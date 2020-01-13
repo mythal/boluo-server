@@ -1,6 +1,5 @@
 UPDATE space_members
-SET is_admin  = COALESCE($1, is_admin),
-    is_master = COALESCE($2, is_master)
-WHERE user_id = $3
-  AND space_id = $4
+SET is_admin  = COALESCE($1, is_admin)
+WHERE user_id = $2
+  AND space_id = $3
 RETURNING space_members;

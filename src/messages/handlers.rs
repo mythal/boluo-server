@@ -3,37 +3,10 @@ use super::Message;
 use crate::api::{parse_query, IdQuery};
 use crate::channels::{fire, Channel, ChannelMember, Event};
 use crate::csrf::authenticate;
-use crate::database::Querist;
 use crate::error::AppError;
 use crate::messages::Preview;
 use crate::{api, database};
 use hyper::{Body, Request};
-use uuid::Uuid;
-
-async fn user_id_and_whether_master<T: Querist>(
-    db: &mut T,
-    req: &Request<Body>,
-    channel_id: &Uuid,
-) -> (Option<Uuid>, bool) {
-    let mut is_master = false;
-    let session = authenticate(req).await;
-    let user_id = if let Ok(session) = session {
-        is_master = ChannelMember::is_master(db, &session.user_id, &channel_id)
-            .await
-            .unwrap_or(false);
-        Some(session.user_id)
-    } else {
-        None
-    };
-    (user_id, is_master)
-}
-
-async fn channel_member<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<ChannelMember, AppError> {
-    let channel_member = ChannelMember::get(db, &user_id, &channel_id)
-        .await
-        .ok_or(AppError::Unauthenticated)?;
-    Ok(channel_member)
-}
 
 async fn send(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
@@ -48,8 +21,8 @@ async fn send(req: Request<Body>) -> api::AppResult {
     } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let (channel_member, space_member) = ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
-        .await?
+    let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
+        .await
         .ok_or(AppError::Unauthenticated)?;
     let name = name.unwrap_or(channel_member.character_name);
     let message = Message::create(
@@ -62,7 +35,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
         &entities,
         in_game,
         is_action,
-        space_member.is_master,
+        channel_member.is_master,
         None,
     )
     .await?;
@@ -84,8 +57,8 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let db = &mut *conn;
     let message = Message::get(db, &message_id, Some(&session.user_id)).await?;
-    ChannelMember::get_with_space_member(db, &session.user_id, &message.channel_id)
-        .await?
+    ChannelMember::get(db, &session.user_id, &message.channel_id)
+        .await
         .ok_or(AppError::Unauthenticated)?;
     if message.sender_id != session.user_id {
         return Err(AppError::Unauthenticated);
@@ -141,8 +114,8 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
     let db = &mut *conn;
     let channel_id = preview.channel_id.clone();
 
-    ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
-        .await?
+    ChannelMember::get(db, &session.user_id, &channel_id)
+        .await
         .ok_or(AppError::Unauthenticated)?;
     fire(&channel_id, Event::message_preview(channel_id.clone(), preview));
     api::Return::new(true).build()

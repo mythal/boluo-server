@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{AppError, DbError};
-use crate::spaces::SpaceMember;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +103,7 @@ impl Message {
 
 #[tokio::test]
 async fn message_test() {
+    use crate::spaces::SpaceMember;
     use crate::channels::{Channel, ChannelMember};
     use crate::database::Client;
     use crate::spaces::Space;
@@ -121,11 +121,11 @@ async fn message_test() {
     let user = User::create(db, email, username, nickname, password).await.unwrap();
     let space = Space::create(db, space_name, &user.id, None).await.unwrap();
     SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();
-    SpaceMember::set_master(db, &user.id, &space.id, true).await.unwrap();
 
     let channel_name = "Test Channel";
     let channel = Channel::create(db, &space.id, channel_name, true).await.unwrap();
     ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();
+    ChannelMember::set_master(db, &user.id, &channel.id, true).await.unwrap();
     let entities = serde_json::Value::Array(vec![]);
     let text = "hello, world";
     let message = Message::create(
@@ -156,7 +156,7 @@ async fn message_test() {
 
     let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
     assert_eq!(message.text, new_text);
-    SpaceMember::set_master(db, &user.id, &space.id, false).await.unwrap();
+    ChannelMember::set_master(db, &user.id, &channel.id, false).await.unwrap();
     let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
     assert_eq!(message.text, "");
 

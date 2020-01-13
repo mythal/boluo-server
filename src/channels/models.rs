@@ -57,6 +57,7 @@ pub struct ChannelMember {
     pub channel_id: Uuid,
     pub join_date: NaiveDateTime,
     pub character_name: String,
+    pub is_master: bool,
 }
 
 impl ChannelMember {
@@ -115,18 +116,33 @@ impl ChannelMember {
             .await
     }
 
-    pub async fn set<T: Querist>(
+    pub async fn set_name<T: Querist>(
         db: &mut T,
         user_id: &Uuid,
         channel_id: &Uuid,
         character_name: &str,
     ) -> Result<ChannelMember, AppError> {
         db.fetch(
-            include_str!("sql/set_member.sql"),
+            include_str!("sql/set_name.sql"),
             &[user_id, channel_id, &character_name],
         )
         .await
         .map(|row| row.get(0))
+    }
+
+
+    pub async fn set_master<T: Querist>(
+        db: &mut T,
+        user_id: &Uuid,
+        channel_id: &Uuid,
+        is_master: bool,
+    ) -> Result<ChannelMember, AppError> {
+        db.fetch(
+            include_str!("sql/set_master.sql"),
+            &[user_id, channel_id, &is_master],
+        )
+            .await
+            .map(|row| row.get(0))
     }
 
     pub async fn remove_by_space<T: Querist>(db: &mut T, user: &Uuid, space: &Uuid) -> Result<(), DbError> {
@@ -163,9 +179,10 @@ async fn channels_test() {
     assert_eq!(channels[0].id, channel.id);
 
     // members
+    SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();
     let member = ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();
     let character_name = "Cocona";
-    ChannelMember::set(db, &member.user_id, &member.channel_id, character_name)
+    ChannelMember::set_name(db, &member.user_id, &member.channel_id, character_name)
         .await
         .unwrap();
     let member_altered = ChannelMember::get(db, &user.id, &channel.id).await.unwrap();
@@ -186,10 +203,10 @@ async fn channels_test() {
     ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();
     let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true).await.unwrap();
     ChannelMember::add_user(db, &user.id, &channel_2.id).await.unwrap();
-    ChannelMember::remove_by_space(db, &user.id, &space.id).await.unwrap();
-    ChannelMember::get_with_space_member(db, &user.id, &channel.id)
+    ChannelMember::get(db, &user.id, &channel.id)
         .await
         .unwrap();
+    ChannelMember::remove_by_space(db, &user.id, &space.id).await.unwrap();
     assert!(ChannelMember::get(db, &user.id, &channel.id).await.is_none());
     assert!(ChannelMember::get(db, &user.id, &channel_2.id).await.is_none());
 
