@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::messages::Preview;
 use crate::{api, database};
 use hyper::{Body, Request};
+use crate::spaces::SpaceMember;
 
 async fn send(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
@@ -88,10 +89,10 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let db = &mut *conn;
     let message = Message::get(db, &id, None).await?;
-    let (_, space_member) = ChannelMember::get_with_space_member(db, &session.id, &message.channel_id)
+    let space_member = SpaceMember::get_by_channel(db, &session.id, &message.channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
-    if !(message.sender_id == session.user_id || space_member.is_admin) {
+    if message.sender_id != session.user_id && !space_member.is_admin {
         return Err(AppError::Unauthenticated);
     }
     Message::delete(db, &id).await?;

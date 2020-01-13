@@ -138,6 +138,12 @@ impl SpaceMember {
             .ok()
     }
 
+    pub async fn get_by_channel<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<Option<SpaceMember>, DbError> {
+        let rows = db.query(include_str!("sql/get_members_by_channel.sql"), &[user_id, channel_id])
+            .await?;
+        Ok(rows.into_iter().next().map(|row| row.get(0)))
+    }
+
     pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMember>, DbError> {
         let rows = db
             .query(include_str!("sql/get_members_by_spaces.sql"), &[space_id])
