@@ -132,6 +132,26 @@ impl Event {
             payload: EventPayload::MessagePreview { preview },
         }
     }
+
+    pub fn fire(self, channel_id: Uuid) {
+        use tokio::spawn;
+        let event = Arc::new(self);
+        spawn(async move {
+            let mut queue = EventQueue::get().write().await;
+            queue.push(event);
+            drop(queue);
+            let broadcast_table = get_broadcast_table();
+            let table = broadcast_table.read().await;
+            if let Some(tx) = table.get(&channel_id) {
+                if let Err(_) = tx.send(()) {
+                    drop(table);
+                    let mut table = broadcast_table.write().await;
+                    log::debug!("Event fired but no receiver.");
+                    table.remove(&channel_id);
+                }
+            }
+        });
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -166,25 +186,4 @@ pub async fn get_receiver(id: &Uuid) -> broadcast::Receiver<()> {
         table.insert(id.clone(), tx);
         rx
     }
-}
-
-pub fn fire(channel_id: &Uuid, event: Event) {
-    use tokio::spawn;
-    let event = Arc::new(event);
-    let channel_id = channel_id.clone();
-    spawn(async move {
-        let mut queue = EventQueue::get().write().await;
-        queue.push(event);
-        drop(queue);
-        let broadcast_table = get_broadcast_table();
-        let table = broadcast_table.read().await;
-        if let Some(tx) = table.get(&channel_id) {
-            if let Err(_) = tx.send(()) {
-                drop(table);
-                let mut table = broadcast_table.write().await;
-                log::debug!("Event fired but no receiver.");
-                table.remove(&channel_id);
-            }
-        }
-    });
 }

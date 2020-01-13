@@ -1,7 +1,7 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
 use crate::api::{parse_query, IdQuery};
-use crate::channels::{fire, Channel, ChannelMember, Event};
+use crate::channels::{Channel, ChannelMember, Event};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::messages::Preview;
@@ -41,7 +41,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
     )
     .await?;
     let result = api::Return::new(&message).build();
-    fire(&channel_id, Event::new_message(message));
+    Event::new_message(message).fire(channel_id);
     result
 }
 
@@ -70,7 +70,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     let message = Message::edit(db, name, &message_id, text, &entities, in_game, is_action).await?;
     let result = api::Return::new(&message).build();
     let channel_id = message.channel_id.clone();
-    fire(&channel_id, Event::message_edited(channel_id, message));
+    Event::message_edited(channel_id, message).fire(channel_id);
     result
 }
 
@@ -97,8 +97,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     }
     Message::delete(db, &id).await?;
     let channel_id = message.channel_id.clone();
-    let event = Event::message_deleted(channel_id, message.id.clone());
-    fire(&message.channel_id, event);
+    Event::message_deleted(channel_id, message.id).fire(channel_id);
     api::Return::new(true).build()
 }
 
@@ -118,7 +117,7 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
     ChannelMember::get(db, &session.user_id, &channel_id)
         .await
         .ok_or(AppError::Unauthenticated)?;
-    fire(&channel_id, Event::message_preview(channel_id.clone(), preview));
+    Event::message_preview(channel_id, preview).fire(channel_id);
     api::Return::new(true).build()
 }
 

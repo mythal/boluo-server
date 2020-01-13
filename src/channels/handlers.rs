@@ -1,4 +1,4 @@
-use super::api::{fire, get_receiver, ChannelWithRelated, Create, Event};
+use super::api::{get_receiver, ChannelWithRelated, Create, Event};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_query, IdQuery};
@@ -100,7 +100,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
 
     Channel::delete(db, &id).await?;
     log::info!("channel {} was deleted.", &id);
-    fire(&channel.id, Event::channel_deleted(id));
+    Event::channel_deleted(id).fire(channel.id);
     return api::Return::new(true).build();
 }
 
