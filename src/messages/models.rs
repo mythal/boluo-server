@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use chrono::naive::NaiveDateTime;
 use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
@@ -23,17 +21,14 @@ pub struct Message {
     pub seed: Vec<u8>,
     pub deleted: bool,
     pub in_game: bool,
-    pub is_system_message: bool,
     pub is_action: bool,
     pub is_master: bool,
     pub pinned: bool,
     pub tags: Vec<String>,
-    pub reaction: HashMap<String, Option<String>>,
-    pub crossed_off: bool,
+    pub folded: bool,
     pub text: String,
     pub whisper_to_users: Option<Vec<Uuid>>,
     pub entities: JsonValue,
-    pub metadata: Option<serde_json::Value>,
     pub created: NaiveDateTime,
     pub modified: NaiveDateTime,
     pub order_date: NaiveDateTime,
@@ -41,8 +36,10 @@ pub struct Message {
 }
 
 impl Message {
-    pub async fn get<T: Querist>(db: &mut T, id: &Uuid) -> Result<Message, AppError> {
-        db.fetch(include_str!("sql/get.sql"), &[id]).await.map(|row| row.get(0))
+    pub async fn get<T: Querist>(db: &mut T, id: &Uuid, user_id: Option<&Uuid>) -> Result<Message, AppError> {
+        db.fetch(include_str!("sql/get.sql"), &[id, &user_id])
+            .await
+            .map(|row| row.get(0))
     }
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Vec<Message>, DbError> {
@@ -61,6 +58,7 @@ impl Message {
         in_game: bool,
         is_action: bool,
         is_master: bool,
+        whisper_to: Option<Vec<Uuid>>,
     ) -> Result<Message, AppError> {
         let mut rows = db
             .query(
@@ -75,6 +73,7 @@ impl Message {
                     &in_game,
                     &is_action,
                     &is_master,
+                    &whisper_to,
                 ],
             )
             .await?;
@@ -101,25 +100,6 @@ impl Message {
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
         db.execute(include_str!("sql/delete.sql"), &[id]).await
     }
-
-    pub fn hide(&mut self) {
-        self.text = String::new();
-        self.entities = serde_json::Value::Array(vec![]);
-        self.seed = vec![];
-    }
-
-    pub fn mask(&mut self, user_id: Option<&Uuid>) {
-        if let Some(ref whisper_to) = self.whisper_to_users {
-            if let Some(user_id) = user_id {
-                if user_id == &self.sender_id {
-                    return;
-                } else if whisper_to.iter().find(|id| *id == user_id).is_some() {
-                    return;
-                }
-            }
-            self.hide()
-        }
-    }
 }
 
 #[tokio::test]
@@ -140,7 +120,8 @@ async fn message_test() {
 
     let user = User::create(db, email, username, nickname, password).await.unwrap();
     let space = Space::create(db, space_name, &user.id, None).await.unwrap();
-    SpaceMember::add_user(db, &user.id, &space.id).await.unwrap();
+    SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();
+    SpaceMember::set_master(db, &user.id, &space.id, true).await.unwrap();
 
     let channel_name = "Test Channel";
     let channel = Channel::create(db, &space.id, channel_name, true).await.unwrap();
@@ -158,21 +139,32 @@ async fn message_test() {
         true,
         false,
         true,
+        Some(vec![]),
     )
     .await
     .unwrap();
+    assert_eq!(message.text, "");
+
+    let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
     assert_eq!(message.text, text);
+
     let new_text = "cocona";
     let edited = Message::edit(db, None, &message.id, Some(new_text), &Some(entities), None, None)
         .await
         .unwrap();
-    assert_eq!(edited.text, new_text);
-    let message = Message::get(db, &message.id).await.unwrap();
+    assert_eq!(edited.text, "");
+
+    let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
+    assert_eq!(message.text, new_text);
+    SpaceMember::set_master(db, &user.id, &space.id, false).await.unwrap();
+    let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
+    assert_eq!(message.text, "");
+
     let messages = Message::get_by_channel(db, &channel.id).await.unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, message.id);
     Message::delete(db, &message.id).await.unwrap();
-    assert!(Message::get(db, &message.id).await.is_err());
+    assert!(Message::get(db, &message.id, Some(&user.id)).await.is_err());
 }
 
 #[derive(Debug, Serialize, Deserialize)]

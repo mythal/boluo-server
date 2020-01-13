@@ -63,6 +63,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
         in_game,
         is_action,
         space_member.is_master,
+        None,
     )
     .await?;
     let result = api::Return::new(&message).build();
@@ -82,7 +83,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let message = Message::get(db, &message_id).await?;
+    let message = Message::get(db, &message_id, Some(&session.user_id)).await?;
     ChannelMember::get_with_space_member(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
@@ -103,20 +104,8 @@ async fn query(req: Request<Body>) -> api::AppResult {
     let api::IdQuery { id } = api::parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let mut message = Message::get(db, &id).await?;
-    let mut user_id = None;
-    let mut is_master = false;
-    if let Ok(session) = authenticate(&req).await {
-        if let Some((_, space_member)) =
-            ChannelMember::get_with_space_member(db, &session.user_id, &message.channel_id).await?
-        {
-            is_master = space_member.is_master;
-        }
-        user_id = Some(session.user_id);
-    }
-    if !is_master {
-        message.mask(user_id.as_ref());
-    }
+    let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
+    let message = Message::get(db, &id, user_id.as_ref()).await?;
     api::Return::new(&message).build()
 }
 
@@ -125,7 +114,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let api::IdQuery { id } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let message = Message::get(db, &id).await?;
+    let message = Message::get(db, &id, None).await?;
     let (_, space_member) = ChannelMember::get_with_space_member(db, &session.id, &message.channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
@@ -166,10 +155,7 @@ async fn by_channel(req: Request<Body>) -> api::AppResult {
     let db = &mut *db;
 
     let channel = Channel::get_by_id(db, &id).await?;
-    let mut messages = Message::get_by_channel(db, &channel.id).await?;
-    for message in messages.iter_mut() {
-        message.hide();
-    }
+    let messages = Message::get_by_channel(db, &channel.id).await?;
     api::Return::new(&messages).build()
 }
 

@@ -1,4 +1,6 @@
-SELECT messages
-FROM messages
-WHERE channel_id = $1 AND deleted = false
-ORDER BY order_date DESC, order_offset;
+SELECT msg.hide
+FROM messages msg
+WHERE msg.channel_id = $1
+  AND msg.deleted = false
+ORDER BY msg.order_date DESC, msg.order_offset;
+
