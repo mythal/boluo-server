@@ -61,6 +61,10 @@ pub fn timestamp() -> i64 {
     Local::now().timestamp_millis()
 }
 
+pub fn inner_map<T, E, U, F: Fn(T) -> U>(x: Result<Option<T>, E>, mapper: F) -> Result<Option<U>, E> {
+    x.map(|y| y.map(mapper))
+}
+
 #[test]
 fn test_sign() {
     let message = "hello, world";

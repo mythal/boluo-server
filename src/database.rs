@@ -1,16 +1,16 @@
-use crate::error::{AppError, DbError};
+use crate::error::DbError;
 use std::collections::HashMap;
 use std::convert::{From, Into};
 use std::env;
 use std::hash::BuildHasher;
 pub use tokio_postgres::types::{ToSql, Type as SqlType};
+use tokio_postgres::{Row, Statement};
 
 use async_trait::async_trait;
 
 pub mod pool;
 
 pub use pool::get;
-use tokio_postgres::Statement;
 
 // workaround: https://github.com/dtolnay/async-trait/issues/48
 #[derive(Eq, PartialEq, Hash, Copy, Clone)]
@@ -29,14 +29,44 @@ pub trait Querist: Send {
         source: T,
         types: &[postgres_types::Type],
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<tokio_postgres::Row>, DbError>;
+    ) -> Result<Vec<Row>, DbError>;
 
     async fn query<T: Into<Sql> + Send>(
         &mut self,
         source: T,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<tokio_postgres::Row>, DbError> {
+    ) -> Result<Vec<Row>, DbError> {
         self.query_typed(source, &[], params).await
+    }
+
+    async fn query_one_typed<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, DbError>;
+
+    async fn query_one<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, DbError> {
+        self.query_one_typed(source, &[], params).await
+    }
+
+    async fn query_exactly_one_typed<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Row, DbError>;
+
+    async fn query_exactly_one<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Row, DbError> {
+        self.query_exactly_one_typed(source, &[], params).await
     }
 
     async fn execute_typed<T: Into<Sql> + Send>(
@@ -52,27 +82,6 @@ pub trait Querist: Send {
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, DbError> {
         self.execute_typed(source, &[], params).await
-    }
-
-    async fn fetch_typed<T: Into<Sql> + Send>(
-        &mut self,
-        source: T,
-        types: &[postgres_types::Type],
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<tokio_postgres::Row, AppError> {
-        self.query_typed(source, types, params)
-            .await?
-            .into_iter()
-            .next()
-            .ok_or(AppError::NotFound)
-    }
-
-    async fn fetch<T: Into<Sql> + Send>(
-        &mut self,
-        source: T,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<tokio_postgres::Row, AppError> {
-        self.fetch_typed(source, &[], params).await
     }
 }
 
@@ -106,6 +115,13 @@ impl Client {
 
     pub fn is_broken(&self) -> bool {
         self.broken
+    }
+
+    fn check_broken<T>(&mut self, input: Result<T, DbError>) -> Result<T, DbError> {
+        if input.is_err() && self.client.is_closed() {
+            self.mark_broken()
+        }
+        input
     }
 
     fn mark_broken(&mut self) {
@@ -163,11 +179,27 @@ impl Querist for Client {
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<tokio_postgres::Row>, DbError> {
         let statement = self.get_statement(source.into(), types).await?;
-        let result = self.client.query(&statement, params).await;
-        if result.is_err() && self.client.is_closed() {
-            self.mark_broken()
-        }
-        result
+        self.check_broken(self.client.query(&statement, params).await)
+    }
+
+    async fn query_one_typed<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, DbError> {
+        let statement = self.get_statement(source.into(), types).await?;
+        self.check_broken(self.client.query_opt(&statement, params).await)
+    }
+
+    async fn query_exactly_one_typed<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Row, DbError> {
+        let statement = self.get_statement(source.into(), types).await?;
+        self.check_broken(self.client.query_one(&statement, params).await)
     }
 
     async fn execute_typed<T: Into<Sql> + Send>(
@@ -177,11 +209,7 @@ impl Querist for Client {
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, DbError> {
         let statement = self.get_statement(source.into(), types).await?;
-        let result = self.client.execute(&statement, params).await;
-        if result.is_err() && self.client.is_closed() {
-            self.mark_broken();
-        }
-        result
+        self.check_broken(self.client.execute(&statement, params).await)
     }
 }
 
@@ -220,6 +248,26 @@ impl Querist for Transaction<'_> {
     ) -> Result<Vec<tokio_postgres::Row>, DbError> {
         let statement = self.get_statement(source.into(), types).await?;
         self.transaction.query(&statement, params).await
+    }
+
+    async fn query_one_typed<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, DbError> {
+        let statement = self.get_statement(source.into(), types).await?;
+        self.transaction.query_opt(&statement, params).await
+    }
+
+    async fn query_exactly_one_typed<T: Into<Sql> + Send>(
+        &mut self,
+        source: T,
+        types: &[postgres_types::Type],
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Row, DbError> {
+        let statement = self.get_statement(source.into(), types).await?;
+        self.transaction.query_one(&statement, params).await
     }
 
     async fn execute_typed<T: Into<Sql> + Send>(

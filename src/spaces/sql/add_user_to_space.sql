@@ -4,8 +4,8 @@ WITH add(space_members) AS (
         ON CONFLICT DO NOTHING
         RETURNING space_members
 )
-SELECT true, space_members FROM add
+SELECT true AS created, space_members FROM add
 UNION ALL
-SELECT false, space_members FROM space_members
+SELECT false AS created, space_members FROM space_members
 WHERE user_id = $1 AND space_id = $2
 LIMIT 1;

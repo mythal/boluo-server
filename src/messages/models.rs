@@ -5,7 +5,8 @@ use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
 use crate::database::Querist;
-use crate::error::{AppError, DbError};
+use crate::error::DbError;
+use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -35,10 +36,9 @@ pub struct Message {
 }
 
 impl Message {
-    pub async fn get<T: Querist>(db: &mut T, id: &Uuid, user_id: Option<&Uuid>) -> Result<Message, AppError> {
-        db.fetch(include_str!("sql/get.sql"), &[id, &user_id])
-            .await
-            .map(|row| row.get(0))
+    pub async fn get<T: Querist>(db: &mut T, id: &Uuid, user_id: Option<&Uuid>) -> Result<Option<Message>, DbError> {
+        let result = db.query_one(include_str!("sql/get.sql"), &[id, &user_id]).await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Vec<Message>, DbError> {
@@ -58,9 +58,9 @@ impl Message {
         is_action: bool,
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
-    ) -> Result<Message, AppError> {
-        let mut rows = db
-            .query(
+    ) -> Result<Option<Message>, DbError> {
+        let result = db
+            .query_one(
                 include_str!("sql/create.sql"),
                 &[
                     &message_id,
@@ -75,8 +75,8 @@ impl Message {
                     &whisper_to,
                 ],
             )
-            .await?;
-        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
+            .await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn edit<T: Querist>(
@@ -87,13 +87,14 @@ impl Message {
         entities: &Option<JsonValue>,
         in_game: Option<bool>,
         is_action: Option<bool>,
-    ) -> Result<Message, AppError> {
-        db.fetch(
-            include_str!("sql/edit.sql"),
-            &[id, &name, &text, &entities, &in_game, &is_action],
-        )
-        .await
-        .map(|row| row.get(0))
+    ) -> Result<Option<Message>, DbError> {
+        let result = db
+            .query_one(
+                include_str!("sql/edit.sql"),
+                &[id, &name, &text, &entities, &in_game, &is_action],
+            )
+            .await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
@@ -102,15 +103,15 @@ impl Message {
 }
 
 #[tokio::test]
-async fn message_test() {
-    use crate::spaces::SpaceMember;
+async fn message_test() -> Result<(), crate::error::AppError> {
     use crate::channels::{Channel, ChannelMember};
     use crate::database::Client;
     use crate::spaces::Space;
+    use crate::spaces::SpaceMember;
     use crate::users::User;
 
     let mut client = Client::new().await;
-    let mut trans = client.transaction().await.unwrap();
+    let mut trans = client.transaction().await?;
     let db = &mut trans;
     let email = "test@mythal.net";
     let username = "test_user";
@@ -118,14 +119,14 @@ async fn message_test() {
     let nickname = "Test User";
     let space_name = "Test Space";
 
-    let user = User::create(db, email, username, nickname, password).await.unwrap();
-    let space = Space::create(db, space_name, &user.id, None).await.unwrap();
-    SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();
+    let user = User::create(db, email, username, nickname, password).await?;
+    let space = Space::create(db, space_name, &user.id, None).await?.unwrap();
+    SpaceMember::add_owner(db, &user.id, &space.id).await?;
 
     let channel_name = "Test Channel";
-    let channel = Channel::create(db, &space.id, channel_name, true).await.unwrap();
-    ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();
-    ChannelMember::set_master(db, &user.id, &channel.id, true).await.unwrap();
+    let channel = Channel::create(db, &space.id, channel_name, true).await?.unwrap();
+    ChannelMember::add_user(db, &user.id, &channel.id).await?;
+    ChannelMember::set_master(db, &user.id, &channel.id, true).await?;
     let entities = serde_json::Value::Array(vec![]);
     let text = "hello, world";
     let message = Message::create(
@@ -141,30 +142,31 @@ async fn message_test() {
         true,
         Some(vec![]),
     )
-    .await
+    .await?
     .unwrap();
     assert_eq!(message.text, "");
 
-    let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
+    let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, text);
 
     let new_text = "cocona";
     let edited = Message::edit(db, None, &message.id, Some(new_text), &Some(entities), None, None)
-        .await
+        .await?
         .unwrap();
     assert_eq!(edited.text, "");
 
-    let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
+    let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, new_text);
-    ChannelMember::set_master(db, &user.id, &channel.id, false).await.unwrap();
-    let message = Message::get(db, &message.id, Some(&user.id)).await.unwrap();
+    ChannelMember::set_master(db, &user.id, &channel.id, false).await?;
+    let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, "");
 
-    let messages = Message::get_by_channel(db, &channel.id).await.unwrap();
+    let messages = Message::get_by_channel(db, &channel.id).await?;
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, message.id);
-    Message::delete(db, &message.id).await.unwrap();
-    assert!(Message::get(db, &message.id, Some(&user.id)).await.is_err());
+    Message::delete(db, &message.id).await?;
+    assert!(Message::get(db, &message.id, Some(&user.id)).await?.is_none());
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]

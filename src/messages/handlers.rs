@@ -5,9 +5,9 @@ use crate::channels::{Channel, ChannelMember, Event};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::messages::Preview;
+use crate::spaces::SpaceMember;
 use crate::{api, database};
 use hyper::{Body, Request};
-use crate::spaces::SpaceMember;
 
 async fn send(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
@@ -23,7 +23,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let db = &mut *conn;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
-        .await
+        .await?
         .ok_or(AppError::Unauthenticated)?;
     let name = name.unwrap_or(channel_member.character_name);
     let message = Message::create(
@@ -39,7 +39,8 @@ async fn send(req: Request<Body>) -> api::AppResult {
         channel_member.is_master,
         None,
     )
-    .await?;
+    .await?
+    .ok_or(AppError::AlreadyExists)?;
     let result = api::Return::new(&message).build();
     Event::new_message(message).fire(channel_id);
     result
@@ -55,19 +56,24 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         in_game,
         is_action,
     } = api::parse_body(req).await?;
-    let mut conn = database::get().await;
-    let db = &mut *conn;
-    let message = Message::get(db, &message_id, Some(&session.user_id)).await?;
+    let mut db = database::get().await;
+    let mut trans = db.transaction().await?;
+    let db = &mut trans;
+    let message = Message::get(db, &message_id, Some(&session.user_id))
+        .await?
+        .ok_or(AppError::NotFound)?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await
+        .await?
         .ok_or(AppError::Unauthenticated)?;
     if message.sender_id != session.user_id {
         return Err(AppError::Unauthenticated);
     }
-
     let text = text.as_ref().map(String::as_str);
     let name = name.as_ref().map(String::as_str);
-    let message = Message::edit(db, name, &message_id, text, &entities, in_game, is_action).await?;
+    let message = Message::edit(db, name, &message_id, text, &entities, in_game, is_action)
+        .await?
+        .ok_or_else(|| unexpected!("The message had been delete."))?;
+    trans.commit().await?;
     let result = api::Return::new(&message).build();
     let channel_id = message.channel_id.clone();
     Event::message_edited(channel_id, message).fire(channel_id);
@@ -88,7 +94,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let api::IdQuery { id } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let message = Message::get(db, &id, None).await?;
+    let message = Message::get(db, &id, None).await?.ok_or(AppError::NotFound)?;
     let space_member = SpaceMember::get_by_channel(db, &session.id, &message.channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
@@ -115,7 +121,7 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
     let channel_id = preview.channel_id.clone();
 
     ChannelMember::get(db, &session.user_id, &channel_id)
-        .await
+        .await?
         .ok_or(AppError::Unauthenticated)?;
     Event::message_preview(channel_id, preview).fire(channel_id);
     api::Return::new(true).build()
@@ -127,7 +133,7 @@ async fn by_channel(req: Request<Body>) -> api::AppResult {
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let channel = Channel::get_by_id(db, &id).await?;
+    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
     let messages = Message::get_by_channel(db, &channel.id).await?;
     api::Return::new(&messages).build()
 }

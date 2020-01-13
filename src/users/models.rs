@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{AppError, DbError};
+use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -62,17 +63,18 @@ impl User {
         id: Option<&Uuid>,
         email: Option<&str>,
         username: Option<&str>,
-    ) -> Result<User, AppError> {
+    ) -> Result<Option<User>, DbError> {
         use postgres_types::Type;
 
         let email = email.map(|s| s.to_ascii_lowercase());
-        db.fetch_typed(
-            include_str!("sql/get.sql"),
-            &[Type::UUID, Type::TEXT, Type::TEXT],
-            &[&id, &email, &username],
-        )
-        .await
-        .map(|row| row.get(0))
+        let result = db
+            .query_one_typed(
+                include_str!("sql/get.sql"),
+                &[Type::UUID, Type::TEXT, Type::TEXT],
+                &[&id, &email, &username],
+            )
+            .await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn login<T: Querist>(
@@ -85,12 +87,13 @@ impl User {
 
         let email = email.map(|s| s.to_ascii_lowercase());
         let row = db
-            .fetch_typed(
+            .query_one_typed(
                 include_str!("sql/login.sql"),
                 &[Type::TEXT, Type::TEXT, Type::TEXT],
                 &[&email, &username, &password],
             )
-            .await?;
+            .await?
+            .ok_or(AppError::NoPermission)?;
         let password_matched = row.get(0);
         if password_matched {
             Ok(row.get(1))
@@ -99,15 +102,15 @@ impl User {
         }
     }
 
-    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<User, AppError> {
+    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<User>, DbError> {
         User::get(db, Some(id), None, None).await
     }
 
-    pub async fn get_by_email<T: Querist>(db: &mut T, email: &str) -> Result<User, AppError> {
+    pub async fn get_by_email<T: Querist>(db: &mut T, email: &str) -> Result<Option<User>, DbError> {
         User::get(db, None, Some(email), None).await
     }
 
-    pub async fn get_by_username<T: Querist>(db: &mut T, username: &str) -> Result<User, AppError> {
+    pub async fn get_by_username<T: Querist>(db: &mut T, username: &str) -> Result<Option<User>, DbError> {
         User::get(db, None, None, Some(username)).await
     }
 
@@ -117,7 +120,7 @@ impl User {
 }
 
 #[tokio::test]
-async fn user_test() {
+async fn user_test() -> Result<(), AppError> {
     use crate::database::Client;
 
     let mut client = Client::new().await;
@@ -129,7 +132,7 @@ async fn user_test() {
     let new_user = User::create(&mut trans, email, username, nickname, password)
         .await
         .unwrap();
-    let user = User::get_by_id(&mut trans, &new_user.id).await.unwrap();
+    let user = User::get_by_id(&mut trans, &new_user.id).await?.unwrap();
     assert_eq!(user.email, email);
     let user = User::login(&mut trans, Some(email), None, password).await.unwrap();
     assert_eq!(user.nickname, nickname);
@@ -138,4 +141,5 @@ async fn user_test() {
 
     let all_users = User::all(&mut trans).await.unwrap();
     assert!(all_users.into_iter().find(|u| u.id == user.id).is_none());
+    Ok(())
 }

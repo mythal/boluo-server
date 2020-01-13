@@ -4,8 +4,8 @@ WITH add(channel_members) AS (
         ON CONFLICT DO NOTHING
         RETURNING channel_members
 )
-SELECT true, channel_members FROM add
+SELECT true AS created, channel_members FROM add
 UNION ALL
-SELECT false, channel_members FROM channel_members
+SELECT false AS created, channel_members FROM channel_members
 WHERE user_id = $1 AND channel_id = $2
 LIMIT 1;

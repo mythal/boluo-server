@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::database::Querist;
-use crate::error::{AppError, DbError};
+use crate::error::DbError;
+use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -29,27 +30,29 @@ impl Space {
         name: &str,
         owner_id: &Uuid,
         password: Option<&str>,
-    ) -> Result<Space, AppError> {
-        let mut rows = db
+    ) -> Result<Option<Space>, DbError> {
+        let result = db
             .query(include_str!("sql/create.sql"), &[&name, owner_id, &password])
-            .await?;
-        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
+            .await
+            .map(|mut rows| rows.pop());
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<(), DbError> {
         db.execute(include_str!("sql/delete.sql"), &[id]).await.map(|_| ())
     }
 
-    async fn get<T: Querist>(db: &mut T, id: Option<&Uuid>, name: Option<&str>) -> Result<Space, AppError> {
+    async fn get<T: Querist>(db: &mut T, id: Option<&Uuid>, name: Option<&str>) -> Result<Option<Space>, DbError> {
         use postgres_types::Type;
         let join_owner = false;
-        db.fetch_typed(
-            include_str!("sql/get.sql"),
-            &[Type::UUID, Type::TEXT, Type::BOOL],
-            &[&id, &name, &join_owner],
-        )
-        .await
-        .map(|row| row.get(0))
+        let result = db
+            .query_one_typed(
+                include_str!("sql/get.sql"),
+                &[Type::UUID, Type::TEXT, Type::BOOL],
+                &[&id, &name, &join_owner],
+            )
+            .await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<Space>, DbError> {
@@ -57,18 +60,17 @@ impl Space {
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
-    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Space, AppError> {
+    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<Space>, DbError> {
         Space::get(db, Some(id), None).await
     }
 
-    pub async fn get_by_name<T: Querist>(db: &mut T, name: &str) -> Result<Space, AppError> {
+    pub async fn get_by_name<T: Querist>(db: &mut T, name: &str) -> Result<Option<Space>, DbError> {
         Space::get(db, None, Some(name)).await
     }
 
-    pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<bool, AppError> {
-        db.fetch(include_str!("sql/is_public.sql"), &[id])
-            .await
-            .map(|row| row.get(0))
+    pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<bool>, DbError> {
+        let row = db.query_one(include_str!("sql/is_public.sql"), &[id]).await?;
+        Ok(row.map(|row| row.get(0)))
     }
 }
 
@@ -88,7 +90,7 @@ impl SpaceMember {
         user_id: &Uuid,
         space_id: &Uuid,
         is_admin: bool,
-    ) -> Result<SpaceMember, AppError> {
+    ) -> Result<Option<SpaceMember>, DbError> {
         SpaceMember::set(db, user_id, space_id, Some(is_admin)).await
     }
 
@@ -97,13 +99,14 @@ impl SpaceMember {
         user_id: &Uuid,
         space_id: &Uuid,
         is_admin: Option<bool>,
-    ) -> Result<SpaceMember, AppError> {
-        db.fetch(
-            include_str!("sql/set_space_member.sql"),
-            &[&is_admin, user_id, space_id],
-        )
-        .await
-        .map(|row| row.get(0))
+    ) -> Result<Option<SpaceMember>, DbError> {
+        let result = db
+            .query_one(
+                include_str!("sql/set_space_member.sql"),
+                &[&is_admin, user_id, space_id],
+            )
+            .await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<u64, DbError> {
@@ -111,35 +114,32 @@ impl SpaceMember {
             .await
     }
 
-    pub async fn add_owner<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, AppError> {
-        let mut rows = db
-            .query(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &true])
-            .await?;
-        let row = rows
-            .pop()
-            .ok_or_else(|| unexpected!("The database returned empty result set."))?;
-        Ok(row.get(1))
+    pub async fn add_owner<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, DbError> {
+        db.query_exactly_one(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &true])
+            .await
+            .map(|row| row.get(1))
     }
 
-    pub async fn add_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, AppError> {
-        let mut rows = db
-            .query(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &false])
-            .await?;
-        let row = rows
-            .pop()
-            .ok_or_else(|| unexpected!("The database returned empty result set."))?;
-        Ok(row.get(1))
-    }
-
-    pub async fn get<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Option<SpaceMember> {
-        db.fetch(include_str!("sql/get_space_member.sql"), &[user_id, space_id])
+    pub async fn add_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, DbError> {
+        db.query_exactly_one(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &false])
             .await
             .map(|row| row.get(0))
-            .ok()
     }
 
-    pub async fn get_by_channel<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<Option<SpaceMember>, DbError> {
-        let rows = db.query(include_str!("sql/get_members_by_channel.sql"), &[user_id, channel_id])
+    pub async fn get<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<Option<SpaceMember>, DbError> {
+        let result = db
+            .query_one(include_str!("sql/get_space_member.sql"), &[user_id, space_id])
+            .await;
+        inner_map(result, |row| row.get(0))
+    }
+
+    pub async fn get_by_channel<T: Querist>(
+        db: &mut T,
+        user_id: &Uuid,
+        channel_id: &Uuid,
+    ) -> Result<Option<SpaceMember>, DbError> {
+        let rows = db
+            .query(include_str!("sql/get_members_by_channel.sql"), &[user_id, channel_id])
             .await?;
         Ok(rows.into_iter().next().map(|row| row.get(0)))
     }
@@ -167,11 +167,11 @@ pub struct RestrainedMember {
 impl RestrainedMember {}
 
 #[tokio::test]
-async fn space_test() {
+async fn space_test() -> Result<(), crate::error::AppError> {
     use crate::database::Client;
     use crate::users::User;
     let mut client = Client::new().await;
-    let mut trans = client.transaction().await.unwrap();
+    let mut trans = client.transaction().await?;
     let db = &mut trans;
     let email = "test@mythal.net";
     let username = "test_user";
@@ -179,24 +179,25 @@ async fn space_test() {
     let nickname = "Test User";
     let space_name = "Pure Illusion";
     let user = User::create(db, email, username, nickname, password).await.unwrap();
-    let space = Space::create(db, space_name, &user.id, None).await.unwrap();
-    let space = Space::get_by_name(db, &space.name).await.unwrap();
-    let space = Space::get_by_id(db, &space.id).await.unwrap();
-    assert!(Space::is_public(db, &space.id).await.unwrap());
-    let spaces = Space::all(db).await.unwrap();
+    let space = Space::create(db, space_name, &user.id, None).await?.unwrap();
+    let space = Space::get_by_name(db, &space.name).await?.unwrap();
+    let space = Space::get_by_id(db, &space.id).await?.unwrap();
+    assert!(Space::is_public(db, &space.id).await?.unwrap());
+    let spaces = Space::all(db).await?;
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
 
     // members
-    SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();
+    SpaceMember::add_owner(db, &user.id, &space.id).await?;
     SpaceMember::get(db, &user.id, &space.id).await.unwrap();
-    SpaceMember::set_admin(db, &user.id, &space.id, true).await.unwrap();
-    let mut members = SpaceMember::get_by_space(db, &space.id).await.unwrap();
+    SpaceMember::set_admin(db, &user.id, &space.id, true).await?;
+    let mut members = SpaceMember::get_by_space(db, &space.id).await?;
     let member = members.pop().unwrap();
     assert_eq!(member.user_id, user.id);
     assert_eq!(member.space_id, space.id);
-    SpaceMember::remove_user(db, &user.id, &space.id).await.unwrap();
-    assert!(SpaceMember::get(db, &user.id, &space.id).await.is_none());
+    SpaceMember::remove_user(db, &user.id, &space.id).await?;
+    assert!(SpaceMember::get(db, &user.id, &space.id).await?.is_none());
 
     // delete
-    Space::delete(db, &space.id).await.unwrap();
+    Space::delete(db, &space.id).await?;
+    Ok(())
 }

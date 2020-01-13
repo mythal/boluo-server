@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
     let member = SpaceMember::get(db, user_id, space_id)
-        .await
+        .await?
         .ok_or(AppError::Unauthenticated)?;
     if member.is_admin {
         return Err(AppError::Unauthenticated);
@@ -36,10 +36,14 @@ async fn create(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let space = Space::get_by_id(db, &space_id).await?;
+    let space = Space::get_by_id(db, &space_id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest(format!("The space not found")))?;
     admin_only(db, &session.user_id, &space_id).await?;
 
-    let channel = Channel::create(db, &space_id, &*name, true).await?;
+    let channel = Channel::create(db, &space_id, &*name, true)
+        .await?
+        .ok_or(AppError::AlreadyExists)?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
     trans.commit().await?;
     let channel_with_related = ChannelWithRelated {
@@ -70,9 +74,9 @@ async fn join(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &id).await?;
+    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
     SpaceMember::get(db, &session.user_id, &channel.space_id)
-        .await
+        .await?
         .ok_or(AppError::Unauthenticated)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
 
@@ -94,7 +98,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &id).await?;
+    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
 
     admin_only(db, &session.user_id, &channel.space_id).await?;
 

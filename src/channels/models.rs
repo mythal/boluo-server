@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::database::Querist;
-use crate::error::{AppError, DbError};
+use crate::error::DbError;
 use crate::spaces::SpaceMember;
+use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -26,17 +27,16 @@ impl Channel {
         space_id: &Uuid,
         name: &str,
         is_public: bool,
-    ) -> Result<Channel, AppError> {
-        let mut rows = db
-            .query(include_str!("sql/create_channel.sql"), &[space_id, &name, &is_public])
-            .await?;
-        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
+    ) -> Result<Option<Channel>, DbError> {
+        let result = db
+            .query_one(include_str!("sql/create_channel.sql"), &[space_id, &name, &is_public])
+            .await;
+        inner_map(result, |row| row.get(0))
     }
 
-    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Channel, AppError> {
-        db.fetch(include_str!("sql/fetch_channel.sql"), &[&id])
-            .await
-            .map(|row| row.get(0))
+    pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<Channel>, DbError> {
+        let result = db.query_one(include_str!("sql/fetch_channel.sql"), &[&id]).await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<Channel>, DbError> {
@@ -61,18 +61,10 @@ pub struct ChannelMember {
 }
 
 impl ChannelMember {
-    pub async fn add_user<T: Querist>(
-        db: &mut T,
-        user_id: &Uuid,
-        channel_id: &Uuid,
-    ) -> Result<ChannelMember, AppError> {
-        let mut rows = db
-            .query(include_str!("sql/add_user_to_channel.sql"), &[user_id, channel_id, &""])
-            .await?;
-        Ok(rows
-            .pop()
-            .ok_or_else(|| unexpected!("the database returned empty result"))?
-            .get(1))
+    pub async fn add_user<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<ChannelMember, DbError> {
+        db.query_exactly_one(include_str!("sql/add_user_to_channel.sql"), &[user_id, channel_id, &""])
+            .await
+            .map(|row| row.get(1))
     }
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<ChannelMember>, DbError> {
@@ -104,11 +96,11 @@ impl ChannelMember {
         Ok(rows.pop().map(|row| (row.get(0), row.get(1))))
     }
 
-    pub async fn get<T: Querist>(db: &mut T, user: &Uuid, channel: &Uuid) -> Option<ChannelMember> {
-        db.fetch(include_str!("sql/get_channel_member.sql"), &[user, channel])
-            .await
-            .map(|row| row.get(0))
-            .ok()
+    pub async fn get<T: Querist>(db: &mut T, user: &Uuid, channel: &Uuid) -> Result<Option<ChannelMember>, DbError> {
+        let row = db
+            .query_one(include_str!("sql/get_channel_member.sql"), &[user, channel])
+            .await?;
+        Ok(row.map(|row| row.get(0)))
     }
 
     pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<u64, DbError> {
@@ -121,28 +113,26 @@ impl ChannelMember {
         user_id: &Uuid,
         channel_id: &Uuid,
         character_name: &str,
-    ) -> Result<ChannelMember, AppError> {
-        db.fetch(
-            include_str!("sql/set_name.sql"),
-            &[user_id, channel_id, &character_name],
-        )
-        .await
-        .map(|row| row.get(0))
+    ) -> Result<Option<ChannelMember>, DbError> {
+        let result = db
+            .query_one(
+                include_str!("sql/set_name.sql"),
+                &[user_id, channel_id, &character_name],
+            )
+            .await;
+        inner_map(result, |row| row.get(0))
     }
-
 
     pub async fn set_master<T: Querist>(
         db: &mut T,
         user_id: &Uuid,
         channel_id: &Uuid,
         is_master: bool,
-    ) -> Result<ChannelMember, AppError> {
-        db.fetch(
-            include_str!("sql/set_master.sql"),
-            &[user_id, channel_id, &is_master],
-        )
-            .await
-            .map(|row| row.get(0))
+    ) -> Result<Option<ChannelMember>, DbError> {
+        let result = db
+            .query_one(include_str!("sql/set_master.sql"), &[user_id, channel_id, &is_master])
+            .await;
+        inner_map(result, |row| row.get(0))
     }
 
     pub async fn remove_by_space<T: Querist>(db: &mut T, user: &Uuid, space: &Uuid) -> Result<(), DbError> {
@@ -153,7 +143,7 @@ impl ChannelMember {
 }
 
 #[tokio::test]
-async fn channels_test() {
+async fn channels_test() -> Result<(), crate::error::AppError> {
     use crate::database::Client;
     use crate::spaces::Space;
     use crate::users::User;
@@ -168,10 +158,10 @@ async fn channels_test() {
     let space_name = "Test Space";
 
     let user = User::create(db, email, username, nickname, password).await.unwrap();
-    let space = Space::create(db, space_name, &user.id, None).await.unwrap();
+    let space = Space::create(db, space_name, &user.id, None).await?.unwrap();
     let channel_name = "Test Channel";
-    let channel = Channel::create(db, &space.id, "Test Channel", true).await.unwrap();
-    let channel = Channel::get_by_id(db, &channel.id).await.unwrap();
+    let channel = Channel::create(db, &space.id, "Test Channel", true).await?.unwrap();
+    let channel = Channel::get_by_id(db, &channel.id).await?.unwrap();
     assert_eq!(channel.space_id, space.id);
     assert_eq!(channel.name, channel_name);
 
@@ -185,7 +175,7 @@ async fn channels_test() {
     ChannelMember::set_name(db, &member.user_id, &member.channel_id, character_name)
         .await
         .unwrap();
-    let member_altered = ChannelMember::get(db, &user.id, &channel.id).await.unwrap();
+    let member_altered = ChannelMember::get(db, &user.id, &channel.id).await.unwrap().unwrap();
     assert_eq!(member.join_date, member_altered.join_date);
     assert_eq!(member_altered.character_name, character_name);
     let member_fetched = ChannelMember::get_by_channel(db, &channel.id)
@@ -201,16 +191,15 @@ async fn channels_test() {
     assert_eq!(ChannelMember::get_by_channel(db, &channel.id).await.unwrap().len(), 0);
 
     ChannelMember::add_user(db, &user.id, &channel.id).await.unwrap();
-    let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true).await.unwrap();
+    let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true).await?.unwrap();
     ChannelMember::add_user(db, &user.id, &channel_2.id).await.unwrap();
-    ChannelMember::get(db, &user.id, &channel.id)
-        .await
-        .unwrap();
+    ChannelMember::get(db, &user.id, &channel.id).await.unwrap();
     ChannelMember::remove_by_space(db, &user.id, &space.id).await.unwrap();
-    assert!(ChannelMember::get(db, &user.id, &channel.id).await.is_none());
-    assert!(ChannelMember::get(db, &user.id, &channel_2.id).await.is_none());
+    assert!(ChannelMember::get(db, &user.id, &channel.id).await.unwrap().is_none());
+    assert!(ChannelMember::get(db, &user.id, &channel_2.id).await.unwrap().is_none());
 
     // delete
     Channel::delete(db, &channel.id).await.unwrap();
-    assert!(Channel::get_by_id(db, &channel.id).await.is_err());
+    assert!(Channel::get_by_id(db, &channel.id).await?.is_none());
+    Ok(())
 }
