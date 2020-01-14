@@ -1,6 +1,6 @@
+use crate::cache;
 use crate::error::AppError::{self, BadRequest, Unauthenticated};
 use crate::error::CacheError;
-use crate::redis;
 use crate::utils::{self, sign};
 use once_cell::sync::OnceCell;
 use regex::Regex;
@@ -28,7 +28,7 @@ pub fn token_verify(token: &str) -> Result<Uuid, AppError> {
 
 pub async fn revoke_session(id: &Uuid) {
     let key = make_key(id);
-    let mut redis = redis::get().await;
+    let mut redis = cache::get().await;
     redis.remove(&*key).await.ok();
 }
 
@@ -41,13 +41,13 @@ fn test_session_sign() {
 }
 
 fn make_key(session: &Uuid) -> Vec<u8> {
-    redis::make_key(b"sessions", session, b"user_id")
+    cache::make_key(b"sessions", session, b"user_id")
 }
 
 pub async fn start(user_id: &Uuid) -> Result<Uuid, CacheError> {
     let session = utils::id();
     let key = make_key(&session);
-    let mut r = redis::get().await;
+    let mut r = cache::get().await;
     r.set(&key, user_id.as_bytes()).await?;
     Ok(session)
 }
@@ -81,7 +81,7 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     let id = token_verify(token)?;
 
     let key = make_key(&id);
-    let mut cache = redis::get().await;
+    let mut cache = cache::get().await;
     let bytes: Vec<u8> = cache.get(&*key).await.map_err(unexpected!())?.ok_or(Unauthenticated)?;
 
     let user_id = Uuid::from_slice(&*bytes).map_err(unexpected!())?;

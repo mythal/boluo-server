@@ -33,6 +33,7 @@ time = "0.1"
 ring = "*"
 base64 = "*"
 log = "0.4"
+bincode = "1"
 
 [dependencies.serde]
 version = "1.0"

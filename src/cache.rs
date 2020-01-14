@@ -1,11 +1,12 @@
 use crate::error::CacheError;
 use crate::pool::{Connect, Factory, Pool};
+use crate::utils::timestamp;
 use async_trait::async_trait;
 pub use redis::AsyncCommands;
 use uuid::Uuid;
 
 pub struct Connection {
-    inner: redis::aio::Connection,
+    pub inner: redis::aio::Connection,
     broken: bool,
 }
 
@@ -38,6 +39,33 @@ impl Connection {
     pub async fn remove(&mut self, key: &[u8]) -> Result<(), CacheError> {
         let result = self.inner.del(key).await;
         self.check(result)
+    }
+
+    pub async fn set_with_time(&mut self, key: &[u8], value: &[u8]) -> Result<(), CacheError> {
+        let result = self.inner.zadd(key, value, timestamp()).await;
+        self.check(result)
+    }
+
+    pub async fn get_after(&mut self, key: &[u8], start: i64) -> Result<Vec<Vec<u8>>, CacheError> {
+        let result: Result<Vec<Vec<u8>>, _> = self.inner.zrangebyscore(key, start, "+inf").await;
+        self.check(result)
+    }
+
+    pub async fn clear_before(&mut self, key: &[u8], end: i64) -> Result<(), CacheError> {
+        let result: Result<(), _> = self.inner.zrembyscore(key, "-inf", end).await;
+        self.check(result)
+    }
+
+    pub async fn get_min_time(&mut self, key: &[u8]) -> Result<i64, CacheError> {
+        let result: Result<(Vec<u8>, String), _> = self.inner.zrange_withscores(key, 0, 0).await;
+        let (_, timestamp) = self.check(result)?;
+        Ok(timestamp.parse().expect("Unexpected redis parse error."))
+    }
+
+    pub async fn get_max_time(&mut self, key: &[u8]) -> Result<i64, CacheError> {
+        let result: Result<(Vec<u8>, String), _> = self.inner.zrevrange_withscores(key, 0, 0).await;
+        let (_, timestamp) = self.check(result)?;
+        Ok(timestamp.parse().expect("Unexpected redis parse error."))
     }
 }
 

@@ -1,9 +1,10 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
 use crate::api::{parse_query, IdQuery};
-use crate::channels::{Channel, ChannelMember, Event};
+use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::error::AppError;
+use crate::events::Event;
 use crate::messages::Preview;
 use crate::spaces::SpaceMember;
 use crate::{api, database};
@@ -42,7 +43,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
     .await?
     .ok_or(AppError::AlreadyExists)?;
     let result = api::Return::new(&message).build();
-    Event::new_message(message).fire(channel_id);
+    Event::new_message(message);
     result
 }
 
@@ -75,8 +76,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         .ok_or_else(|| unexpected!("The message had been delete."))?;
     trans.commit().await?;
     let result = api::Return::new(&message).build();
-    let channel_id = message.channel_id.clone();
-    Event::message_edited(channel_id, message).fire(channel_id);
+    Event::message_edited(message);
     result
 }
 
@@ -103,7 +103,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     }
     Message::delete(db, &id).await?;
     let channel_id = message.channel_id.clone();
-    Event::message_deleted(channel_id, message.id).fire(channel_id);
+    Event::message_deleted(channel_id, message.id);
     api::Return::new(true).build()
 }
 
@@ -123,7 +123,7 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
     ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
-    Event::message_preview(channel_id, preview).fire(channel_id);
+    Event::message_preview(preview);
     api::Return::new(true).build()
 }
 

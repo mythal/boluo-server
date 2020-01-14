@@ -18,16 +18,18 @@ mod context;
 mod cors;
 mod csrf;
 mod database;
+mod events;
 mod logger;
 //mod media;
+mod cache;
 mod messages;
 mod pool;
-mod redis;
 mod session;
 mod spaces;
 mod users;
 mod validators;
 
+use crate::events::periodical_cleaner;
 use error::AppError;
 
 async fn router(req: Request<Body>) -> api::AppResult {
@@ -93,7 +95,7 @@ async fn main() {
     let make_svc = make_service_fn(|_: &AddrStream| async { Ok::<_, hyper::Error>(service_fn(handler)) });
 
     let server = Server::bind(&addr).serve(make_svc);
-
+    tokio::spawn(periodical_cleaner());
     // Run this server for... forever!
     if let Err(e) = server.await {
         log::error!("server error: {}", e);

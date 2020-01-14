@@ -21,6 +21,19 @@ table! {
 }
 
 table! {
+    events (id) {
+        id -> Uuid,
+        #[sql_name = "type"]
+        type_ -> Event_type,
+        channel_id -> Nullable<Uuid>,
+        space_id -> Nullable<Uuid>,
+        receiver_id -> Nullable<Uuid>,
+        payload -> Jsonb,
+        created -> Timestamp,
+    }
+}
+
+table! {
     media (id) {
         id -> Uuid,
         mine_type -> Text,
@@ -113,6 +126,9 @@ table! {
 joinable!(channel_members -> channels (channel_id));
 joinable!(channel_members -> users (user_id));
 joinable!(channels -> spaces (space_id));
+joinable!(events -> channels (channel_id));
+joinable!(events -> spaces (space_id));
+joinable!(events -> users (receiver_id));
 joinable!(messages -> channels (channel_id));
 joinable!(messages -> users (sender_id));
 joinable!(restrained_members -> spaces (space_id));
@@ -123,6 +139,7 @@ joinable!(spaces -> users (owner_id));
 allow_tables_to_appear_in_same_query!(
     channel_members,
     channels,
+    events,
     media,
     messages,
     restrained_members,
