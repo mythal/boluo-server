@@ -28,6 +28,8 @@ pub enum AppError {
     AlreadyExists,
     #[error("{0}")]
     Custom(String, StatusCode),
+    #[error("An I/O error occurred")]
+    HyperError(#[from] hyper::Error),
 }
 
 impl AppError {

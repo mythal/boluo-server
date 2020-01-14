@@ -13,6 +13,7 @@ mod utils;
 #[macro_use]
 mod error;
 mod api;
+mod cache;
 mod channels;
 mod context;
 mod cors;
@@ -20,8 +21,7 @@ mod csrf;
 mod database;
 mod events;
 mod logger;
-//mod media;
-mod cache;
+mod media;
 mod messages;
 mod pool;
 mod session;
