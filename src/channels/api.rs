@@ -10,6 +10,13 @@ pub struct Create {
     pub name: String,
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Edit {
+    pub channel_id: Uuid,
+    pub name: String,
+}
+
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelWithRelated {

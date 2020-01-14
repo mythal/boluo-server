@@ -72,6 +72,11 @@ impl Space {
         let row = db.query_one(include_str!("sql/is_public.sql"), &[id]).await?;
         Ok(row.map(|row| row.get(0)))
     }
+
+    pub async fn edit<T: Querist>(db: &mut T, space_id: &Uuid, name: Option<&str>) -> Result<Option<Space>, DbError> {
+        let result = db.query_one(include_str!("sql/edit.sql"), &[space_id, &name]).await;
+        inner_map(result, |row| row.get(0))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -185,6 +190,9 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert!(Space::is_public(db, &space.id).await?.unwrap());
     let spaces = Space::all(db).await?;
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
+    let new_name = "Mythal";
+    let space_edited = Space::edit(db, &space.id, Some(new_name)).await?.unwrap();
+    assert_eq!(space_edited.name, new_name);
 
     // members
     SpaceMember::add_owner(db, &user.id, &space.id).await?;

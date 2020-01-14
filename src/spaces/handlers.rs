@@ -1,4 +1,4 @@
-use super::api::{Create, SpaceWithRelated};
+use super::api::{Create, Edit, SpaceWithRelated};
 use super::{Space, SpaceMember};
 use crate::api::{self, parse_query, IdQuery};
 use crate::channels::Channel;
@@ -59,8 +59,24 @@ async fn create(req: Request<Body>) -> api::AppResult {
     .build()
 }
 
-async fn edit(_req: Request<Body>) -> api::AppResult {
-    todo!()
+async fn edit(req: Request<Body>) -> api::AppResult {
+    let session = authenticate(&req).await?;
+    let Edit { space_id, name } = api::parse_body(req).await?;
+
+    let mut conn = database::get().await;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
+
+    let space_member = SpaceMember::get(db, &session.user_id, &space_id)
+        .await?
+        .ok_or(AppError::NoPermission)?;
+    if !space_member.is_admin {
+        return Err(AppError::NoPermission);
+    }
+    let space = Space::edit(db, &space_id, Some(&*name))
+        .await?
+        .ok_or_else(|| unexpected!("No such space found."))?;
+    api::Return::new(space).build()
 }
 
 async fn join(req: Request<Body>) -> api::AppResult {

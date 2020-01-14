@@ -47,6 +47,11 @@ impl Channel {
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
         db.execute(include_str!("sql/delete_channel.sql"), &[id]).await
     }
+
+    pub async fn edit<T: Querist>(db: &mut T, id: &Uuid, name: Option<&str>) -> Result<Option<Channel>, DbError> {
+        let result = db.query_one(include_str!("sql/edit_channel.sql"), &[id, &name]).await;
+        inner_map(result, |row| row.get(0))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -167,6 +172,10 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
 
     let channels = Channel::get_by_space(db, &space.id).await.unwrap();
     assert_eq!(channels[0].id, channel.id);
+
+    let new_name = "深水城水很深";
+    let channel_edited = Channel::edit(db, &channel.id, Some(new_name)).await?.unwrap();
+    assert_eq!(channel_edited.name, new_name);
 
     // members
     SpaceMember::add_owner(db, &user.id, &space.id).await.unwrap();

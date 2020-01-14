@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -7,7 +8,12 @@ pub struct Create {
     pub password: Option<String>,
 }
 
-impl Create {}
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Edit {
+    pub space_id: Uuid,
+    pub name: String,
+}
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]

@@ -1,4 +1,4 @@
-use super::api::{ChannelWithRelated, Create};
+use super::api::{ChannelWithRelated, Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_query, IdQuery};
@@ -53,8 +53,24 @@ async fn create(req: Request<Body>) -> api::AppResult {
     api::Return::new(&channel_with_related).build()
 }
 
-async fn edit(_req: Request<Body>) -> api::AppResult {
-    todo!()
+async fn edit(req: Request<Body>) -> api::AppResult {
+    let session = authenticate(&req).await?;
+    let Edit { channel_id, name } = api::parse_body(req).await?;
+
+    let mut conn = database::get().await;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
+
+    let space_member = SpaceMember::get_by_channel(db, &session.user_id, &channel_id)
+        .await?
+        .ok_or(AppError::NoPermission)?;
+    if !space_member.is_admin {
+        return Err(AppError::NoPermission);
+    }
+    let channel = Channel::edit(db, &channel_id, Some(&*name))
+        .await?
+        .ok_or_else(|| unexpected!("No such channel found."))?;
+    api::Return::new(channel).build()
 }
 
 async fn members(req: Request<Body>) -> api::AppResult {
