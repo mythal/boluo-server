@@ -44,7 +44,7 @@ impl<T: Serialize> Return<T> {
             Err(err) => WebResult {
                 ok: true,
                 some: None,
-                err: Some(err.to_string()),
+                err: Some(WebError::from(err)),
             },
         };
 
@@ -59,11 +59,26 @@ impl<T: Serialize> Return<T> {
 }
 
 #[derive(Serialize, Debug)]
+pub struct WebError {
+    code: &'static str,
+    message: String,
+}
+
+impl WebError {
+    fn from(e: AppError) -> WebError {
+        WebError {
+            code: e.error_code(),
+            message: e.to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WebResult<T: Serialize> {
     ok: bool,
     some: Option<T>,
-    err: Option<String>,
+    err: Option<WebError>,
 }
 
 pub fn parse_query<T>(uri: &hyper::http::Uri) -> StdResult<T, AppError>
