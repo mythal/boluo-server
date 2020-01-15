@@ -55,7 +55,7 @@ impl User {
                 &[&email, &username, &nickname, &password],
             )
             .await?;
-        Ok(rows.pop().ok_or(AppError::AlreadyExists)?.get(0))
+        Ok(rows.pop().ok_or(AppError::AlreadyExists("User"))?.get(0))
     }
 
     async fn get<T: Querist>(
@@ -118,8 +118,16 @@ impl User {
         db.execute(include_str!("sql/deactivated.sql"), &[id]).await
     }
 
-    pub async fn set<T: Querist>(db: &mut T, id: &Uuid, nickname: Option<String>, bio: Option<String>, avatar: Option<Uuid>) -> Result<Option<User>, DbError> {
-        let result = db.query_one(include_str!("sql/set.sql"), &[id, &nickname, &bio, &avatar]).await;
+    pub async fn set<T: Querist>(
+        db: &mut T,
+        id: &Uuid,
+        nickname: Option<String>,
+        bio: Option<String>,
+        avatar: Option<Uuid>,
+    ) -> Result<Option<User>, DbError> {
+        let result = db
+            .query_one(include_str!("sql/set.sql"), &[id, &nickname, &bio, &avatar])
+            .await;
         inner_map(result, |row| row.get(0))
     }
 }
@@ -136,18 +144,26 @@ async fn user_test() -> Result<(), AppError> {
     let username = "humura";
     let nickname = "Akami Humura";
     let password = "MadokaMadokaSuHaSuHa";
-    let new_user = User::create(db, email, username, nickname, password)
-        .await
-        .unwrap();
+    let new_user = User::create(db, email, username, nickname, password).await.unwrap();
     let user = User::get_by_id(db, &new_user.id).await?.unwrap();
     assert_eq!(user.email, email);
     let user = User::login(db, Some(email), None, password).await.unwrap();
     assert_eq!(user.nickname, nickname);
 
-    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0).await?.unwrap();
+    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0)
+        .await?
+        .unwrap();
     let new_nickname = "动感超人";
     let bio = "千片万片无数片";
-    let user_altered = User::set(db, &user.id, Some(new_nickname.to_string()), Some(bio.to_string()), Some(avatar.id)).await?.unwrap();
+    let user_altered = User::set(
+        db,
+        &user.id,
+        Some(new_nickname.to_string()),
+        Some(bio.to_string()),
+        Some(avatar.id),
+    )
+    .await?
+    .unwrap();
     assert_eq!(user_altered.nickname, new_nickname);
     assert_eq!(user_altered.bio, bio);
     assert_eq!(user_altered.avatar_id, Some(avatar.id));

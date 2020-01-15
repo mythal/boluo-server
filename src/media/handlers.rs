@@ -11,9 +11,9 @@ use hyper::header::{self, HeaderValue};
 use hyper::{Body, Request, Response};
 use once_cell::sync::OnceCell;
 use regex::Regex;
+use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::prelude::*;
-use std::path::PathBuf;
 
 const MAX_SIZE: usize = 1024 * 1024 * 16;
 
@@ -99,7 +99,7 @@ async fn upload(req: Request<Body>) -> api::AppResult {
         size as i32,
     )
     .await?
-    .ok_or(AppError::AlreadyExists)?;
+    .ok_or(AppError::AlreadyExists("Media"))?;
     api::Return::new(&media).build()
 }
 
@@ -126,12 +126,12 @@ async fn get(req: Request<Body>) -> api::AppResult {
     let db = &mut *conn;
     let mut media: Option<Media> = None;
     if let Some(id) = id {
-        media = Some(Media::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?);
+        media = Some(Media::get_by_id(db, &id).await?.ok_or(AppError::NotFound("Media"))?);
     } else if let Some(filename) = filename {
         media = Some(
             Media::get_by_filename(db, &*filename)
                 .await?
-                .ok_or(AppError::NotFound)?,
+                .ok_or(AppError::NotFound("Media"))?,
         );
     }
     let media = media.ok_or_else(|| AppError::BadRequest(format!("Filename or media id must be specified.")))?;

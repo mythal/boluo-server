@@ -50,7 +50,7 @@ pub struct Edit {
 
 impl Edit {
     pub fn validate(&self) -> Result<(), &'static str> {
-        use crate::validators::{NICKNAME, BIO};
+        use crate::validators::{BIO, NICKNAME};
 
         if let Some(ref nickname) = self.nickname {
             NICKNAME.run(nickname)?;

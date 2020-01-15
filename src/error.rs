@@ -12,8 +12,8 @@ pub enum AppError {
     CacheError(#[from] CacheError),
     #[error("Authentication failed")]
     Unauthenticated,
-    #[error("Not found record")]
-    NotFound,
+    #[error("{0} not found")]
+    NotFound(&'static str),
     #[error("Permission denied")]
     NoPermission,
     #[error("Validation failed: {0}")]
@@ -24,10 +24,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("Method not allowed")]
     MethodNotAllowed,
-    #[error("Record already exists")]
-    AlreadyExists,
-    #[error("{0}")]
-    Custom(String, StatusCode),
+    #[error("{0} already exists")]
+    AlreadyExists(&'static str),
     #[error("An I/O error occurred")]
     HyperError(#[from] hyper::Error),
     #[error("An I/O error occurred")]
@@ -39,13 +37,26 @@ impl AppError {
         use AppError::*;
         match self {
             Unauthenticated => StatusCode::UNAUTHORIZED,
-            NotFound => StatusCode::NOT_FOUND,
+            NotFound(_) => StatusCode::NOT_FOUND,
             NoPermission => StatusCode::FORBIDDEN,
             ValidationFail(_) | BadRequest(_) => StatusCode::BAD_REQUEST,
             MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
-            AlreadyExists => StatusCode::CONFLICT,
-            Custom(_, code) => code.clone(),
+            AlreadyExists(_) => StatusCode::CONFLICT,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    pub fn error_code(&self) -> &'static str {
+        use AppError::*;
+        match self {
+            Unauthenticated => "UNAUTHENTICATED",
+            NotFound(_) => "NOT_FOUND",
+            NoPermission => "NO_PERMISSION",
+            ValidationFail(_) => "VALIDATION_FAIL",
+            BadRequest(_) => "BAD_REQUEST",
+            MethodNotAllowed => "METHOD_NOT_ALLOWED",
+            AlreadyExists(_) => "ALREADY_EXISTS",
+            _ => "UNEXPECTED",
         }
     }
 

@@ -50,7 +50,7 @@ async fn router(req: Request<Body>) -> api::AppResult {
     table!("/api/media", media::router);
     table!("/api/channels", channels::router);
     table!("/api/spaces", spaces::router);
-    Err(AppError::NotFound)
+    Err(AppError::missing())
 }
 
 fn error_response(e: AppError) -> Response<Body> {
@@ -71,9 +71,7 @@ fn error_response(e: AppError) -> Response<Body> {
             .unwrap()
     }
 
-    api::Return::<String>::form_error(&e)
-        .build()
-        .unwrap_or_else(last_resort)
+    api::Return::<String>::form_error(e).build().unwrap_or_else(last_resort)
 }
 
 async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {

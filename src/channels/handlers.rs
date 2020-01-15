@@ -42,7 +42,7 @@ async fn create(req: Request<Body>) -> api::AppResult {
 
     let channel = Channel::create(db, &space_id, &*name, true)
         .await?
-        .ok_or(AppError::AlreadyExists)?;
+        .ok_or(AppError::AlreadyExists("Channel"))?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
     trans.commit().await?;
     let channel_with_related = ChannelWithRelated {
@@ -89,7 +89,9 @@ async fn join(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
+    let channel = Channel::get_by_id(db, &id)
+        .await?
+        .ok_or(AppError::NotFound("Channel"))?;
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
@@ -113,7 +115,9 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
+    let channel = Channel::get_by_id(db, &id)
+        .await?
+        .ok_or(AppError::NotFound("Channel"))?;
 
     admin_only(db, &session.user_id, &channel.space_id).await?;
 

@@ -57,9 +57,7 @@ pub static EMAIL: Validator<str> = Validator(&[
     ("Invalid e-mail address", &is_match!(r"^\S+@\S+\.\S+$")),
 ]);
 
-pub static BIO: Validator<str> = Validator(&[
-    ("Bio shall not be more than 2048.", &max!(2048)),
-]);
+pub static BIO: Validator<str> = Validator(&[("Bio shall not be more than 2048.", &max!(2048))]);
 
 #[test]
 fn validator_test() {

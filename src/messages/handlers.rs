@@ -41,7 +41,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
         None,
     )
     .await?
-    .ok_or(AppError::AlreadyExists)?;
+    .ok_or(AppError::AlreadyExists("Message"))?;
     let result = api::Return::new(&message).build();
     Event::new_message(message);
     result
@@ -62,7 +62,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     let db = &mut trans;
     let message = Message::get(db, &message_id, Some(&session.user_id))
         .await?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound("Message"))?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
@@ -94,7 +94,9 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let api::IdQuery { id } = api::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let message = Message::get(db, &id, None).await?.ok_or(AppError::NotFound)?;
+    let message = Message::get(db, &id, None)
+        .await?
+        .ok_or(AppError::NotFound("Message"))?;
     let space_member = SpaceMember::get_by_channel(db, &session.id, &message.channel_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
@@ -133,7 +135,9 @@ async fn by_channel(req: Request<Body>) -> api::AppResult {
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
+    let channel = Channel::get_by_id(db, &id)
+        .await?
+        .ok_or(AppError::NotFound("Channel"))?;
     let messages = Message::get_by_channel(db, &channel.id).await?;
     api::Return::new(&messages).build()
 }

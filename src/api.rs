@@ -9,46 +9,61 @@ use crate::error::AppError;
 pub type Request = hyper::Request<hyper::Body>;
 pub type AppResult = std::result::Result<hyper::Response<hyper::Body>, AppError>;
 
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub struct Return<T: Serialize> {
-    value: T,
-    #[serde(rename = "type")]
-    kind: &'static str,
-    status_code: u16,
+    result: Result<T, AppError>,
+    status_code: StatusCode,
 }
 
 impl<T: Serialize> Return<T> {
     pub fn new(value: T) -> Return<T> {
         Return {
-            value,
-            kind: "return",
-            status_code: 200,
+            result: Ok(value),
+            status_code: StatusCode::OK,
         }
     }
 
-    pub fn form_error(e: &AppError) -> Return<String> {
+    pub fn form_error(e: AppError) -> Return<String> {
         Return {
-            value: e.to_string(),
-            kind: "error",
-            status_code: e.status_code().as_u16(),
+            status_code: e.status_code(),
+            result: Err(e),
         }
     }
 
-    pub fn status(self, s: StatusCode) -> Return<T> {
-        let status_code = s.as_u16();
+    pub fn status(self, status_code: StatusCode) -> Return<T> {
         Return { status_code, ..self }
     }
 
-    pub fn build(&self) -> AppResult {
-        let bytes = serde_json::to_vec(self).map_err(unexpected!())?;
+    pub fn build(self) -> AppResult {
+        let return_body = match self.result {
+            Ok(some) => WebResult {
+                ok: true,
+                some: Some(some),
+                err: None,
+            },
+            Err(err) => WebResult {
+                ok: true,
+                some: None,
+                err: Some(err.to_string()),
+            },
+        };
+
+        let bytes = serde_json::to_vec(&return_body).map_err(unexpected!())?;
 
         Response::builder()
             .header(hyper::header::CONTENT_TYPE, "application/json")
-            .status(StatusCode::from_u16(self.status_code).unwrap())
+            .status(self.status_code)
             .body(Body::from(bytes))
             .map_err(unexpected!())
     }
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WebResult<T: Serialize> {
+    ok: bool,
+    some: Option<T>,
+    err: Option<String>,
 }
 
 pub fn parse_query<T>(uri: &hyper::http::Uri) -> StdResult<T, AppError>

@@ -25,7 +25,7 @@ async fn query_with_related(req: Request<Body>) -> api::AppResult {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
+    let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("Space"))?;
     let members = SpaceMember::get_by_space(db, &id).await?;
     let channels = Channel::get_by_space(db, &id).await?;
     let with_related = SpaceWithRelated {
@@ -45,7 +45,7 @@ async fn create(req: Request<Body>) -> api::AppResult {
     let password: Option<&str> = form.password.as_ref().map(|s| s.as_str());
     let space = Space::create(db, &*form.name, &session.user_id, password)
         .await?
-        .ok_or(AppError::AlreadyExists)?;
+        .ok_or(AppError::AlreadyExists("Space"))?;
     let member = SpaceMember::add_owner(db, &session.user_id, &space.id).await?;
     trans.commit().await?;
     let members = vec![member];
@@ -118,7 +118,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let mut conn = database::get().await;
     let session = authenticate(&req).await?;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound)?;
+    let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("Space"))?;
     if space.owner_id == session.user_id {
         Space::delete(db, &id).await?;
         log::info!("A space ({}) was deleted", space.id);

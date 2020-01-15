@@ -1,15 +1,15 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::api::{parse_query, IdQuery, parse_body};
+use crate::api::{parse_body, parse_query, IdQuery};
 use crate::database;
 use crate::session::revoke_session;
 
 use crate::error::AppError;
+use crate::error::AppError::ValidationFail;
+use crate::users::api::Edit;
 use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
 use once_cell::sync::OnceCell;
-use crate::users::api::Edit;
-use crate::error::AppError::ValidationFail;
 
 async fn register(req: Request<Body>) -> api::AppResult {
     let form: Register = api::parse_body(req).await?;
