@@ -4,7 +4,7 @@ use uuid::Uuid;
 #[derive(Deserialize)]
 pub struct Upload {
     pub filename: String,
-    pub mine_type: String,
+    pub mime_type: Option<String>,
 }
 
 #[derive(Deserialize)]

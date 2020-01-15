@@ -30,6 +30,8 @@ pub enum AppError {
     Custom(String, StatusCode),
     #[error("An I/O error occurred")]
     HyperError(#[from] hyper::Error),
+    #[error("An I/O error occurred")]
+    TokioIoError(#[from] tokio::io::Error),
 }
 
 impl AppError {

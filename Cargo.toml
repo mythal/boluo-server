@@ -3,6 +3,7 @@ name = "boluo_server"
 version = "0.1.0"
 authors = ["Quan Brew <t@ioover.net>"]
 edition = "2018"
+default-run = "server"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -36,6 +37,7 @@ log = "0.4"
 bincode = "1"
 percent-encoding = "2.1.0"
 blake3 = "*"
+mime = "0.3.16"
 
 [dependencies.serde]
 version = "1.0"

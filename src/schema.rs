@@ -36,7 +36,7 @@ table! {
 table! {
     media (id) {
         id -> Uuid,
-        mine_type -> Text,
+        mime_type -> Text,
         uploader_id -> Uuid,
         filename -> Text,
         original_filename -> Text,

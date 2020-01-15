@@ -7,7 +7,7 @@ use crate::error::AppError;
 use crate::media::api::MediaQuery;
 use crate::utils;
 use futures::StreamExt;
-use hyper::header::HeaderValue;
+use hyper::header::{self, HeaderValue};
 use hyper::{Body, Request, Response};
 use once_cell::sync::OnceCell;
 use regex::Regex;
@@ -24,20 +24,42 @@ fn content_disposition(attachment: bool, filename: &str) -> HeaderValue {
     HeaderValue::from_str(&*format!("{}; filename*=utf-8''{}", kind, filename)).unwrap()
 }
 
-async fn upload(req: Request<Body>) -> api::AppResult {
-    let Upload { filename, mine_type } = parse_query(req.uri())?;
-    let session = authenticate(&req).await?;
-    let id = utils::id();
+fn filename_sanitizer(filename: String) -> String {
     static FILENAME_REPLACE: OnceCell<Regex> = OnceCell::new();
     let filename_replace = FILENAME_REPLACE.get_or_init(|| Regex::new(r#"[/?*:|<>\\]"#).unwrap());
-    let origin_filename = filename_replace.replace_all(&filename, "_");
-    let new_filename = format!("{}_{}", id, filename);
+    filename_replace.replace_all(&filename, "_").to_string()
+}
 
-    if new_filename.len() > 200 {
-        return Err(unexpected!("the filename is too long"));
+fn get_content_type(headers: &header::HeaderMap) -> Option<String> {
+    let value = headers.get(header::CONTENT_TYPE)?;
+    let str = value.to_str().ok()?;
+    Some(str.to_string())
+}
+
+fn get_mime_type(mime_type: Option<String>, headers: &header::HeaderMap) -> String {
+    mime_type
+        .or_else(|| get_content_type(headers))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(mime::TEXT_PLAIN)
+        .to_string()
+}
+
+async fn upload(req: Request<Body>) -> api::AppResult {
+    let Upload { filename, mime_type } = parse_query(req.uri())?;
+    let session = authenticate(&req).await?;
+    let id = utils::id();
+
+    if filename.len() > 200 {
+        return Err(AppError::ValidationFail("The filename is too long".to_string()));
     }
-    let path = Media::path(&*new_filename);
-    let mut file = File::create(&path).await.map_err(unexpected!())?;
+
+    let mime_type = get_mime_type(mime_type, req.headers());
+
+    let filename = filename_sanitizer(filename);
+    let temp_filename = format!("{}_{}", id, filename);
+
+    let path = Media::path(&*temp_filename);
+    let mut file = File::create(&path).await?;
     let mut body = req.into_body();
     let mut hasher = blake3::Hasher::new();
     let mut size: usize = 0;
@@ -50,25 +72,30 @@ async fn upload(req: Request<Body>) -> api::AppResult {
             )));
         }
         hasher.update(&bytes);
-        file.write_all(&bytes).await.map_err(unexpected!())?;
+        file.write_all(&bytes).await?;
     }
-    let hash = hasher.finalize();
 
-    let filename = path
-        .file_name()
-        .ok_or_else(|| unexpected!("Failed to get filename from path."))?
-        .to_str()
-        .ok_or_else(|| unexpected!("Failed to get filename string."))?;
+    let hash = hasher.finalize();
+    let hash = hash.to_hex().to_string();
+    let ext = path.extension().map(|s| s.to_str()).flatten().unwrap_or("");
+
+    let new_filename = format!("{}.{}", hash, ext);
+    let new_path = Media::path(&*new_filename);
+    if new_path.exists() {
+        tokio::fs::remove_file(path).await?;
+    } else {
+        tokio::fs::rename(path, new_path).await?;
+    }
 
     let mut conn = database::get().await;
     let media = Media::create(
         &mut *conn,
-        &*mine_type,
+        &*mime_type,
         session.user_id,
-        filename,
-        &*origin_filename,
-        hash.to_hex().to_string(),
-        size as u32,
+        &*new_filename,
+        &*filename,
+        hash,
+        size as i32,
     )
     .await?
     .ok_or(AppError::AlreadyExists)?;
@@ -76,7 +103,6 @@ async fn upload(req: Request<Body>) -> api::AppResult {
 }
 
 async fn get(req: Request<Body>) -> api::AppResult {
-    use hyper::header;
     let MediaQuery { id, filename, download } = parse_query(req.uri())?;
 
     let mut conn = database::get().await;
@@ -94,14 +120,14 @@ async fn get(req: Request<Body>) -> api::AppResult {
     let media = media.ok_or_else(|| AppError::BadRequest(format!("Filename or media id must be specified.")))?;
     let path = Media::path(&*media.filename);
 
-    let mut file = File::open(path).await.map_err(unexpected!())?;
+    let mut file = File::open(path).await?;
     let mut buf: Vec<u8> = Vec::new();
-    file.read_to_end(&mut buf).await.map_err(unexpected!())?;
+    file.read_to_end(&mut buf).await?;
     let body = Body::from(buf);
     let response = Response::builder()
         .header(
             header::CONTENT_TYPE,
-            HeaderValue::from_str(&*media.mine_type).map_err(unexpected!())?,
+            HeaderValue::from_str(&*media.mime_type).map_err(unexpected!())?,
         )
         .header(
             header::CONTENT_DISPOSITION,

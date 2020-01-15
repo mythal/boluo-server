@@ -45,15 +45,24 @@ async fn router(req: Request<Body>) -> api::AppResult {
     if path == "/api/csrf-token" {
         return csrf::get_csrf_token(req).await;
     }
-    //    table!("/api/messages", messages::router);
+    table!("/api/messages", messages::router);
     table!("/api/users", users::router);
-    //    table!("/api/media", media::router);
-    //    table!("/api/channels", channels::router);
-    //    table!("/api/spaces", spaces::router);
+    table!("/api/media", media::router);
+    table!("/api/channels", channels::router);
+    table!("/api/spaces", spaces::router);
     Err(AppError::NotFound)
 }
 
 fn error_response(e: AppError) -> Response<Body> {
+    use std::error::Error;
+    if debug() {
+        if let Some(source) = e.source() {
+            log::debug!("{} Source: {:?}", &e, source);
+        } else {
+            log::debug!("{}", &e);
+        }
+    }
+
     fn last_resort(e2: AppError) -> Response<Body> {
         log::error!("An error occurred while processing the error: {}", e2);
         Response::builder()
