@@ -2,6 +2,7 @@ use super::User;
 use crate::database::Querist;
 use crate::AppError;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,4 +39,25 @@ impl Login {
 pub struct LoginReturn {
     pub user: User,
     pub token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Edit {
+    pub nickname: Option<String>,
+    pub bio: Option<String>,
+    pub avatar: Option<Uuid>,
+}
+
+impl Edit {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        use crate::validators::{NICKNAME, BIO};
+
+        if let Some(ref nickname) = self.nickname {
+            NICKNAME.run(nickname)?;
+        }
+        if let Some(ref bio) = self.bio {
+            BIO.run(bio)?;
+        }
+        Ok(())
+    }
 }

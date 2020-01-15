@@ -114,32 +114,46 @@ impl User {
         User::get(db, None, None, Some(username)).await
     }
 
-    pub async fn delete_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
-        db.execute(include_str!("sql/delete_by_id.sql"), &[id]).await
+    pub async fn deactivated<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
+        db.execute(include_str!("sql/deactivated.sql"), &[id]).await
+    }
+
+    pub async fn set<T: Querist>(db: &mut T, id: &Uuid, nickname: Option<String>, bio: Option<String>, avatar: Option<Uuid>) -> Result<Option<User>, DbError> {
+        let result = db.query_one(include_str!("sql/set.sql"), &[id, &nickname, &bio, &avatar]).await;
+        inner_map(result, |row| row.get(0))
     }
 }
 
 #[tokio::test]
 async fn user_test() -> Result<(), AppError> {
     use crate::database::Client;
+    use crate::media::Media;
 
     let mut client = Client::new().await;
     let mut trans = client.transaction().await.unwrap();
+    let db = &mut trans;
     let email = "humura@humura.net";
     let username = "humura";
     let nickname = "Akami Humura";
     let password = "MadokaMadokaSuHaSuHa";
-    let new_user = User::create(&mut trans, email, username, nickname, password)
+    let new_user = User::create(db, email, username, nickname, password)
         .await
         .unwrap();
-    let user = User::get_by_id(&mut trans, &new_user.id).await?.unwrap();
+    let user = User::get_by_id(db, &new_user.id).await?.unwrap();
     assert_eq!(user.email, email);
-    let user = User::login(&mut trans, Some(email), None, password).await.unwrap();
+    let user = User::login(db, Some(email), None, password).await.unwrap();
     assert_eq!(user.nickname, nickname);
 
-    User::delete_by_id(&mut trans, &new_user.id).await.unwrap();
+    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0).await?.unwrap();
+    let new_nickname = "动感超人";
+    let bio = "千片万片无数片";
+    let user_altered = User::set(db, &user.id, Some(new_nickname.to_string()), Some(bio.to_string()), Some(avatar.id)).await?.unwrap();
+    assert_eq!(user_altered.nickname, new_nickname);
+    assert_eq!(user_altered.bio, bio);
+    assert_eq!(user_altered.avatar_id, Some(avatar.id));
+    User::deactivated(db, &new_user.id).await.unwrap();
 
-    let all_users = User::all(&mut trans).await.unwrap();
+    let all_users = User::all(db).await.unwrap();
     assert!(all_users.into_iter().find(|u| u.id == user.id).is_none());
     Ok(())
 }

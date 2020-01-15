@@ -1,6 +1,6 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::api::{parse_query, IdQuery};
+use crate::api::{parse_query, IdQuery, parse_body};
 use crate::database;
 use crate::session::revoke_session;
 
@@ -8,6 +8,8 @@ use crate::error::AppError;
 use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
 use once_cell::sync::OnceCell;
+use crate::users::api::Edit;
+use crate::error::AppError::ValidationFail;
 
 async fn register(req: Request<Body>) -> api::AppResult {
     let form: Register = api::parse_body(req).await?;
@@ -83,12 +85,25 @@ pub async fn logout(req: Request<Body>) -> api::AppResult {
     Ok(response)
 }
 
+pub async fn edit(req: Request<Body>) -> api::AppResult {
+    use crate::csrf::authenticate;
+    let session = authenticate(&req).await?;
+    let edit: Edit = parse_body(req).await?;
+    edit.validate().map_err(|msg| ValidationFail(msg.to_string()))?;
+    let Edit { nickname, bio, avatar } = edit;
+
+    let mut db = database::get().await;
+    let user = User::set(&mut *db, &session.id, nickname, bio, avatar).await?;
+    api::Return::new(user).build()
+}
+
 pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
     match (path, req.method().clone()) {
         ("/login", Method::POST) => login(req).await,
         ("/register", Method::POST) => register(req).await,
         ("/logout", _) => logout(req).await,
         ("/query", Method::GET) => query_user(req).await,
+        ("/edit", Method::POST) => edit(req).await,
         _ => Err(AppError::missing()),
     }
 }
