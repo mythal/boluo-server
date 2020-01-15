@@ -13,8 +13,9 @@ use once_cell::sync::OnceCell;
 use regex::Regex;
 use tokio::fs::File;
 use tokio::prelude::*;
+use std::path::PathBuf;
 
-const MAX_SIZE: usize = 1024 * 1024 * 8;
+const MAX_SIZE: usize = 1024 * 1024 * 16;
 
 fn content_disposition(attachment: bool, filename: &str) -> HeaderValue {
     use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
@@ -102,8 +103,24 @@ async fn upload(req: Request<Body>) -> api::AppResult {
     api::Return::new(&media).build()
 }
 
+async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(), anyhow::Error> {
+    use bytes::BytesMut;
+
+    let mut file = File::open(path).await?;
+    let mut buffer = BytesMut::with_capacity(1024);
+    while let Ok(read) = file.read_buf(&mut buffer).await {
+        if read == 0 {
+            break;
+        }
+        sender.send_data(buffer.clone().freeze()).await?;
+        buffer.clear();
+    }
+    Ok(())
+}
+
 async fn get(req: Request<Body>) -> api::AppResult {
     let MediaQuery { id, filename, download } = parse_query(req.uri())?;
+    let method = req.method().clone();
 
     let mut conn = database::get().await;
     let db = &mut *conn;
@@ -120,10 +137,18 @@ async fn get(req: Request<Body>) -> api::AppResult {
     let media = media.ok_or_else(|| AppError::BadRequest(format!("Filename or media id must be specified.")))?;
     let path = Media::path(&*media.filename);
 
-    let mut file = File::open(path).await?;
-    let mut buf: Vec<u8> = Vec::new();
-    file.read_to_end(&mut buf).await?;
-    let body = Body::from(buf);
+    let body = if method == hyper::Method::HEAD {
+        Body::empty()
+    } else {
+        let (sender, body) = Body::channel();
+        tokio::spawn(async move {
+            if let Err(e) = send_file(path, sender).await {
+                log::error!("Failed to send file: {}", e);
+            }
+        });
+        body
+    };
+
     let response = Response::builder()
         .header(
             header::CONTENT_TYPE,
@@ -133,6 +158,7 @@ async fn get(req: Request<Body>) -> api::AppResult {
             header::CONTENT_DISPOSITION,
             content_disposition(download, &*media.original_filename),
         )
+        .header(header::ACCEPT_RANGES, HeaderValue::from_static("none"))
         .header(header::CONTENT_LENGTH, HeaderValue::from(media.size))
         .body(body)
         .map_err(unexpected!())?;
@@ -148,6 +174,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
 
     match (path, req.method().clone()) {
         ("/get", Method::GET) => get(req).await,
+        ("/get", Method::HEAD) => get(req).await,
         ("/upload", Method::POST) => upload(req).await,
         ("/delete", Method::DELETE) => delete(req).await,
         _ => Err(AppError::missing()),

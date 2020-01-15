@@ -38,6 +38,7 @@ bincode = "1"
 percent-encoding = "2.1.0"
 blake3 = "*"
 mime = "0.3.16"
+bytes = "*"
 
 [dependencies.serde]
 version = "1.0"
