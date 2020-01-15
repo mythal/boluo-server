@@ -34,6 +34,8 @@ ring = "*"
 base64 = "*"
 log = "0.4"
 bincode = "1"
+percent-encoding = "2.1.0"
+blake3 = "*"
 
 [dependencies.serde]
 version = "1.0"
