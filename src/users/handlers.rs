@@ -1,12 +1,12 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::api::{parse_body, parse_query, IdQuery};
+use crate::api::{parse_body, parse_query};
 use crate::database;
 use crate::session::revoke_session;
 
 use crate::error::AppError;
 use crate::error::AppError::ValidationFail;
-use crate::users::api::Edit;
+use crate::users::api::{Edit, QueryUser};
 use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
 use once_cell::sync::OnceCell;
@@ -20,10 +20,18 @@ async fn register(req: Request<Body>) -> api::AppResult {
 }
 
 pub async fn query_user(req: Request<Body>) -> api::AppResult {
-    let query: IdQuery = parse_query(req.uri())?;
+    use crate::session::authenticate;
+
+    let QueryUser { id } = parse_query(req.uri())?;
+
+    let id = if let Some(id) = id {
+        id
+    } else {
+        authenticate(&req).await?.user_id
+    };
 
     let mut db = database::get().await;
-    let user = User::get_by_id(&mut *db, &query.id).await?;
+    let user = User::get_by_id(&mut *db, &id).await?;
     api::Return::new(user).build()
 }
 

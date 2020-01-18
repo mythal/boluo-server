@@ -3,6 +3,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::channels::api::JoinedChannel;
 use crate::database::Querist;
 use crate::error::DbError;
 use crate::spaces::SpaceMember;
@@ -18,6 +19,7 @@ pub struct Channel {
     pub space_id: Uuid,
     pub created: NaiveDateTime,
     pub is_public: bool,
+    #[serde(skip)]
     pub deleted: bool,
 }
 
@@ -51,6 +53,20 @@ impl Channel {
     pub async fn edit<T: Querist>(db: &mut T, id: &Uuid, name: Option<&str>) -> Result<Option<Channel>, DbError> {
         let result = db.query_one(include_str!("sql/edit_channel.sql"), &[id, &name]).await;
         inner_map(result, |row| row.get(0))
+    }
+
+    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<JoinedChannel>, DbError> {
+        let rows = db
+            .query(include_str!("sql/get_channels_by_user.sql"), &[&user_id])
+            .await?;
+        let joined_channels = rows
+            .into_iter()
+            .map(|row| JoinedChannel {
+                channel: row.get(0),
+                member: row.get(1),
+            })
+            .collect();
+        Ok(joined_channels)
     }
 }
 
@@ -203,6 +219,12 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true).await?.unwrap();
     ChannelMember::add_user(db, &user.id, &channel_2.id).await.unwrap();
     ChannelMember::get(db, &user.id, &channel.id).await.unwrap();
+
+    let joined = Channel::get_by_user(db, user.id).await?;
+    assert_eq!(joined.len(), 2);
+    assert_eq!(joined[0].member.channel_id, channel.id);
+    assert_eq!(joined[1].member.channel_id, channel_2.id);
+
     ChannelMember::remove_by_space(db, &user.id, &space.id).await.unwrap();
     assert!(ChannelMember::get(db, &user.id, &channel.id).await.unwrap().is_none());
     assert!(ChannelMember::get(db, &user.id, &channel_2.id).await.unwrap().is_none());

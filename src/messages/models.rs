@@ -19,6 +19,7 @@ pub struct Message {
     pub name: String,
     pub media_id: Option<Uuid>,
     pub seed: Vec<u8>,
+    #[serde(skip)]
     pub deleted: bool,
     pub in_game: bool,
     pub is_action: bool,
@@ -184,6 +185,5 @@ pub struct Preview {
     pub text: String,
     pub whisper_to_users: Option<Vec<Uuid>>,
     pub entities: JsonValue,
-    pub metadata: Option<serde_json::Value>,
     pub start: NaiveDateTime,
 }

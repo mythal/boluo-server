@@ -22,3 +22,10 @@ pub struct SpaceWithRelated {
     pub members: Vec<super::SpaceMember>,
     pub channels: Vec<crate::channels::Channel>,
 }
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinedSpace {
+    pub space: super::Space,
+    pub member: super::SpaceMember,
+}

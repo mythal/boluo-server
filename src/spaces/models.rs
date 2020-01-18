@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::DbError;
+use crate::spaces::api::JoinedSpace;
 use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -18,7 +19,9 @@ pub struct Space {
     pub modified: NaiveDateTime,
     pub owner_id: Uuid,
     pub is_public: bool,
+    #[serde(skip)]
     pub deleted: bool,
+    #[serde(skip)]
     pub password: String,
     pub language: String,
     pub default_dice_type: String,
@@ -77,6 +80,19 @@ impl Space {
         let result = db.query_one(include_str!("sql/edit.sql"), &[space_id, &name]).await;
         inner_map(result, |row| row.get(0))
     }
+
+    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<JoinedSpace>, DbError> {
+        let rows = db
+            .query(include_str!("sql/get_spaces_by_user.sql"), &[&user_id])
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| JoinedSpace {
+                space: row.get(0),
+                member: row.get(1),
+            })
+            .collect())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -128,7 +144,7 @@ impl SpaceMember {
     pub async fn add_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, DbError> {
         db.query_exactly_one(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &false])
             .await
-            .map(|row| row.get(0))
+            .map(|row| row.get(1))
     }
 
     pub async fn get<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<Option<SpaceMember>, DbError> {
@@ -202,6 +218,11 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     let member = members.pop().unwrap();
     assert_eq!(member.user_id, user.id);
     assert_eq!(member.space_id, space.id);
+
+    let joined = Space::get_by_user(db, user.id).await?;
+    assert_eq!(joined.len(), 1);
+    assert_eq!(joined[0].member.space_id, space.id);
+
     SpaceMember::remove_user(db, &user.id, &space.id).await?;
     assert!(SpaceMember::get(db, &user.id, &space.id).await?.is_none());
 

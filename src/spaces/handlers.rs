@@ -5,6 +5,7 @@ use crate::channels::Channel;
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
+use crate::spaces::api::JoinedSpace;
 use hyper::{Body, Request};
 
 async fn list(_req: Request<Body>) -> api::AppResult {
@@ -36,9 +37,22 @@ async fn query_with_related(req: Request<Body>) -> api::AppResult {
     return api::Return::new(&with_related).build();
 }
 
+async fn my_spaces(req: Request<Body>) -> api::AppResult {
+    let session = authenticate(&req).await?;
+    let mut conn = database::get().await;
+    let db = &mut *conn;
+    let joined_spaces = Space::get_by_user(db, session.user_id).await?;
+    return api::Return::new(&joined_spaces).build();
+}
+
 async fn create(req: Request<Body>) -> api::AppResult {
+    use crate::validators;
     let session = authenticate(&req).await?;
     let form: Create = api::parse_body(req).await?;
+    validators::NICKNAME
+        .run(&form.name)
+        .map_err(|msg| AppError::ValidationFail(msg.to_string()))?;
+
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
@@ -48,15 +62,8 @@ async fn create(req: Request<Body>) -> api::AppResult {
         .ok_or(AppError::AlreadyExists("Space"))?;
     let member = SpaceMember::add_owner(db, &session.user_id, &space.id).await?;
     trans.commit().await?;
-    let members = vec![member];
-    let channels = vec![];
     log::info!("a channel ({}) was just created", space.id);
-    api::Return::new(&SpaceWithRelated {
-        space,
-        members,
-        channels,
-    })
-    .build()
+    api::Return::new(&JoinedSpace { space, member }).build()
 }
 
 async fn edit(req: Request<Body>) -> api::AppResult {
@@ -132,9 +139,10 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/list", Method::GET) => query(req).await,
+        ("/list", Method::GET) => list(req).await,
         ("/query", Method::GET) => query(req).await,
-        ("/query_with_related", Method::GET) => query(req).await,
+        ("/query_with_related", Method::GET) => query_with_related(req).await,
+        ("/my", Method::GET) => my_spaces(req).await,
         ("/create", Method::POST) => create(req).await,
         ("/edit", Method::POST) => edit(req).await,
         ("/join", Method::POST) => join(req).await,

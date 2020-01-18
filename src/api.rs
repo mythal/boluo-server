@@ -42,7 +42,7 @@ impl<T: Serialize> Return<T> {
                 err: None,
             },
             Err(err) => WebResult {
-                ok: true,
+                ok: false,
                 some: None,
                 err: Some(WebError::from(err)),
             },

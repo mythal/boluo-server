@@ -4,6 +4,11 @@ use crate::AppError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[derive(Debug, Deserialize)]
+pub struct QueryUser {
+    pub id: Option<Uuid>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Register {

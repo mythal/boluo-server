@@ -19,6 +19,7 @@ pub struct User {
     pub password: String,
     pub bio: String,
     pub joined: chrono::naive::NaiveDateTime,
+    #[serde(skip)]
     pub deactivated: bool,
     pub avatar_id: Option<Uuid>,
 }

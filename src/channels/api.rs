@@ -24,3 +24,10 @@ pub struct ChannelWithRelated {
     pub members: Vec<ChannelMember>,
     pub space: Space,
 }
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinedChannel {
+    pub channel: Channel,
+    pub member: ChannelMember,
+}

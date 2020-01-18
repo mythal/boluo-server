@@ -2,6 +2,7 @@ use super::api::{ChannelWithRelated, Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_query, IdQuery};
+use crate::channels::api::JoinedChannel;
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
@@ -30,8 +31,14 @@ async fn query(req: Request<Body>) -> api::AppResult {
 }
 
 async fn create(req: Request<Body>) -> api::AppResult {
+    use crate::validators;
     let session = authenticate(&req).await?;
     let Create { space_id, name } = api::parse_body(req).await?;
+
+    validators::NICKNAME
+        .run(&name)
+        .map_err(|msg| AppError::ValidationFail(msg.to_string()))?;
+
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
@@ -45,10 +52,9 @@ async fn create(req: Request<Body>) -> api::AppResult {
         .ok_or(AppError::AlreadyExists("Channel"))?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
     trans.commit().await?;
-    let channel_with_related = ChannelWithRelated {
+    let channel_with_related = JoinedChannel {
         channel,
-        members: vec![channel_member],
-        space,
+        member: channel_member,
     };
     api::Return::new(&channel_with_related).build()
 }
@@ -135,12 +141,22 @@ async fn by_space(req: Request<Body>) -> api::AppResult {
     return api::Return::new(&channels).build();
 }
 
+async fn my_channels(req: Request<Body>) -> api::AppResult {
+    let session = authenticate(&req).await?;
+
+    let mut conn = database::get().await;
+    let db = &mut *conn;
+    let joined_channels = Channel::get_by_user(db, session.user_id).await?;
+    return api::Return::new(joined_channels).build();
+}
+
 pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
     use hyper::Method;
 
     match (path, req.method().clone()) {
         ("/query", Method::GET) => query(req).await,
         ("/by_space", Method::GET) => by_space(req).await,
+        ("/my", Method::GET) => my_channels(req).await,
         ("/create", Method::POST) => create(req).await,
         ("/edit", Method::POST) => edit(req).await,
         ("/members", Method::GET) => members(req).await,
