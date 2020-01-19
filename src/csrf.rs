@@ -73,7 +73,12 @@ pub fn generate_csrf_token(session_key: &Uuid) -> String {
 }
 
 pub async fn get_csrf_token(req: Request<Body>) -> api::AppResult {
-    let session = session::authenticate(&req).await?;
-    let token = generate_csrf_token(&session.id);
+    let session_id = if let Ok(session) = session::authenticate(&req).await {
+        session.id
+    } else {
+        Uuid::nil()
+    };
+
+    let token = generate_csrf_token(&session_id);
     api::Return::new(&token).build()
 }
