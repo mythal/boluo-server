@@ -4,6 +4,7 @@ use crate::api::{self, parse_query};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
+use crate::error::ValidationFailed;
 use crate::media::api::MediaQuery;
 use crate::utils;
 use futures::StreamExt;
@@ -51,7 +52,7 @@ async fn upload(req: Request<Body>) -> api::AppResult {
     let id = utils::id();
 
     if filename.len() > 200 {
-        return Err(AppError::ValidationFail("The filename is too long".to_string()));
+        Err(ValidationFailed("The filename is too long"))?;
     }
 
     let mime_type = get_mime_type(mime_type, req.headers());
@@ -98,8 +99,7 @@ async fn upload(req: Request<Body>) -> api::AppResult {
         hash,
         size as i32,
     )
-    .await?
-    .ok_or(AppError::AlreadyExists("Media"))?;
+    .await?;
     api::Return::new(&media).build()
 }
 
@@ -126,12 +126,12 @@ async fn get(req: Request<Body>) -> api::AppResult {
     let db = &mut *conn;
     let mut media: Option<Media> = None;
     if let Some(id) = id {
-        media = Some(Media::get_by_id(db, &id).await?.ok_or(AppError::NotFound("Media"))?);
+        media = Some(Media::get_by_id(db, &id).await?.ok_or(AppError::NotFound("media"))?);
     } else if let Some(filename) = filename {
         media = Some(
             Media::get_by_filename(db, &*filename)
                 .await?
-                .ok_or(AppError::NotFound("Media"))?,
+                .ok_or(AppError::NotFound("media"))?,
         );
     }
     let media = media.ok_or_else(|| AppError::BadRequest(format!("Filename or media id must be specified.")))?;

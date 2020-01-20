@@ -40,8 +40,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
         channel_member.is_master,
         None,
     )
-    .await?
-    .ok_or(AppError::AlreadyExists("Message"))?;
+    .await?;
     let result = api::Return::new(&message).build();
     Event::new_message(message);
     result
@@ -62,7 +61,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     let db = &mut trans;
     let message = Message::get(db, &message_id, Some(&session.user_id))
         .await?
-        .ok_or(AppError::NotFound("Message"))?;
+        .ok_or(AppError::NotFound("messages"))?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
@@ -96,7 +95,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     let db = &mut *conn;
     let message = Message::get(db, &id, None)
         .await?
-        .ok_or(AppError::NotFound("Message"))?;
+        .ok_or(AppError::NotFound("messages"))?;
     let space_member = SpaceMember::get_by_channel(db, &session.id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
@@ -137,7 +136,7 @@ async fn by_channel(req: Request<Body>) -> api::AppResult {
 
     let channel = Channel::get_by_id(db, &id)
         .await?
-        .ok_or(AppError::NotFound("Channel"))?;
+        .ok_or(AppError::NotFound("channels"))?;
     let messages = Message::get_by_channel(db, &channel.id).await?;
     api::Return::new(&messages).build()
 }

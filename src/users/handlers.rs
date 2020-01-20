@@ -5,16 +5,20 @@ use crate::database;
 use crate::session::revoke_session;
 
 use crate::error::AppError;
-use crate::error::AppError::ValidationFail;
 use crate::users::api::{Edit, QueryUser};
 use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
 use once_cell::sync::OnceCell;
 
 async fn register(req: Request<Body>) -> api::AppResult {
-    let form: Register = api::parse_body(req).await?;
+    let Register {
+        email,
+        username,
+        nickname,
+        password,
+    }: Register = api::parse_body(req).await?;
     let mut db = database::get().await;
-    let user = form.register(&mut *db).await?;
+    let user = User::register(&mut *db, &*email, &*username, &*nickname, &*password).await?;
     log::info!("{} ({}) was registered.", user.username, user.email);
     api::Return::new(user).status(StatusCode::CREATED).build()
 }
@@ -42,7 +46,9 @@ pub async fn login(req: Request<Body>) -> api::AppResult {
 
     let form: Login = api::parse_body(req).await?;
     let mut db = database::get().await;
-    let login = form.login(&mut *db).await;
+    let login = User::login(&mut *db, &*form.username, &*form.password)
+        .await?
+        .ok_or(AppError::NoPermission);
     if let Err(AppError::NoPermission) = &login {
         log::warn!("Someone failed to try to login: {}", form.username);
     }
@@ -96,12 +102,9 @@ pub async fn logout(req: Request<Body>) -> api::AppResult {
 pub async fn edit(req: Request<Body>) -> api::AppResult {
     use crate::csrf::authenticate;
     let session = authenticate(&req).await?;
-    let edit: Edit = parse_body(req).await?;
-    edit.validate().map_err(|msg| ValidationFail(msg.to_string()))?;
-    let Edit { nickname, bio, avatar } = edit;
-
+    let Edit { nickname, bio, avatar }: Edit = parse_body(req).await?;
     let mut db = database::get().await;
-    let user = User::set(&mut *db, &session.id, nickname, bio, avatar).await?;
+    let user = User::edit(&mut *db, &session.user_id, nickname, bio, avatar).await?;
     api::Return::new(user).build()
 }
 

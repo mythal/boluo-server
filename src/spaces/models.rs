@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::database::Querist;
-use crate::error::DbError;
+use crate::error::{DbError, ModelError};
 use crate::spaces::api::JoinedSpace;
 use crate::utils::inner_map;
 
@@ -30,15 +30,17 @@ pub struct Space {
 impl Space {
     pub async fn create<T: Querist>(
         db: &mut T,
-        name: &str,
+        name: String,
         owner_id: &Uuid,
-        password: Option<&str>,
-    ) -> Result<Option<Space>, DbError> {
-        let result = db
-            .query(include_str!("sql/create.sql"), &[&name, owner_id, &password])
-            .await
-            .map(|mut rows| rows.pop());
-        inner_map(result, |row| row.get(0))
+        password: Option<String>,
+    ) -> Result<Space, ModelError> {
+        use crate::validators::NICKNAME;
+        let name = name.trim();
+        NICKNAME.run(name)?;
+        let row = db
+            .query_exactly_one(include_str!("sql/create.sql"), &[&name, owner_id, &password])
+            .await?;
+        Ok(row.get(0))
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<(), DbError> {
@@ -76,9 +78,18 @@ impl Space {
         Ok(row.map(|row| row.get(0)))
     }
 
-    pub async fn edit<T: Querist>(db: &mut T, space_id: &Uuid, name: Option<&str>) -> Result<Option<Space>, DbError> {
-        let result = db.query_one(include_str!("sql/edit.sql"), &[space_id, &name]).await;
-        inner_map(result, |row| row.get(0))
+    pub async fn edit<T: Querist>(
+        db: &mut T,
+        space_id: Uuid,
+        name: Option<String>,
+    ) -> Result<Option<Space>, ModelError> {
+        use crate::validators;
+        let name = name.as_ref().map(|name| name.trim());
+        if let Some(name) = name {
+            validators::NICKNAME.run(name)?;
+        }
+        let result = db.query_one(include_str!("sql/edit.sql"), &[&space_id, &name]).await?;
+        Ok(result.map(|row| row.get(0)))
     }
 
     pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<JoinedSpace>, DbError> {
@@ -135,7 +146,7 @@ impl SpaceMember {
             .await
     }
 
-    pub async fn add_owner<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, DbError> {
+    pub async fn add_admin<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, DbError> {
         db.query_exactly_one(include_str!("sql/add_user_to_space.sql"), &[user_id, space_id, &true])
             .await
             .map(|row| row.get(1))
@@ -199,19 +210,22 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     let password = "no password";
     let nickname = "Test User";
     let space_name = "Pure Illusion";
-    let user = User::create(db, email, username, nickname, password).await.unwrap();
-    let space = Space::create(db, space_name, &user.id, None).await?.unwrap();
+    let user = User::register(db, email, username, nickname, password).await.unwrap();
+    let space = Space::create(db, space_name.to_string(), &user.id, None).await?;
     let space = Space::get_by_name(db, &space.name).await?.unwrap();
     let space = Space::get_by_id(db, &space.id).await?.unwrap();
     assert!(Space::is_public(db, &space.id).await?.unwrap());
     let spaces = Space::all(db).await?;
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
     let new_name = "Mythal";
-    let space_edited = Space::edit(db, &space.id, Some(new_name)).await?.unwrap();
+    let space_edited = Space::edit(db, space.id, Some(new_name.to_string())).await?.unwrap();
     assert_eq!(space_edited.name, new_name);
 
+    let _space_2 = Space::create(db, "学园都市".to_string(), &user.id, None).await?;
+    // let result = Space::edit(db, _space_2.id, Some(new_name.to_string())).await;
+    // assert!(if let Err(ModelError::Conflict(_)) = result { true } else { false });
     // members
-    SpaceMember::add_owner(db, &user.id, &space.id).await?;
+    SpaceMember::add_admin(db, &user.id, &space.id).await?;
     SpaceMember::get(db, &user.id, &space.id).await.unwrap();
     SpaceMember::set_admin(db, &user.id, &space.id, true).await?;
     let mut members = SpaceMember::get_by_space(db, &space.id).await?;

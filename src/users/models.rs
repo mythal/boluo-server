@@ -3,7 +3,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::database::Querist;
-use crate::error::{AppError, DbError};
+use crate::error::{DbError, ModelError};
 use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, FromSql)]
@@ -30,33 +30,30 @@ impl User {
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
-    pub async fn create<T: Querist>(
+    pub async fn register<T: Querist>(
         db: &mut T,
         email: &str,
         username: &str,
         nickname: &str,
         password: &str,
-    ) -> Result<User, AppError> {
+    ) -> Result<User, ModelError> {
         use crate::validators::{EMAIL, NICKNAME, PASSWORD, USERNAME};
-
         let username = username.trim();
         let nickname = nickname.trim();
         let email = email.to_ascii_lowercase();
 
-        let e = |s: &str| AppError::ValidationFail(s.to_string());
+        EMAIL.run(&email)?;
+        NICKNAME.run(&nickname)?;
+        USERNAME.run(&username)?;
+        PASSWORD.run(&password)?;
 
-        EMAIL.run(&email).map_err(e)?;
-        NICKNAME.run(&nickname).map_err(e)?;
-        USERNAME.run(&username).map_err(e)?;
-        PASSWORD.run(&password).map_err(e)?;
-
-        let mut rows = db
-            .query(
+        let row = db
+            .query_exactly_one(
                 include_str!("sql/create.sql"),
                 &[&email, &username, &nickname, &password],
             )
             .await?;
-        Ok(rows.pop().ok_or(AppError::AlreadyExists("User"))?.get(0))
+        Ok(row.get(0))
     }
 
     async fn get<T: Querist>(
@@ -78,29 +75,19 @@ impl User {
         inner_map(result, |row| row.get(0))
     }
 
-    pub async fn login<T: Querist>(
-        db: &mut T,
-        email: Option<&str>,
-        username: Option<&str>,
-        password: &str,
-    ) -> Result<User, AppError> {
+    pub async fn login<T: Querist>(db: &mut T, username: &str, password: &str) -> Result<Option<User>, DbError> {
         use postgres_types::Type;
 
-        let email = email.map(|s| s.to_ascii_lowercase());
         let row = db
             .query_one_typed(
                 include_str!("sql/login.sql"),
-                &[Type::TEXT, Type::TEXT, Type::TEXT],
-                &[&email, &username, &password],
+                &[Type::TEXT, Type::TEXT],
+                &[&username, &password],
             )
-            .await?
-            .ok_or(AppError::NoPermission)?;
-        let password_matched = row.get(0);
-        if password_matched {
-            Ok(row.get(1))
-        } else {
-            Err(AppError::NoPermission)
-        }
+            .await?;
+
+        let result = row.and_then(|row| if row.get(0) { Some(row.get(1)) } else { None });
+        Ok(result)
     }
 
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<User>, DbError> {
@@ -119,22 +106,31 @@ impl User {
         db.execute(include_str!("sql/deactivated.sql"), &[id]).await
     }
 
-    pub async fn set<T: Querist>(
+    pub async fn edit<T: Querist>(
         db: &mut T,
         id: &Uuid,
         nickname: Option<String>,
         bio: Option<String>,
         avatar: Option<Uuid>,
-    ) -> Result<Option<User>, DbError> {
-        let result = db
-            .query_one(include_str!("sql/set.sql"), &[id, &nickname, &bio, &avatar])
-            .await;
-        inner_map(result, |row| row.get(0))
+    ) -> Result<User, ModelError> {
+        use crate::validators::{BIO, NICKNAME};
+        let nickname = nickname.as_ref().map(|s| s.trim());
+        let bio = bio.as_ref().map(|s| s.trim());
+        if let Some(nickname) = nickname {
+            NICKNAME.run(nickname)?;
+        }
+        if let Some(bio) = bio {
+            BIO.run(bio)?;
+        }
+        db.query_exactly_one(include_str!("sql/edit.sql"), &[id, &nickname, &bio, &avatar])
+            .await
+            .map_err(Into::into)
+            .map(|row| row.get(0))
     }
 }
 
 #[tokio::test]
-async fn user_test() -> Result<(), AppError> {
+async fn user_test() -> Result<(), crate::error::AppError> {
     use crate::database::Client;
     use crate::media::Media;
 
@@ -145,26 +141,23 @@ async fn user_test() -> Result<(), AppError> {
     let username = "humura";
     let nickname = "Akami Humura";
     let password = "MadokaMadokaSuHaSuHa";
-    let new_user = User::create(db, email, username, nickname, password).await.unwrap();
+    let new_user = User::register(db, email, username, nickname, password).await.unwrap();
     let user = User::get_by_id(db, &new_user.id).await?.unwrap();
     assert_eq!(user.email, email);
-    let user = User::login(db, Some(email), None, password).await.unwrap();
+    let user = User::login(db, username, password).await.unwrap().unwrap();
     assert_eq!(user.nickname, nickname);
 
-    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0)
-        .await?
-        .unwrap();
+    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0).await?;
     let new_nickname = "动感超人";
     let bio = "千片万片无数片";
-    let user_altered = User::set(
+    let user_altered = User::edit(
         db,
         &user.id,
         Some(new_nickname.to_string()),
         Some(bio.to_string()),
         Some(avatar.id),
     )
-    .await?
-    .unwrap();
+    .await?;
     assert_eq!(user_altered.nickname, new_nickname);
     assert_eq!(user_altered.bio, bio);
     assert_eq!(user_altered.avatar_id, Some(avatar.id));

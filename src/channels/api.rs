@@ -8,6 +8,8 @@ use uuid::Uuid;
 pub struct Create {
     pub space_id: Uuid,
     pub name: String,
+    #[serde(default)]
+    pub character_name: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -30,4 +32,12 @@ pub struct ChannelWithRelated {
 pub struct JoinedChannel {
     pub channel: Channel,
     pub member: ChannelMember,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinChannel {
+    pub channel_id: Uuid,
+    #[serde(default)]
+    pub character_name: String,
 }

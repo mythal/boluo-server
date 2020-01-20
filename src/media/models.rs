@@ -49,13 +49,13 @@ impl Media {
         original_filename: &str,
         hash: String,
         size: i32,
-    ) -> Result<Option<Media>, DbError> {
-        let result = db
-            .query_one(
+    ) -> Result<Media, DbError> {
+        let row = db
+            .query_exactly_one(
                 include_str!("sql/create.sql"),
                 &[&mime_type, &uploader_id, &filename, &original_filename, &hash, &size],
             )
-            .await;
-        inner_map(result, |row| row.get(0))
+            .await?;
+        Ok(row.get(0))
     }
 }

@@ -1,11 +1,13 @@
+use crate::error::ValidationFailed;
+
 pub struct Validator<'a, T: ?Sized>(&'a [(&'static str, &'a (dyn Fn(&T) -> bool + Sync))]);
 
 impl<'a, T: ?Sized> Validator<'a, T> {
-    pub fn run<U: AsRef<T>>(&self, value: U) -> Result<(), &'static str> {
+    pub fn run<U: AsRef<T>>(&self, value: U) -> Result<(), ValidationFailed> {
         let Validator(sub_validators) = *self;
         for (message, validator) in sub_validators {
             if !validator(value.as_ref()) {
-                return Err(message);
+                return Err(ValidationFailed(message));
             }
         }
         Ok(())

@@ -62,6 +62,7 @@ impl<T: Serialize> Return<T> {
 pub struct WebError {
     code: &'static str,
     message: String,
+    table: Option<String>,
 }
 
 impl WebError {
@@ -69,6 +70,7 @@ impl WebError {
         WebError {
             code: e.error_code(),
             message: e.to_string(),
+            table: e.table(),
         }
     }
 }

@@ -12,7 +12,7 @@ pub struct Create {
 #[serde(rename_all = "camelCase")]
 pub struct Edit {
     pub space_id: Uuid,
-    pub name: String,
+    pub name: Option<String>,
 }
 
 #[derive(Serialize, Debug)]

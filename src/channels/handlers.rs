@@ -1,8 +1,8 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::api::{self, parse_query, IdQuery};
-use crate::channels::api::JoinedChannel;
+use crate::api::{self, parse_body, parse_query, IdQuery};
+use crate::channels::api::{JoinChannel, JoinedChannel};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
@@ -31,34 +31,29 @@ async fn query(req: Request<Body>) -> api::AppResult {
 }
 
 async fn create(req: Request<Body>) -> api::AppResult {
-    use crate::validators;
     let session = authenticate(&req).await?;
-    let Create { space_id, name } = api::parse_body(req).await?;
-
-    validators::NICKNAME
-        .run(&name)
-        .map_err(|msg| AppError::ValidationFail(msg.to_string()))?;
+    let Create {
+        space_id,
+        name,
+        character_name,
+    } = api::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let space = Space::get_by_id(db, &space_id)
+    Space::get_by_id(db, &space_id)
         .await?
         .ok_or_else(|| AppError::BadRequest(format!("The space not found")))?;
-    if space.owner_id != session.user_id {
-        admin_only(db, &session.user_id, &space_id).await?;
-    }
+    admin_only(db, &session.user_id, &space_id).await?;
 
-    let channel = Channel::create(db, &space_id, &*name, true)
-        .await?
-        .ok_or(AppError::AlreadyExists("Channel"))?;
-    let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
+    let channel = Channel::create(db, &space_id, &*name, true).await?;
+    let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name).await?;
     trans.commit().await?;
-    let channel_with_related = JoinedChannel {
+    let joined = JoinedChannel {
         channel,
         member: channel_member,
     };
-    api::Return::new(&channel_with_related).build()
+    api::Return::new(&joined).build()
 }
 
 async fn edit(req: Request<Body>) -> api::AppResult {
@@ -76,8 +71,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         return Err(AppError::NoPermission);
     }
     let channel = Channel::edit(db, &channel_id, Some(&*name))
-        .await?
-        .ok_or_else(|| unexpected!("No such channel found."))?;
+        .await?;
     api::Return::new(channel).build()
 }
 
@@ -92,20 +86,22 @@ async fn members(req: Request<Body>) -> api::AppResult {
 
 async fn join(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
-    let IdQuery { id } = parse_query(req.uri())?;
-
+    let JoinChannel {
+        channel_id,
+        character_name,
+    } = parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &id)
+    let channel = Channel::get_by_id(db, &channel_id)
         .await?
-        .ok_or(AppError::NotFound("Channel"))?;
+        .ok_or(AppError::NotFound("channels"))?;
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    let member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
+    let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name).await?;
 
-    api::Return::new(&member).build()
+    api::Return::new(JoinedChannel { channel, member }).build()
 }
 
 async fn leave(req: Request<Body>) -> api::AppResult {
@@ -125,7 +121,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
 
     let channel = Channel::get_by_id(db, &id)
         .await?
-        .ok_or(AppError::NotFound("Channel"))?;
+        .ok_or(AppError::NotFound("channels"))?;
 
     admin_only(db, &session.user_id, &channel.space_id).await?;
 

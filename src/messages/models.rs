@@ -59,9 +59,9 @@ impl Message {
         is_action: bool,
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
-    ) -> Result<Option<Message>, DbError> {
-        let result = db
-            .query_one(
+    ) -> Result<Message, DbError> {
+        let row = db
+            .query_exactly_one(
                 include_str!("sql/create.sql"),
                 &[
                     &message_id,
@@ -76,8 +76,8 @@ impl Message {
                     &whisper_to,
                 ],
             )
-            .await;
-        inner_map(result, |row| row.get(0))
+            .await?;
+        Ok(row.get(0))
     }
 
     pub async fn edit<T: Querist>(
@@ -120,13 +120,13 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let nickname = "Test User";
     let space_name = "Test Space";
 
-    let user = User::create(db, email, username, nickname, password).await?;
-    let space = Space::create(db, space_name, &user.id, None).await?.unwrap();
-    SpaceMember::add_owner(db, &user.id, &space.id).await?;
+    let user = User::register(db, email, username, nickname, password).await.unwrap();
+    let space = Space::create(db, space_name.to_string(), &user.id, None).await?;
+    SpaceMember::add_admin(db, &user.id, &space.id).await?;
 
     let channel_name = "Test Channel";
-    let channel = Channel::create(db, &space.id, channel_name, true).await?.unwrap();
-    ChannelMember::add_user(db, &user.id, &channel.id).await?;
+    let channel = Channel::create(db, &space.id, channel_name, true).await?;
+    ChannelMember::add_user(db, &user.id, &channel.id, "").await?;
     ChannelMember::set_master(db, &user.id, &channel.id, true).await?;
     let entities = serde_json::Value::Array(vec![]);
     let text = "hello, world";
@@ -143,8 +143,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         Some(vec![]),
     )
-    .await?
-    .unwrap();
+    .await?;
     assert_eq!(message.text, "");
 
     let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
