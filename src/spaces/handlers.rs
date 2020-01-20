@@ -132,7 +132,7 @@ async fn delete(req: Request<Body>) -> api::AppResult {
         return api::Return::new(&space).build();
     }
     log::warn!("The user {} failed to try delete a space {}", session.user_id, space.id);
-    Err(AppError::Unauthenticated)
+    Err(AppError::NoPermission)
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {

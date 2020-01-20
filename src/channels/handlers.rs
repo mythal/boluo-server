@@ -1,4 +1,4 @@
-use super::api::{ChannelWithRelated, Create, Edit};
+use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_query, IdQuery};
@@ -15,9 +15,9 @@ use uuid::Uuid;
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
     let member = SpaceMember::get(db, user_id, space_id)
         .await?
-        .ok_or(AppError::Unauthenticated)?;
+        .ok_or(AppError::NoPermission)?;
     if member.is_admin {
-        return Err(AppError::Unauthenticated);
+        return Err(AppError::NoPermission);
     }
     Ok(())
 }
@@ -45,7 +45,9 @@ async fn create(req: Request<Body>) -> api::AppResult {
     let space = Space::get_by_id(db, &space_id)
         .await?
         .ok_or_else(|| AppError::BadRequest(format!("The space not found")))?;
-    admin_only(db, &session.user_id, &space_id).await?;
+    if space.owner_id != session.user_id {
+        admin_only(db, &session.user_id, &space_id).await?;
+    }
 
     let channel = Channel::create(db, &space_id, &*name, true)
         .await?
@@ -100,7 +102,7 @@ async fn join(req: Request<Body>) -> api::AppResult {
         .ok_or(AppError::NotFound("Channel"))?;
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await?
-        .ok_or(AppError::Unauthenticated)?;
+        .ok_or(AppError::NoPermission)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id).await?;
 
     api::Return::new(&member).build()

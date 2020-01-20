@@ -25,7 +25,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
     let db = &mut *conn;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
-        .ok_or(AppError::Unauthenticated)?;
+        .ok_or(AppError::NoPermission)?;
     let name = name.unwrap_or(channel_member.character_name);
     let message = Message::create(
         db,
@@ -65,9 +65,9 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         .ok_or(AppError::NotFound("Message"))?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
-        .ok_or(AppError::Unauthenticated)?;
+        .ok_or(AppError::NoPermission)?;
     if message.sender_id != session.user_id {
-        return Err(AppError::Unauthenticated);
+        return Err(AppError::NoPermission);
     }
     let text = text.as_ref().map(String::as_str);
     let name = name.as_ref().map(String::as_str);
@@ -99,9 +99,9 @@ async fn delete(req: Request<Body>) -> api::AppResult {
         .ok_or(AppError::NotFound("Message"))?;
     let space_member = SpaceMember::get_by_channel(db, &session.id, &message.channel_id)
         .await?
-        .ok_or(AppError::Unauthenticated)?;
+        .ok_or(AppError::NoPermission)?;
     if message.sender_id != session.user_id && !space_member.is_admin {
-        return Err(AppError::Unauthenticated);
+        return Err(AppError::NoPermission);
     }
     Message::delete(db, &id).await?;
     let channel_id = message.channel_id.clone();
@@ -124,7 +124,7 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
 
     ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
-        .ok_or(AppError::Unauthenticated)?;
+        .ok_or(AppError::NoPermission)?;
     Event::message_preview(preview);
     api::Return::new(true).build()
 }
