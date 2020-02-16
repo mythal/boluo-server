@@ -14,58 +14,15 @@ mod api;
 mod handlers;
 mod models;
 
+pub use handlers::router;
+
 struct EventQueue {
     queue: VecDeque<Arc<Event>>,
     last_timestamp: i64,
 }
 
-const LOCAL_EVENTS_CACHE_TIME_MS: i64 = 60 * 1000;
-static EVENT_QUEUE: OnceCell<RwLock<EventQueue>> = OnceCell::new();
-
-impl EventQueue {
-    fn new() -> EventQueue {
-        EventQueue {
-            queue: VecDeque::new(),
-            last_timestamp: timestamp(),
-        }
-    }
-
-    pub fn get() -> &'static RwLock<EventQueue> {
-        EVENT_QUEUE.get_or_init(|| RwLock::new(EventQueue::new()))
-    }
-
-    fn clear_old(&mut self) {
-        let now = timestamp();
-        while self.last_timestamp < now - LOCAL_EVENTS_CACHE_TIME_MS {
-            if let Some(event) = self.queue.pop_front() {
-                self.last_timestamp = event.timestamp;
-            } else {
-                self.last_timestamp = now;
-                break;
-            }
-        }
-    }
-
-    fn push(&mut self, event: Arc<Event>) {
-        self.queue.push_back(event);
-    }
-
-    pub async fn get_events(since: i64, mailbox: &Uuid) -> Vec<Arc<Event>> {
-        EventQueue::get()
-            .read()
-            .await
-            .queue
-            .iter()
-            .rev()
-            .take_while(|e| e.timestamp > since)
-            .filter(|e| e.mailbox == *mailbox)
-            .map(Clone::clone)
-            .collect()
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub struct Event {
     pub event_id: Uuid,
     pub mailbox: Uuid,
@@ -86,31 +43,31 @@ impl Event {
     pub fn new_message(message: Message) {
         let channel_id = message.channel_id;
         let message = Box::new(message);
-        let event = Arc::new(Event::new(channel_id, EventBody::NewMessage { message }));
+        let event = Event::new(channel_id, EventBody::NewMessage { message });
         Event::fire(event, channel_id)
     }
 
     pub fn message_deleted(channel_id: Uuid, message_id: Uuid) {
-        let event = Arc::new(Event::new(channel_id, EventBody::MessageDeleted { message_id }));
+        let event = Event::new(channel_id, EventBody::MessageDeleted { message_id });
         Event::fire(event, channel_id)
     }
 
     pub fn message_edited(message: Message) {
         let channel_id = message.channel_id;
         let message = Box::new(message);
-        let event = Arc::new(Event::new(channel_id, EventBody::MessageEdited { message }));
+        let event = Event::new(channel_id, EventBody::MessageEdited { message });
         Event::fire(event, channel_id)
     }
 
     pub fn channel_deleted(channel_id: Uuid) {
-        let event = Arc::new(Event::new(channel_id, EventBody::ChannelDeleted));
+        let event = Event::new(channel_id, EventBody::ChannelDeleted);
         Event::fire(event, channel_id)
     }
 
     pub fn message_preview(preview: Preview) {
         let channel_id = preview.channel_id;
         let preview = Box::new(preview);
-        let event = Arc::new(Event::new(channel_id, EventBody::MessagePreview { preview }));
+        let event = Event::new(channel_id, EventBody::MessagePreview { preview });
         Event::fire(event, channel_id)
     }
 
@@ -118,14 +75,17 @@ impl Event {
         make_key(b"mailbox", mailbox, b"events")
     }
 
-    pub async fn get_from_cache(mailbox: &Uuid, since: i64) -> Result<Vec<Event>, CacheError> {
+    pub async fn get_from_cache(mailbox: &Uuid, after: i64) -> Result<Vec<Event>, CacheError> {
         let mut cache = cache::get().await;
-        let bytes_array = cache.get_after(&*Self::cache_key(mailbox), since).await?;
+        let bytes_array = cache.get_after(&*Self::cache_key(mailbox), after + 1).await?;
         let mut events = Vec::with_capacity(bytes_array.len());
         for bytes in bytes_array.into_iter() {
-            let event: Result<Event, _> = bincode::deserialize(&*bytes);
+            let event: Result<Event, _> = serde_json::from_slice(&*bytes);
             match event {
-                Err(e) => log::error!("Failed to deserialize event: {}", e),
+                Err(e) => {
+                    log::debug!("{:?}", bytes);
+                    log::error!("Failed to deserialize event: {}", e)
+                },
                 Ok(e) => events.push(e),
             }
         }
@@ -141,30 +101,23 @@ impl Event {
         }
     }
 
-    pub fn fire(event: Arc<Event>, mailbox: Uuid) {
+    pub fn fire(event: Event, mailbox: Uuid) {
         use tokio::spawn;
-        let event_copy = event.clone();
-        spawn(async move {
-            let event = event_copy;
-            let mut queue = EventQueue::get().write().await;
-            queue.push(event);
-            drop(queue);
-            let broadcast_table = get_broadcast_table();
-            let table = broadcast_table.read().await;
-            if let Some(tx) = table.get(&mailbox) {
-                tx.send(()).ok();
-            }
-            drop(table);
-        });
-
         spawn(async move {
             let mut cache = cache::get().await;
-            match bincode::serialize(&event) {
+            match serde_json::to_vec(&event) {
                 Ok(encoded) => {
                     let key = Self::cache_key(&mailbox);
                     if let Err(e) = cache.set_with_time(&*key, &*encoded).await {
                         log::warn!("Failed to add event to redis: {}", e)
                     }
+
+                    let broadcast_table = get_broadcast_table();
+                    let table = broadcast_table.read().await;
+                    if let Some(tx) = table.get(&mailbox) {
+                        tx.send(()).ok();
+                    }
+                    drop(table);
                 }
                 Err(e) => {
                     log::error!("Failed to serialize event: {}", e);
@@ -238,10 +191,6 @@ pub async fn periodical_cleaner() {
     tokio::spawn(redis_cleaner());
     loop {
         delay_for(Duration::from_secs(15)).await;
-        {
-            let mut event_queue = EventQueue::get().write().await;
-            event_queue.clear_old();
-        }
         {
             let mut broadcast_table = get_broadcast_table().write().await;
             broadcast_table.retain(|_, v| v.receiver_count() != 0);

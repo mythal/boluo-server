@@ -16,13 +16,13 @@ impl<'a, T: ?Sized> Validator<'a, T> {
 
 macro_rules! min {
     ($n: expr) => {
-        |s| s.len() >= $n
+        |s| s.chars().count() >= $n
     };
 }
 
 macro_rules! max {
     ($n: expr) => {
-        |s| s.len() <= $n
+        |s| s.chars().count() <= $n
     };
 }
 
@@ -37,18 +37,18 @@ pub static PASSWORD: Validator<str> = Validator(&[
     ("Password length shall not be more than 128.", &max!(128)),
 ]);
 
-pub static USERNAME: Validator<str> = Validator(&[
-    ("Username length shall not be less than 3.", &min!(3)),
-    ("Username length shall not be more than 32.", &max!(32)),
+pub static NAME: Validator<str> = Validator(&[
+    ("Name length shall not be less than 3.", &min!(3)),
+    ("Name length shall not be more than 32.", &max!(32)),
     (
         r#"Username can only contain letters, "_" and numbers."#,
         &is_match!(r#"^[\w_\d]+$"#),
     ),
 ]);
 
-pub static NICKNAME: Validator<str> = Validator(&[
-    ("Nickname length shall not be less than 2.", &min!(2)),
-    ("Username length shall not be more than 32.", &max!(32)),
+pub static DISPLAY_NAME: Validator<str> = Validator(&[
+    ("Name length shall not be less than 2.", &min!(2)),
+    ("Name length shall not be more than 32.", &max!(32)),
 ]);
 
 pub static EMAIL: Validator<str> = Validator(&[
@@ -61,18 +61,20 @@ pub static EMAIL: Validator<str> = Validator(&[
 
 pub static BIO: Validator<str> = Validator(&[("Bio shall not be more than 2048.", &max!(2048))]);
 
+pub static DESCRIPTION: Validator<str> = Validator(&[("Description shall not be more than 256.", &max!(256))]);
+
 #[test]
 fn validator_test() {
     assert_eq!(PASSWORD.run("whoa!whoa!".to_string()), Ok(()));
     assert!(PASSWORD.run("whoa!").is_err());
 
-    assert_eq!(USERNAME.run("whoa"), Ok(()));
-    assert!(USERNAME.run("whoa whoa").is_err());
-    assert!(USERNAME.run("").is_err());
+    assert_eq!(NAME.run("whoa"), Ok(()));
+    assert!(NAME.run("whoa whoa").is_err());
+    assert!(NAME.run("").is_err());
 
-    assert_eq!(NICKNAME.run("whoa"), Ok(()));
-    assert!(NICKNAME.run("whoa whoa").is_ok());
-    assert!(NICKNAME.run("").is_err());
+    assert_eq!(DISPLAY_NAME.run("whoa"), Ok(()));
+    assert!(DISPLAY_NAME.run("whoa whoa").is_ok());
+    assert!(DISPLAY_NAME.run("").is_err());
 
     assert!(EMAIL.run("").is_err());
     assert!(EMAIL.run("example@example.com").is_ok());

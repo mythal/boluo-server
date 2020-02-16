@@ -1,6 +1,6 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
-use crate::api::{parse_query, IdQuery};
+use crate::api::parse_query;
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::error::AppError;
@@ -9,6 +9,7 @@ use crate::messages::Preview;
 use crate::spaces::SpaceMember;
 use crate::{api, database};
 use hyper::{Body, Request};
+use crate::messages::api::ByChannel;
 
 async fn send(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
@@ -26,15 +27,15 @@ async fn send(req: Request<Body>) -> api::AppResult {
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    let name = name.unwrap_or(channel_member.character_name);
     let message = Message::create(
         db,
         message_id.as_ref(),
         &channel_id,
         &session.user_id,
+        &*channel_member.character_name,
         &*name,
         &*text,
-        &entities,
+        entities,
         in_game,
         is_action,
         channel_member.is_master,
@@ -70,7 +71,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     }
     let text = text.as_ref().map(String::as_str);
     let name = name.as_ref().map(String::as_str);
-    let message = Message::edit(db, name, &message_id, text, &entities, in_game, is_action)
+    let message = Message::edit(db, name, &message_id, text, entities, in_game, is_action)
         .await?
         .ok_or_else(|| unexpected!("The message had been delete."))?;
     trans.commit().await?;
@@ -129,15 +130,15 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
 }
 
 async fn by_channel(req: Request<Body>) -> api::AppResult {
-    let IdQuery { id } = parse_query(req.uri())?;
+    let ByChannel { channel, before, amount } = parse_query(req.uri())?;
 
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let channel = Channel::get_by_id(db, &id)
+    let channel = Channel::get_by_id(db, &channel)
         .await?
         .ok_or(AppError::NotFound("channels"))?;
-    let messages = Message::get_by_channel(db, &channel.id).await?;
+    let messages = Message::get_by_channel(db, &channel.id, before, amount).await?;
     api::Return::new(&messages).build()
 }
 

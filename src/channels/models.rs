@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::channels::api::JoinedChannel;
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::spaces::SpaceMember;
+use crate::spaces::{SpaceMember, Space};
 use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -17,6 +17,7 @@ pub struct Channel {
     pub name: String,
     pub topic: String,
     pub space_id: Uuid,
+    #[serde(with = "crate::date_format")]
     pub created: NaiveDateTime,
     pub is_public: bool,
     #[serde(skip)]
@@ -33,7 +34,7 @@ impl Channel {
         use crate::validators;
 
         let name = name.trim();
-        validators::NICKNAME.run(name)?;
+        validators::DISPLAY_NAME.run(name)?;
 
         let row = db
             .query_exactly_one(include_str!("sql/create_channel.sql"), &[space_id, &name, &is_public])
@@ -45,6 +46,11 @@ impl Channel {
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<Channel>, DbError> {
         let result = db.query_one(include_str!("sql/fetch_channel.sql"), &[&id]).await;
         inner_map(result, |row| row.get(0))
+    }
+
+    pub async fn get_with_space<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<(Channel, Space)>, DbError> {
+        let result = db.query_one(include_str!("sql/fetch_channel_with_space.sql"), &[&id]).await;
+        inner_map(result, |row| (row.get(0), row.get(1)))
     }
 
     pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<Channel>, DbError> {
@@ -61,7 +67,7 @@ impl Channel {
 
         let name = name.map(str::trim);
         if let Some(name) = name {
-            validators::NICKNAME.run(name)?;
+            validators::DISPLAY_NAME.run(name)?;
         }
         let row = db.query_exactly_one(include_str!("sql/edit_channel.sql"), &[id, &name]).await?;
         Ok(row.get(0))
@@ -88,9 +94,11 @@ impl Channel {
 pub struct ChannelMember {
     pub user_id: Uuid,
     pub channel_id: Uuid,
+    #[serde(with = "crate::date_format")]
     pub join_date: NaiveDateTime,
     pub character_name: String,
     pub is_master: bool,
+    pub text_color: String,
 }
 
 impl ChannelMember {
@@ -104,7 +112,7 @@ impl ChannelMember {
 
         let character_name = character_name.trim();
         if character_name.len() > 0 {
-            validators::NICKNAME.run(character_name)?;
+            validators::DISPLAY_NAME.run(character_name)?;
         }
         db.query_exactly_one(
             include_str!("sql/add_user_to_channel.sql"),
@@ -161,14 +169,20 @@ impl ChannelMember {
         user_id: &Uuid,
         channel_id: &Uuid,
         character_name: &str,
-    ) -> Result<Option<ChannelMember>, DbError> {
-        let result = db
+    ) -> Result<Option<ChannelMember>, ModelError> {
+        use crate::validators;
+
+        let character_name = character_name.trim();
+        if character_name.len() > 0 {
+            validators::DISPLAY_NAME.run(character_name)?;
+        }
+        let row = db
             .query_one(
                 include_str!("sql/set_name.sql"),
                 &[user_id, channel_id, &character_name.trim()],
             )
-            .await;
-        inner_map(result, |row| row.get(0))
+            .await?;
+        Ok(row.map(|row| row.get(0)))
     }
 
     pub async fn set_master<T: Querist>(
@@ -219,6 +233,7 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     let new_name = "深水城水很深";
     let channel_edited = Channel::edit(db, &channel.id, Some(new_name)).await?;
     assert_eq!(channel_edited.name, new_name);
+    let (channel, space) = Channel::get_with_space(db, &channel.id).await?.unwrap();
 
     // members
     SpaceMember::add_admin(db, &user.id, &space.id).await.unwrap();

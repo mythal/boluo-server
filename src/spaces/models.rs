@@ -34,9 +34,9 @@ impl Space {
         owner_id: &Uuid,
         password: Option<String>,
     ) -> Result<Space, ModelError> {
-        use crate::validators::NICKNAME;
+        use crate::validators::DISPLAY_NAME;
         let name = name.trim();
-        NICKNAME.run(name)?;
+        DISPLAY_NAME.run(name)?;
         let row = db
             .query_exactly_one(include_str!("sql/create.sql"), &[&name, owner_id, &password])
             .await?;
@@ -82,13 +82,18 @@ impl Space {
         db: &mut T,
         space_id: Uuid,
         name: Option<String>,
+        description: Option<String>,
     ) -> Result<Option<Space>, ModelError> {
         use crate::validators;
-        let name = name.as_ref().map(|name| name.trim());
+        let name = name.as_ref().map(|s| s.trim());
+        let description = description.as_ref().map(|s| s.trim());
         if let Some(name) = name {
-            validators::NICKNAME.run(name)?;
+            validators::DISPLAY_NAME.run(name)?;
         }
-        let result = db.query_one(include_str!("sql/edit.sql"), &[&space_id, &name]).await?;
+        if let Some(description) = description {
+            validators::DESCRIPTION.run(description)?;
+        }
+        let result = db.query_one(include_str!("sql/edit.sql"), &[&space_id, &name, &description]).await?;
         Ok(result.map(|row| row.get(0)))
     }
 
@@ -218,7 +223,8 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     let spaces = Space::all(db).await?;
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
     let new_name = "Mythal";
-    let space_edited = Space::edit(db, space.id, Some(new_name.to_string())).await?.unwrap();
+    let description = "some description".to_string();
+    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description)).await?.unwrap();
     assert_eq!(space_edited.name, new_name);
 
     let _space_2 = Space::create(db, "学园都市".to_string(), &user.id, None).await?;

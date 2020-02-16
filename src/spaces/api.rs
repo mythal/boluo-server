@@ -13,6 +13,7 @@ pub struct Create {
 pub struct Edit {
     pub space_id: Uuid,
     pub name: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Serialize, Debug)]

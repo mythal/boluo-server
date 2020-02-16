@@ -2,7 +2,7 @@ use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_body, parse_query, IdQuery};
-use crate::channels::api::{JoinChannel, JoinedChannel};
+use crate::channels::api::{JoinChannel, JoinedChannel, ChannelWithRelated};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
@@ -16,7 +16,7 @@ async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> 
     let member = SpaceMember::get(db, user_id, space_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if member.is_admin {
+    if !member.is_admin {
         return Err(AppError::NoPermission);
     }
     Ok(())
@@ -26,8 +26,23 @@ async fn query(req: Request<Body>) -> api::AppResult {
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut db = database::get().await;
-    let channel = Channel::get_by_id(&mut *db, &query.id).await?;
+    let channel = Channel::get_by_id(&mut *db, &query.id).await?.ok_or(AppError::NotFound("channels"))?;
     return api::Return::new(&channel).build();
+}
+
+async fn query_with_related(req: Request<Body>) -> api::AppResult {
+    let query: IdQuery = parse_query(req.uri())?;
+
+    let mut conn = database::get().await;
+    let db = &mut *conn;
+    let (channel, space) = Channel::get_with_space(db, &query.id).await?.ok_or(AppError::NotFound("channels"))?;
+    let members = ChannelMember::get_by_channel(db, &channel.id).await?;
+    let with_related = ChannelWithRelated {
+        channel,
+        space,
+        members
+    };
+    return api::Return::new(&with_related).build();
 }
 
 async fn create(req: Request<Body>) -> api::AppResult {
@@ -66,7 +81,9 @@ async fn edit(req: Request<Body>) -> api::AppResult {
 
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &channel_id)
         .await?
-        .ok_or(AppError::NoPermission)?;
+        .ok_or_else(|| {
+            AppError::NoPermission
+        })?;
     if !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
@@ -153,6 +170,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
 
     match (path, req.method().clone()) {
         ("/query", Method::GET) => query(req).await,
+        ("/query_with_related", Method::GET) => query_with_related(req).await,
         ("/by_space", Method::GET) => by_space(req).await,
         ("/my", Method::GET) => my_channels(req).await,
         ("/create", Method::POST) => create(req).await,

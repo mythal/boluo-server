@@ -37,14 +37,14 @@ impl User {
         nickname: &str,
         password: &str,
     ) -> Result<User, ModelError> {
-        use crate::validators::{EMAIL, NICKNAME, PASSWORD, USERNAME};
+        use crate::validators::{EMAIL, DISPLAY_NAME, PASSWORD, NAME};
         let username = username.trim();
         let nickname = nickname.trim();
         let email = email.to_ascii_lowercase();
 
         EMAIL.run(&email)?;
-        NICKNAME.run(&nickname)?;
-        USERNAME.run(&username)?;
+        DISPLAY_NAME.run(&nickname)?;
+        NAME.run(&username)?;
         PASSWORD.run(&password)?;
 
         let row = db
@@ -113,11 +113,11 @@ impl User {
         bio: Option<String>,
         avatar: Option<Uuid>,
     ) -> Result<User, ModelError> {
-        use crate::validators::{BIO, NICKNAME};
+        use crate::validators::{BIO, DISPLAY_NAME};
         let nickname = nickname.as_ref().map(|s| s.trim());
         let bio = bio.as_ref().map(|s| s.trim());
         if let Some(nickname) = nickname {
-            NICKNAME.run(nickname)?;
+            DISPLAY_NAME.run(nickname)?;
         }
         if let Some(bio) = bio {
             BIO.run(bio)?;

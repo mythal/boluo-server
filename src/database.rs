@@ -129,7 +129,18 @@ impl Client {
         log::warn!("A postgres connection was broken.");
     }
     pub async fn with_config(config: &tokio_postgres::Config) -> Client {
-        let (client, connection) = config.connect(tokio_postgres::NoTls).await.unwrap();
+        use tokio::time::delay_for;
+        use std::time::Duration;
+
+        let mut connect_result = config.connect(tokio_postgres::NoTls).await;
+        let mut duration = Duration::from_secs(1);
+        while let Err(ref e) = connect_result {
+            log::error!("Failed to connect to database: {}", e);
+            duration += Duration::from_secs(1);
+            delay_for(duration).await;
+            connect_result = config.connect(tokio_postgres::NoTls).await;
+        }
+        let (client, connection) = connect_result.unwrap();
         tokio::spawn(connection);
         let prepared = HashMap::with_capacity_and_hasher(64, CrcBuilder);
         let broken = false;

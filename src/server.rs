@@ -12,6 +12,7 @@ use hyper::{Body, Request, Response, Server};
 mod utils;
 #[macro_use]
 mod error;
+mod date_format;
 mod api;
 mod cache;
 mod channels;
@@ -50,6 +51,7 @@ async fn router(req: Request<Body>) -> api::AppResult {
     table!("/api/media", media::router);
     table!("/api/channels", channels::router);
     table!("/api/spaces", spaces::router);
+    table!("/api/events", events::router);
     Err(AppError::missing())
 }
 

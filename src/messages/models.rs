@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
 use crate::database::Querist;
-use crate::error::DbError;
+use crate::error::{DbError, ModelError, ValidationFailed};
 use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -30,8 +30,11 @@ pub struct Message {
     pub text: String,
     pub whisper_to_users: Option<Vec<Uuid>>,
     pub entities: JsonValue,
+    #[serde(with = "crate::date_format")]
     pub created: NaiveDateTime,
+    #[serde(with = "crate::date_format")]
     pub modified: NaiveDateTime,
+    #[serde(with = "crate::date_format")]
     pub order_date: NaiveDateTime,
     pub order_offset: i32,
 }
@@ -42,8 +45,14 @@ impl Message {
         inner_map(result, |row| row.get(0))
     }
 
-    pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Vec<Message>, DbError> {
-        let rows = db.query(include_str!("sql/get_by_channel.sql"), &[channel_id]).await?;
+    pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid, before: Option<i64>, amount: Option<i32>) -> Result<Vec<Message>, ModelError> {
+        use postgres_types::Type;
+        if let Some(amount) = amount {
+            if amount < 1 {
+                ModelError::Validation(ValidationFailed("amount must be greater than 0."));
+            }
+        }
+        let rows = db.query_typed(include_str!("sql/get_by_channel.sql"), &[Type::UUID, Type::INT8], &[channel_id, &before, &amount]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -52,14 +61,20 @@ impl Message {
         message_id: Option<&Uuid>,
         channel_id: &Uuid,
         sender_id: &Uuid,
-        name: &str,
+        default_name: &str,
+        mut name: &str,
         text: &str,
-        entities: &serde_json::Value,
+        entities: Vec<JsonValue>,
         in_game: bool,
         is_action: bool,
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
-    ) -> Result<Message, DbError> {
+    ) -> Result<Message, ModelError> {
+        name = name.trim();
+        if name.len() == 0 {
+            name = default_name.trim();
+        }
+        let entities = JsonValue::Array(entities);
         let row = db
             .query_exactly_one(
                 include_str!("sql/create.sql"),
@@ -69,7 +84,7 @@ impl Message {
                     channel_id,
                     &name,
                     &text,
-                    entities,
+                    &entities,
                     &in_game,
                     &is_action,
                     &is_master,
@@ -85,10 +100,11 @@ impl Message {
         name: Option<&str>,
         id: &Uuid,
         text: Option<&str>,
-        entities: &Option<JsonValue>,
+        entities: Option<Vec<JsonValue>>,
         in_game: Option<bool>,
         is_action: Option<bool>,
     ) -> Result<Option<Message>, DbError> {
+        let entities = entities.map(JsonValue::Array);
         let result = db
             .query_one(
                 include_str!("sql/edit.sql"),
@@ -128,16 +144,16 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let channel = Channel::create(db, &space.id, channel_name, true).await?;
     ChannelMember::add_user(db, &user.id, &channel.id, "").await?;
     ChannelMember::set_master(db, &user.id, &channel.id, true).await?;
-    let entities = serde_json::Value::Array(vec![]);
     let text = "hello, world";
     let message = Message::create(
         db,
         None,
         &channel.id,
         &user.id,
+        "",
         &*user.nickname,
         text,
-        &entities,
+        vec![],
         true,
         false,
         true,
@@ -150,7 +166,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     assert_eq!(message.text, text);
 
     let new_text = "cocona";
-    let edited = Message::edit(db, None, &message.id, Some(new_text), &Some(entities), None, None)
+    let edited = Message::edit(db, None, &message.id, Some(new_text), Some(vec![]), None, None)
         .await?
         .unwrap();
     assert_eq!(edited.text, "");
@@ -161,7 +177,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, "");
 
-    let messages = Message::get_by_channel(db, &channel.id).await?;
+    let messages = Message::get_by_channel(db, &channel.id, None, None).await?;
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, message.id);
     Message::delete(db, &message.id).await?;
@@ -184,5 +200,6 @@ pub struct Preview {
     pub text: String,
     pub whisper_to_users: Option<Vec<Uuid>>,
     pub entities: JsonValue,
+    #[serde(with = "crate::date_format")]
     pub start: NaiveDateTime,
 }

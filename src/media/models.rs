@@ -19,6 +19,7 @@ pub struct Media {
     pub hash: String,
     pub size: i32,
     pub description: String,
+    #[serde(with = "crate::date_format")]
     pub created: NaiveDateTime,
 }
 

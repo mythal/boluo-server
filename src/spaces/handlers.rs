@@ -61,7 +61,7 @@ async fn create(req: Request<Body>) -> api::AppResult {
 
 async fn edit(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
-    let Edit { space_id, name }: Edit = api::parse_body(req).await?;
+    let Edit { space_id, name, description }: Edit = api::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -73,9 +73,10 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     if !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
-    let space = Space::edit(db, space_id, name)
+    let space = Space::edit(db, space_id, name, description)
         .await?
         .ok_or_else(|| unexpected!("No such space found."))?;
+    trans.commit().await?;
     api::Return::new(space).build()
 }
 
