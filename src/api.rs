@@ -37,13 +37,13 @@ impl<T: Serialize> Return<T> {
     pub fn build(self) -> AppResult {
         let return_body = match self.result {
             Ok(some) => WebResult {
-                ok: true,
-                some: Some(some),
+                is_ok: true,
+                ok: Some(some),
                 err: None,
             },
             Err(err) => WebResult {
-                ok: false,
-                some: None,
+                is_ok: false,
+                ok: None,
                 err: Some(WebError::from(err)),
             },
         };
@@ -78,8 +78,8 @@ impl WebError {
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WebResult<T: Serialize> {
-    ok: bool,
-    some: Option<T>,
+    is_ok: bool,
+    ok: Option<T>,
     err: Option<WebError>,
 }
 

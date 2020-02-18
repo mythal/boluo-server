@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
+use chrono::NaiveDateTime;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -12,6 +13,22 @@ pub struct NewMessage {
     pub entities: Vec<JsonValue>,
     pub in_game: bool,
     pub is_action: bool,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct NewPreview {
+    pub id: Uuid,
+    pub channel_id: Uuid,
+    pub name: String,
+    pub media_id: Option<Uuid>,
+    pub in_game: bool,
+    pub is_action: bool,
+    pub text: String,
+    pub entities: Vec<JsonValue>,
+    pub whisper_to_users: Option<Vec<Uuid>>,
+    #[serde(with = "crate::date_format")]
+    pub start: NaiveDateTime,
 }
 
 #[derive(Deserialize, Debug)]

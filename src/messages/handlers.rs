@@ -9,7 +9,7 @@ use crate::messages::Preview;
 use crate::spaces::SpaceMember;
 use crate::{api, database};
 use hyper::{Body, Request};
-use crate::messages::api::ByChannel;
+use crate::messages::api::{ByChannel, NewPreview};
 
 async fn send(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
@@ -104,27 +104,38 @@ async fn delete(req: Request<Body>) -> api::AppResult {
         return Err(AppError::NoPermission);
     }
     Message::delete(db, &id).await?;
-    let channel_id = message.channel_id.clone();
-    Event::message_deleted(channel_id, message.id);
-    api::Return::new(true).build()
+    Event::message_deleted(message.channel_id, message.id);
+    api::Return::new(&message).build()
 }
 
 async fn send_preview(req: Request<Body>) -> api::AppResult {
     let session = authenticate(&req).await?;
-    let preview: Preview = api::parse_body(req).await?;
+    let NewPreview { id, channel_id, name, media_id, in_game, is_action, text, entities, whisper_to_users, start } = api::parse_body(req).await?;
 
-    if preview.sender_id != session.user_id {
-        log::warn!("The user {} attempts to forge preview message.", session.user_id);
-        return Err(AppError::BadRequest(format!("You are forging message")));
-    }
 
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let channel_id = preview.channel_id.clone();
+    let channel_id = channel_id.clone();
 
-    ChannelMember::get(db, &session.user_id, &channel_id)
+    let member = ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
+
+    let preview = Preview {
+        id,
+        sender_id: session.user_id,
+        channel_id,
+        parent_message_id: None,
+        name,
+        media_id,
+        in_game,
+        is_action,
+        text,
+        whisper_to_users,
+        entities,
+        start,
+        is_master: member.is_master,
+    };
     Event::message_preview(preview);
     api::Return::new(true).build()
 }
@@ -149,7 +160,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
         ("/query", Method::GET) => query(req).await,
         ("/by_channel", Method::GET) => by_channel(req).await,
         ("/send", Method::POST) => send(req).await,
-        ("/delete", Method::DELETE) => delete(req).await,
+        ("/delete", Method::POST) => delete(req).await,
         ("/edit", Method::POST) => edit(req).await,
         ("/preview", Method::POST) => send_preview(req).await,
         _ => Err(AppError::missing()),

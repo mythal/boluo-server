@@ -2,7 +2,7 @@ use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_body, parse_query, IdQuery};
-use crate::channels::api::{JoinChannel, JoinedChannel, ChannelWithRelated};
+use crate::channels::api::{JoinChannel, ChannelWithMember, ChannelWithRelated};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
@@ -64,7 +64,7 @@ async fn create(req: Request<Body>) -> api::AppResult {
     let channel = Channel::create(db, &space_id, &*name, true).await?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name).await?;
     trans.commit().await?;
-    let joined = JoinedChannel {
+    let joined = ChannelWithMember {
         channel,
         member: channel_member,
     };
@@ -118,7 +118,7 @@ async fn join(req: Request<Body>) -> api::AppResult {
         .ok_or(AppError::NoPermission)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name).await?;
 
-    api::Return::new(JoinedChannel { channel, member }).build()
+    api::Return::new(ChannelWithMember { channel, member }).build()
 }
 
 async fn leave(req: Request<Body>) -> api::AppResult {
@@ -178,7 +178,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
         ("/members", Method::GET) => members(req).await,
         ("/join", Method::POST) => join(req).await,
         ("/leave", Method::POST) => leave(req).await,
-        ("/delete", Method::DELETE) => delete(req).await,
+        ("/delete", Method::POST) => delete(req).await,
         _ => Err(AppError::missing()),
     }
 }

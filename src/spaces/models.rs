@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::spaces::api::JoinedSpace;
+use crate::spaces::api::SpaceWithMember;
 use crate::utils::inner_map;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -97,13 +97,13 @@ impl Space {
         Ok(result.map(|row| row.get(0)))
     }
 
-    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<JoinedSpace>, DbError> {
+    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<SpaceWithMember>, DbError> {
         let rows = db
             .query(include_str!("sql/get_spaces_by_user.sql"), &[&user_id])
             .await?;
         Ok(rows
             .into_iter()
-            .map(|row| JoinedSpace {
+            .map(|row| SpaceWithMember {
                 space: row.get(0),
                 member: row.get(1),
             })

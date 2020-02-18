@@ -29,7 +29,7 @@ pub struct ChannelWithRelated {
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct JoinedChannel {
+pub struct ChannelWithMember {
     pub channel: Channel,
     pub member: ChannelMember,
 }

@@ -5,10 +5,12 @@ use crate::database;
 use crate::session::revoke_session;
 
 use crate::error::AppError;
-use crate::users::api::{Edit, QueryUser};
+use crate::users::api::{Edit, QueryUser, GetMe};
 use crate::{api, context};
 use hyper::{Body, Method, Request, StatusCode};
 use once_cell::sync::OnceCell;
+use crate::channels::{Channel};
+use crate::spaces::Space;
 
 async fn register(req: Request<Body>) -> api::AppResult {
     let Register {
@@ -39,14 +41,31 @@ pub async fn query_user(req: Request<Body>) -> api::AppResult {
     api::Return::new(user).build()
 }
 
+pub async fn get_me(req: Request<Body>) -> api::AppResult {
+    use crate::session::authenticate;
+    let get_me = if let Ok(session) = authenticate(&req).await {
+        let mut conn = database::get().await;
+        let db = &mut *conn;
+        let user = User::get_by_id(db, &user_id).await?
+            .ok_or_else(|| unexpected!("This user is not in the database"))?;
+        let my_spaces = Space::get_by_user(db, user.id).await?;
+        let my_channels = Channel::get_by_user(db, user.id).await?;
+        Some(GetMe { user, my_channels, my_spaces })
+    } else {
+        None;
+    };
+    api::Return::new(get_me).build()
+}
+
 pub async fn login(req: Request<Body>) -> api::AppResult {
     use crate::session;
     use cookie::{CookieBuilder, SameSite};
     use hyper::header::{HeaderValue, SET_COOKIE};
 
     let form: Login = api::parse_body(req).await?;
-    let mut db = database::get().await;
-    let login = User::login(&mut *db, &*form.username, &*form.password)
+    let mut conn = database::get().await;
+    let db = &mut *conn;
+    let login = User::login(db, &*form.username, &*form.password)
         .await?
         .ok_or(AppError::NoPermission);
     if let Err(AppError::NoPermission) = &login {
@@ -66,7 +85,10 @@ pub async fn login(req: Request<Body>) -> api::AppResult {
         .to_string();
 
     let token = if form.with_token { Some(token) } else { None };
-    let login_return = LoginReturn { user, token };
+    let my_spaces = Space::get_by_user(db, user.id).await?;
+    let my_channels = Channel::get_by_user(db, user.id).await?;
+    let me = GetMe { user, my_spaces, my_channels };
+    let login_return = LoginReturn { me, token };
 
     let mut response = api::Return::new(&login_return).build()?;
     let headers = response.headers_mut();
@@ -114,6 +136,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
         ("/register", Method::POST) => register(req).await,
         ("/logout", _) => logout(req).await,
         ("/query", Method::GET) => query_user(req).await,
+        ("/get_me", Method::GET) => get_me(req).await,
         ("/edit", Method::POST) => edit(req).await,
         _ => Err(AppError::missing()),
     }

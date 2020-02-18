@@ -18,6 +18,7 @@ pub struct User {
     #[serde(skip)]
     pub password: String,
     pub bio: String,
+    #[serde(with = "crate::date_format")]
     pub joined: chrono::naive::NaiveDateTime,
     #[serde(skip)]
     pub deactivated: bool,

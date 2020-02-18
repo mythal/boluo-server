@@ -199,7 +199,7 @@ pub struct Preview {
     pub is_master: bool,
     pub text: String,
     pub whisper_to_users: Option<Vec<Uuid>>,
-    pub entities: JsonValue,
+    pub entities: Vec<JsonValue>,
     #[serde(with = "crate::date_format")]
     pub start: NaiveDateTime,
 }

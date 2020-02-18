@@ -5,7 +5,7 @@ use crate::channels::Channel;
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
-use crate::spaces::api::JoinedSpace;
+use crate::spaces::api::SpaceWithMember;
 use hyper::{Body, Request};
 
 async fn list(_req: Request<Body>) -> api::AppResult {
@@ -56,7 +56,7 @@ async fn create(req: Request<Body>) -> api::AppResult {
     let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
     trans.commit().await?;
     log::info!("a channel ({}) was just created", space.id);
-    api::Return::new(&JoinedSpace { space, member }).build()
+    api::Return::new(&SpaceWithMember { space, member }).build()
 }
 
 async fn edit(req: Request<Body>) -> api::AppResult {
@@ -145,8 +145,8 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
         ("/edit", Method::POST) => edit(req).await,
         ("/join", Method::POST) => join(req).await,
         ("/leave", Method::POST) => leave(req).await,
-        ("/members", Method::POST) => members(req).await,
-        ("/delete", Method::DELETE) => delete(req).await,
+        ("/members", Method::GET) => members(req).await,
+        ("/delete", Method::POST) => delete(req).await,
         _ => Err(AppError::missing()),
     }
 }

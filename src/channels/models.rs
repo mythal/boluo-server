@@ -3,7 +3,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::channels::api::JoinedChannel;
+use crate::channels::api::ChannelWithMember;
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::{SpaceMember, Space};
@@ -73,13 +73,13 @@ impl Channel {
         Ok(row.get(0))
     }
 
-    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<JoinedChannel>, DbError> {
+    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<ChannelWithMember>, DbError> {
         let rows = db
             .query(include_str!("sql/get_channels_by_user.sql"), &[&user_id])
             .await?;
         let joined_channels = rows
             .into_iter()
-            .map(|row| JoinedChannel {
+            .map(|row| ChannelWithMember {
                 channel: row.get(0),
                 member: row.get(1),
             })
