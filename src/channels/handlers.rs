@@ -2,7 +2,7 @@ use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
 use crate::api::{self, parse_body, parse_query, IdQuery};
-use crate::channels::api::{JoinChannel, ChannelWithMember, ChannelWithRelated};
+use crate::channels::api::{JoinChannel, ChannelWithMember, ChannelWithRelated, EditMember};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
@@ -37,10 +37,12 @@ async fn query_with_related(req: Request<Body>) -> api::AppResult {
     let db = &mut *conn;
     let (channel, space) = Channel::get_with_space(db, &query.id).await?.ok_or(AppError::NotFound("channels"))?;
     let members = ChannelMember::get_by_channel(db, &channel.id).await?;
+    let color_list = ChannelMember::get_color_list(db, &channel.id).await?;
     let with_related = ChannelWithRelated {
         channel,
         space,
-        members
+        members,
+        color_list,
     };
     return api::Return::new(&with_related).build();
 }
@@ -62,7 +64,7 @@ async fn create(req: Request<Body>) -> api::AppResult {
     admin_only(db, &session.user_id, &space_id).await?;
 
     let channel = Channel::create(db, &space_id, &*name, true).await?;
-    let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name).await?;
+    let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, true).await?;
     trans.commit().await?;
     let joined = ChannelWithMember {
         channel,
@@ -92,6 +94,29 @@ async fn edit(req: Request<Body>) -> api::AppResult {
     api::Return::new(channel).build()
 }
 
+async fn edit_member(req: Request<Body>) -> api::AppResult {
+    let session = authenticate(&req).await?;
+    let EditMember { channel_id, character_name, text_color } = api::parse_body(req).await?;
+
+    let mut conn = database::get().await;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
+
+    ChannelMember::get(db, &session.user_id, &channel_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::NoPermission
+        })?;
+
+    let character_name = character_name.as_ref().map(String::as_str);
+    let text_color = text_color.as_ref().map(String::as_str);
+    let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color)
+        .await?;
+    trans.commit().await?;
+
+    api::Return::new(channel_member).build()
+}
+
 async fn members(req: Request<Body>) -> api::AppResult {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
@@ -116,7 +141,7 @@ async fn join(req: Request<Body>) -> api::AppResult {
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name).await?;
+    let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, false).await?;
 
     api::Return::new(ChannelWithMember { channel, member }).build()
 }
@@ -175,6 +200,7 @@ pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
         ("/my", Method::GET) => my_channels(req).await,
         ("/create", Method::POST) => create(req).await,
         ("/edit", Method::POST) => edit(req).await,
+        ("/edit_member", Method::POST) => edit_member(req).await,
         ("/members", Method::GET) => members(req).await,
         ("/join", Method::POST) => join(req).await,
         ("/leave", Method::POST) => leave(req).await,

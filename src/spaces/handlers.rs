@@ -94,7 +94,8 @@ async fn join(req: Request<Body>) -> api::AppResult {
     } else {
         SpaceMember::add_user(db, user_id, &id).await?
     };
-    api::Return::new(&member).build()
+    let space_with_member = SpaceWithMember { space, member };
+    api::Return::new(&space_with_member).build()
 }
 
 async fn leave(req: Request<Body>) -> api::AppResult {

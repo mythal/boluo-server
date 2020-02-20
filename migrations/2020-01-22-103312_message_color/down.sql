@@ -1,1 +1,0 @@
-ALTER TABLE channel_members DROP COLUMN text_color;

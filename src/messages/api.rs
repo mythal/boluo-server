@@ -43,8 +43,9 @@ pub struct Edit {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct ByChannel {
-    pub channel: Uuid,
+    pub channel_id: Uuid,
     pub before: Option<i64>,
     pub amount: Option<i32>,
 }

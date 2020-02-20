@@ -46,13 +46,13 @@ pub async fn get_me(req: Request<Body>) -> api::AppResult {
     let get_me = if let Ok(session) = authenticate(&req).await {
         let mut conn = database::get().await;
         let db = &mut *conn;
-        let user = User::get_by_id(db, &user_id).await?
+        let user = User::get_by_id(db, &session.user_id).await?
             .ok_or_else(|| unexpected!("This user is not in the database"))?;
         let my_spaces = Space::get_by_user(db, user.id).await?;
         let my_channels = Channel::get_by_user(db, user.id).await?;
         Some(GetMe { user, my_channels, my_spaces })
     } else {
-        None;
+        None
     };
     api::Return::new(get_me).build()
 }

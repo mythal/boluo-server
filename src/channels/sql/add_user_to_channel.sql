@@ -1,7 +1,7 @@
 WITH add(channel_members) AS (
-    INSERT INTO channel_members (user_id, channel_id, character_name)
-        VALUES ($1, $2, $3)
-        ON CONFLICT DO NOTHING
+    INSERT INTO channel_members (user_id, channel_id, character_name, is_master, is_joined)
+        VALUES ($1, $2, $3, $4, true)
+        ON CONFLICT (user_id, channel_id) DO UPDATE SET is_joined = true
         RETURNING channel_members
 )
 SELECT true AS created, channel_members FROM add

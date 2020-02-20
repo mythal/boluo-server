@@ -5,7 +5,8 @@ table! {
         join_date -> Timestamp,
         character_name -> Text,
         is_master -> Bool,
-        text_color -> Text,
+        text_color -> Nullable<Text>,
+        is_joined -> Bool,
     }
 }
 

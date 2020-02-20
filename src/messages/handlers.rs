@@ -141,15 +141,15 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
 }
 
 async fn by_channel(req: Request<Body>) -> api::AppResult {
-    let ByChannel { channel, before, amount } = parse_query(req.uri())?;
+    let ByChannel { channel_id, before, amount } = parse_query(req.uri())?;
 
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let channel = Channel::get_by_id(db, &channel)
+    Channel::get_by_id(db, &channel_id)
         .await?
         .ok_or(AppError::NotFound("channels"))?;
-    let messages = Message::get_by_channel(db, &channel.id, before, amount).await?;
+    let messages = Message::get_by_channel(db, &channel_id, before, amount).await?;
     api::Return::new(&messages).build()
 }
 

@@ -142,7 +142,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
 
     let channel_name = "Test Channel";
     let channel = Channel::create(db, &space.id, channel_name, true).await?;
-    ChannelMember::add_user(db, &user.id, &channel.id, "").await?;
+    ChannelMember::add_user(db, &user.id, &channel.id, "", false).await?;
     ChannelMember::set_master(db, &user.id, &channel.id, true).await?;
     let text = "hello, world";
     let message = Message::create(

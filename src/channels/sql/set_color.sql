@@ -1,5 +1,5 @@
 UPDATE channel_members
-SET character_name = COALESCE($3, character_name)
+SET text_color = COALESCE($3, text_color)
 WHERE user_id = $1
   AND channel_id = $2
   AND is_joined
