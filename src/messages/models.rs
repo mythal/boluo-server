@@ -79,9 +79,6 @@ impl Message {
         if text.is_empty() {
             Err(ValidationFailed("Text is empty."))?;
         }
-        if entities.is_empty() {
-            Err(ValidationFailed("Entities are empty"))?;
-        }
         let entities = JsonValue::Array(entities);
         let row = db
             .query_exactly_one(
