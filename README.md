@@ -6,7 +6,9 @@ A chat tool made for play RPG.
 
 ```
 cp .env.template .env
-cargo install diesel_cli --no-default-features --features postgres
-diesel migration run
-cargo test
+docker-compose build
+docker-compose up
+
+# test
+docker-compose run server cargo test
 ```
