@@ -51,6 +51,11 @@ pub static DISPLAY_NAME: Validator<str> = Validator(&[
     ("Name length shall not be more than 32.", &max!(32)),
 ]);
 
+pub static CHARACTER_NAME: Validator<str> = Validator(&[
+    ("Name length shall not be empty.", &min!(1)),
+    ("Name length shall not be more than 32.", &max!(32)),
+]);
+
 pub static EMAIL: Validator<str> = Validator(&[
     ("E-mail address length shall not be less than 5.", &min!(5)),
     ("E-mail address length shall not be more than 254.", &max!(254)),

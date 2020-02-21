@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::database::Querist;
 use crate::error::{DbError, ModelError, ValidationFailed};
 use crate::utils::inner_map;
+use crate::validators::CHARACTER_NAME;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -71,8 +72,15 @@ impl Message {
         whisper_to: Option<Vec<Uuid>>,
     ) -> Result<Message, ModelError> {
         name = name.trim();
-        if name.len() == 0 {
+        if name.is_empty() {
             name = default_name.trim();
+        }
+        CHARACTER_NAME.run(name)?;
+        if text.is_empty() {
+            Err(ValidationFailed("Text is empty."))?;
+        }
+        if entities.is_empty() {
+            Err(ValidationFailed("Entities are empty"))?;
         }
         let entities = JsonValue::Array(entities);
         let row = db
@@ -103,15 +111,18 @@ impl Message {
         entities: Option<Vec<JsonValue>>,
         in_game: Option<bool>,
         is_action: Option<bool>,
-    ) -> Result<Option<Message>, DbError> {
+    ) -> Result<Option<Message>, ModelError> {
         let entities = entities.map(JsonValue::Array);
+        if let Some(name) = name {
+            CHARACTER_NAME.run(name)?;
+        }
         let result = db
             .query_one(
                 include_str!("sql/edit.sql"),
                 &[id, &name, &text, &entities, &in_game, &is_action],
             )
-            .await;
-        inner_map(result, |row| row.get(0))
+            .await?;
+        Ok(result.map(|row| row.get(0)))
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
