@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "hstore";
 CREATE TABLE media
 (
     "id"                uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
-    "mine_type"         text      NOT NULL DEFAULT '',
+    "mime_type"         text      NOT NULL DEFAULT '',
     "uploader_id"       uuid      NOT NULL,
     "filename"          text      NOT NULL,
     "original_filename" text      NOT NULL DEFAULT '',
@@ -23,7 +23,7 @@ CREATE TABLE users
     "email"       text      NOT NULL UNIQUE,
     "username"    text      NOT NULL UNIQUE,
     "nickname"    text      NOT NULL,
-    "password"    text      NOT NULL, -- ARGON2 hashed password.
+    "password"    text      NOT NULL,
     "bio"         text      NOT NULL DEFAULT '',
     "joined"      timestamp NOT NULL DEFAULT now(),
     "deactivated" boolean   NOT NULL DEFAULT false,
@@ -56,7 +56,6 @@ CREATE TABLE space_members
         CONSTRAINT space_member_user REFERENCES users (id) ON DELETE CASCADE,
     "space_id"  uuid      NOT NULL
         CONSTRAINT space_member_space REFERENCES spaces (id) ON DELETE CASCADE,
-    "is_master" boolean   NOT NULL DEFAULT false,
     "is_admin"  boolean   NOT NULL DEFAULT false,
     "join_date" timestamp NOT NULL DEFAULT now(),
     CONSTRAINT "user_space_id_pair" PRIMARY KEY ("user_id", "space_id")
@@ -83,6 +82,9 @@ CREATE TABLE channel_members
         CONSTRAINT channel_member_channel REFERENCES channels (id) ON DELETE CASCADE,
     "join_date"      timestamp NOT NULL DEFAULT now(),
     "character_name" text      NOT NULL,
+    text_color       text               DEFAULT NULL,
+    is_joined        boolean   NOT NULL DEFAULT true,
+    is_master        bool      NOT NULL DEFAULT false,
     CONSTRAINT "user_channel_id_pair" PRIMARY KEY ("user_id", "channel_id")
 );
 
@@ -100,14 +102,12 @@ CREATE TABLE messages
     "seed"              bytea     NOT NULL DEFAULT gen_random_bytes(4),
     "deleted"           boolean   NOT NULL DEFAULT false,
     "in_game"           boolean   NOT NULL DEFAULT false,
-    "is_system_message" boolean   NOT NULL DEFAULT false,
     "is_action"         boolean   NOT NULL DEFAULT false,
     "is_master"         boolean   NOT NULL DEFAULT false,
     "pinned"            boolean   NOT NULL DEFAULT false,
     "tags"              text[]    NOT NULL DEFAULT '{}',
-    "reaction"          hstore    NOT NULL DEFAULT '',
     -- A mark that represents the message was invalid.
-    "crossed_off"       boolean   NOT NULL DEFAULT false,
+    "folded"            boolean   NOT NULL DEFAULT false,
     "text"              text      NOT NULL DEFAULT '',
     -- whisper_to_users values mean
     -- null: public message.
@@ -115,7 +115,6 @@ CREATE TABLE messages
     -- [user1, user2]: both master, user1 and user2 are able to read the message.
     "whisper_to_users"  uuid[]             DEFAULT null,
     "entities"          jsonb     NOT NULL DEFAULT '[]',
-    "metadata"          jsonb              DEFAULT null,
     "created"           timestamp NOT NULL DEFAULT now(),
     "modified"          timestamp NOT NULL DEFAULT now(),
     "order_date"        timestamp NOT NULL DEFAULT now(),
@@ -123,6 +122,8 @@ CREATE TABLE messages
 );
 
 CREATE INDEX message_tags ON messages USING GIN (tags);
+CREATE INDEX order_index ON messages (order_date DESC, order_offset ASC);
+CREATE INDEX message_channel ON messages USING btree (channel_id);
 
 CREATE TABLE restrained_members
 (
@@ -138,4 +139,52 @@ CREATE TABLE restrained_members
     CONSTRAINT "restrained_space_id_pair" PRIMARY KEY (user_id, space_id)
 );
 
-CREATE INDEX order_index ON messages (order_date DESC, order_offset ASC);
+
+CREATE FUNCTION hide(messages) RETURNS messages AS
+$$
+SELECT CASE
+           WHEN $1.whisper_to_users IS NULL THEN $1
+           ELSE ROW (
+               $1.id,
+               $1.sender_id,
+               $1.channel_id,
+               $1.parent_message_id,
+               $1.name,
+               $1.media_id,
+               E'\\x00000000',
+               $1.deleted,
+               $1.in_game,
+               $1.is_action,
+               $1.is_master,
+               $1.pinned,
+               $1.tags,
+               $1.folded,
+               '',
+               $1.whisper_to_users,
+               '[]',
+               $1.created,
+               $1.modified,
+               $1.order_date,
+               $1.order_offset
+               )::messages END AS result;
+$$ LANGUAGE SQL;
+CREATE TYPE event_type AS ENUM (
+    'Joined',
+    'Left',
+    'NewMaster',
+    'NewAdmin'
+    );
+
+CREATE TABLE events
+(
+    "id"          uuid       NOT NULL PRIMARY KEY,
+    "type"        event_type NOT NULL,
+    "channel_id"  uuid                DEFAULT NULL
+        CONSTRAINT event_channel REFERENCES channels (id) ON DELETE CASCADE,
+    "space_id"    uuid                DEFAULT NULL
+        CONSTRAINT event_space REFERENCES spaces (id) ON DELETE CASCADE,
+    "receiver_id" uuid
+        CONSTRAINT event_receiver REFERENCES users (id) ON DELETE CASCADE,
+    "payload"     jsonb      NOT NULL DEFAULT '{}',
+    "created"     timestamp  NOT NULL default now()
+);
