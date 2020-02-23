@@ -1,31 +1,31 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::api::{parse_body, parse_query};
+use crate::common::{parse_body, parse_query, Response, missing, ok_response};
 use crate::database;
-use crate::session::revoke_session;
+use crate::session::{revoke_session, remove_session};
 
 use crate::error::AppError;
 use crate::users::api::{Edit, QueryUser, GetMe};
-use crate::{api, context};
-use hyper::{Body, Method, Request, StatusCode};
+use crate::{common, context};
+use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
 use crate::channels::{Channel};
 use crate::spaces::Space;
 
-async fn register(req: Request<Body>) -> api::AppResult {
+async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
         email,
         username,
         nickname,
         password,
-    }: Register = api::parse_body(req).await?;
+    }: Register = common::parse_body(req).await?;
     let mut db = database::get().await;
     let user = User::register(&mut *db, &*email, &*username, &*nickname, &*password).await?;
     log::info!("{} ({}) was registered.", user.username, user.email);
-    api::Return::new(user).status(StatusCode::CREATED).build()
+    Ok(user)
 }
 
-pub async fn query_user(req: Request<Body>) -> api::AppResult {
+pub async fn query_user(req: Request<Body>) -> Result<User, AppError> {
     use crate::session::authenticate;
 
     let QueryUser { id } = parse_query(req.uri())?;
@@ -37,32 +37,35 @@ pub async fn query_user(req: Request<Body>) -> api::AppResult {
     };
 
     let mut db = database::get().await;
-    let user = User::get_by_id(&mut *db, &id).await?;
-    api::Return::new(user).build()
+    User::get_by_id(&mut *db, &id).await?.ok_or(AppError::NotFound("user"))
 }
 
-pub async fn get_me(req: Request<Body>) -> api::AppResult {
+pub async fn get_me(req: Request<Body>) -> Result<Option<GetMe>, AppError> {
     use crate::session::authenticate;
-    let get_me = if let Ok(session) = authenticate(&req).await {
+    if let Ok(session) = authenticate(&req).await {
         let mut conn = database::get().await;
         let db = &mut *conn;
-        let user = User::get_by_id(db, &session.user_id).await?
-            .ok_or_else(|| unexpected!("This user is not in the database"))?;
-        let my_spaces = Space::get_by_user(db, user.id).await?;
-        let my_channels = Channel::get_by_user(db, user.id).await?;
-        Some(GetMe { user, my_channels, my_spaces })
+        let user = User::get_by_id(db, &session.user_id).await?;
+        if let Some(user) = user {
+            let my_spaces = Space::get_by_user(db, user.id).await?;
+            let my_channels = Channel::get_by_user(db, user.id).await?;
+            Ok(Some(GetMe { user, my_channels, my_spaces }))
+        } else {
+            remove_session(session.id).await?;
+            log::warn!("session is valid, but user can't be found at database.");
+            Ok(None)
+        }
     } else {
-        None
-    };
-    api::Return::new(get_me).build()
+        Ok(None)
+    }
 }
 
-pub async fn login(req: Request<Body>) -> api::AppResult {
+pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     use crate::session;
     use cookie::{CookieBuilder, SameSite};
     use hyper::header::{HeaderValue, SET_COOKIE};
 
-    let form: Login = api::parse_body(req).await?;
+    let form: Login = common::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
     let login = User::login(db, &*form.username, &*form.password)
@@ -88,15 +91,13 @@ pub async fn login(req: Request<Body>) -> api::AppResult {
     let my_spaces = Space::get_by_user(db, user.id).await?;
     let my_channels = Channel::get_by_user(db, user.id).await?;
     let me = GetMe { user, my_spaces, my_channels };
-    let login_return = LoginReturn { me, token };
-
-    let mut response = api::Return::new(&login_return).build()?;
+    let mut response = ok_response(LoginReturn { me, token });
     let headers = response.headers_mut();
     headers.insert(SET_COOKIE, HeaderValue::from_str(&*session_cookie).unwrap());
     Ok(response)
 }
 
-pub async fn logout(req: Request<Body>) -> api::AppResult {
+pub async fn logout(req: Request<Body>) -> Response {
     use crate::session::authenticate;
     use cookie::CookieBuilder;
     use hyper::header::{HeaderValue, SET_COOKIE};
@@ -104,7 +105,7 @@ pub async fn logout(req: Request<Body>) -> api::AppResult {
     if let Ok(session) = authenticate(&req).await {
         revoke_session(&session.id).await;
     }
-    let mut response = api::Return::new(&true).build()?;
+    let mut response = ok_response(true);
     let header = response.headers_mut();
 
     static HEADER_VALUE: OnceCell<HeaderValue> = OnceCell::new();
@@ -118,26 +119,25 @@ pub async fn logout(req: Request<Body>) -> api::AppResult {
         HeaderValue::from_str(&*cookie).unwrap()
     });
     header.append(SET_COOKIE, header_value.clone());
-    Ok(response)
+    response
 }
 
-pub async fn edit(req: Request<Body>) -> api::AppResult {
+pub async fn edit(req: Request<Body>) -> Result<User, AppError> {
     use crate::csrf::authenticate;
     let session = authenticate(&req).await?;
     let Edit { nickname, bio, avatar }: Edit = parse_body(req).await?;
     let mut db = database::get().await;
-    let user = User::edit(&mut *db, &session.user_id, nickname, bio, avatar).await?;
-    api::Return::new(user).build()
+    User::edit(&mut *db, &session.user_id, nickname, bio, avatar).await.map_err(Into::into)
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
+pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     match (path, req.method().clone()) {
         ("/login", Method::POST) => login(req).await,
-        ("/register", Method::POST) => register(req).await,
-        ("/logout", _) => logout(req).await,
-        ("/query", Method::GET) => query_user(req).await,
-        ("/get_me", Method::GET) => get_me(req).await,
-        ("/edit", Method::POST) => edit(req).await,
-        _ => Err(AppError::missing()),
+        ("/register", Method::POST) => register(req).await.map(ok_response),
+        ("/logout", _) => Ok(logout(req).await),
+        ("/query", Method::GET) => query_user(req).await.map(ok_response),
+        ("/get_me", Method::GET) => get_me(req).await.map(ok_response),
+        ("/edit", Method::POST) => edit(req).await.map(ok_response),
+        _ => missing(),
     }
 }

@@ -1,6 +1,6 @@
 use super::api::{Create, Edit, SpaceWithRelated};
 use super::{Space, SpaceMember};
-use crate::api::{self, parse_query, IdQuery};
+use crate::common::{self, parse_query, IdQuery, Response, missing, ok_response};
 use crate::channels::Channel;
 use crate::csrf::authenticate;
 use crate::database;
@@ -8,46 +8,42 @@ use crate::error::AppError;
 use crate::spaces::api::SpaceWithMember;
 use hyper::{Body, Request};
 
-async fn list(_req: Request<Body>) -> api::AppResult {
+async fn list(_req: Request<Body>) -> Result<Vec<Space>, AppError> {
     let mut conn = database::get().await;
-    let spaces = Space::all(&mut *conn).await?;
-    api::Return::new(&spaces).build()
+    Space::all(&mut *conn).await.map_err(Into::into)
 }
 
-async fn query(req: Request<Body>) -> api::AppResult {
+async fn query(req: Request<Body>) -> Result<Space, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &id).await?;
-    return api::Return::new(&space).build();
+    Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("space"))
 }
 
-async fn query_with_related(req: Request<Body>) -> api::AppResult {
+async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
     let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("spaces"))?;
     let members = SpaceMember::get_by_space(db, &id).await?;
     let channels = Channel::get_by_space(db, &id).await?;
-    let with_related = SpaceWithRelated {
+    Ok(SpaceWithRelated {
         space,
         members,
         channels,
-    };
-    return api::Return::new(&with_related).build();
+    })
 }
 
-async fn my_spaces(req: Request<Body>) -> api::AppResult {
+async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError> {
     let session = authenticate(&req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let joined_spaces = Space::get_by_user(db, session.user_id).await?;
-    return api::Return::new(&joined_spaces).build();
+    Space::get_by_user(db, session.user_id).await.map_err(Into::into)
 }
 
-async fn create(req: Request<Body>) -> api::AppResult {
+async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let session = authenticate(&req).await?;
-    let Create { name, password }: Create = api::parse_body(req).await?;
+    let Create { name, password }: Create = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -56,12 +52,12 @@ async fn create(req: Request<Body>) -> api::AppResult {
     let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
     trans.commit().await?;
     log::info!("a channel ({}) was just created", space.id);
-    api::Return::new(&SpaceWithMember { space, member }).build()
+    Ok(SpaceWithMember { space, member })
 }
 
-async fn edit(req: Request<Body>) -> api::AppResult {
+async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let session = authenticate(&req).await?;
-    let Edit { space_id, name, description }: Edit = api::parse_body(req).await?;
+    let Edit { space_id, name, description }: Edit = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -77,10 +73,10 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         .await?
         .ok_or_else(|| unexpected!("No such space found."))?;
     trans.commit().await?;
-    api::Return::new(space).build()
+    Ok(space)
 }
 
-async fn join(req: Request<Body>) -> api::AppResult {
+async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
@@ -94,11 +90,10 @@ async fn join(req: Request<Body>) -> api::AppResult {
     } else {
         SpaceMember::add_user(db, user_id, &id).await?
     };
-    let space_with_member = SpaceWithMember { space, member };
-    api::Return::new(&space_with_member).build()
+    Ok(SpaceWithMember { space, member })
 }
 
-async fn leave(req: Request<Body>) -> api::AppResult {
+async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
@@ -108,18 +103,17 @@ async fn leave(req: Request<Body>) -> api::AppResult {
 
     SpaceMember::remove_user(db, &session.user_id, &id).await?;
     trans.commit().await?;
-    api::Return::new(&true).build()
+    Ok(true)
 }
 
-async fn members(req: Request<Body>) -> api::AppResult {
+async fn members(req: Request<Body>) -> Result<Vec<SpaceMember>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
     let db = &mut *db;
-    let members = SpaceMember::get_by_space(&mut *db, &id).await?;
-    api::Return::new(&members).build()
+    SpaceMember::get_by_space(&mut *db, &id).await.map_err(Into::into)
 }
 
-async fn delete(req: Request<Body>) -> api::AppResult {
+async fn delete(req: Request<Body>) -> Result<Space, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let session = authenticate(&req).await?;
@@ -128,26 +122,26 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     if space.owner_id == session.user_id {
         Space::delete(db, &id).await?;
         log::info!("A space ({}) was deleted", space.id);
-        return api::Return::new(&space).build();
+        return Ok(space)
     }
     log::warn!("The user {} failed to try delete a space {}", session.user_id, space.id);
     Err(AppError::NoPermission)
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
+pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/list", Method::GET) => list(req).await,
-        ("/query", Method::GET) => query(req).await,
-        ("/query_with_related", Method::GET) => query_with_related(req).await,
-        ("/my", Method::GET) => my_spaces(req).await,
-        ("/create", Method::POST) => create(req).await,
-        ("/edit", Method::POST) => edit(req).await,
-        ("/join", Method::POST) => join(req).await,
-        ("/leave", Method::POST) => leave(req).await,
-        ("/members", Method::GET) => members(req).await,
-        ("/delete", Method::POST) => delete(req).await,
-        _ => Err(AppError::missing()),
+        ("/list", Method::GET) => list(req).await.map(ok_response),
+        ("/query", Method::GET) => query(req).await.map(ok_response),
+        ("/query_with_related", Method::GET) => query_with_related(req).await.map(ok_response),
+        ("/my", Method::GET) => my_spaces(req).await.map(ok_response),
+        ("/create", Method::POST) => create(req).await.map(ok_response),
+        ("/edit", Method::POST) => edit(req).await.map(ok_response),
+        ("/join", Method::POST) => join(req).await.map(ok_response),
+        ("/leave", Method::POST) => leave(req).await.map(ok_response),
+        ("/members", Method::GET) => members(req).await.map(ok_response),
+        ("/delete", Method::POST) => delete(req).await.map(ok_response),
+        _ => missing(),
     }
 }

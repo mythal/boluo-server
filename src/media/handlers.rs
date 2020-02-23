@@ -1,6 +1,6 @@
 use super::api::Upload;
 use super::models::Media;
-use crate::api::{self, parse_query};
+use crate::common::{parse_query, Response, missing, ok_response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
@@ -9,7 +9,7 @@ use crate::media::api::MediaQuery;
 use crate::utils;
 use futures::StreamExt;
 use hyper::header::{self, HeaderValue};
-use hyper::{Body, Request, Response};
+use hyper::{Body, Request};
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use std::path::PathBuf;
@@ -46,7 +46,7 @@ fn get_mime_type(mime_type: Option<String>, headers: &header::HeaderMap) -> Stri
         .to_string()
 }
 
-async fn upload(req: Request<Body>) -> api::AppResult {
+async fn upload(req: Request<Body>) -> Result<Media, AppError> {
     let Upload { filename, mime_type } = parse_query(req.uri())?;
     let session = authenticate(&req).await?;
     let id = utils::id();
@@ -90,7 +90,7 @@ async fn upload(req: Request<Body>) -> api::AppResult {
     }
 
     let mut conn = database::get().await;
-    let media = Media::create(
+     Media::create(
         &mut *conn,
         &*mime_type,
         session.user_id,
@@ -99,8 +99,8 @@ async fn upload(req: Request<Body>) -> api::AppResult {
         hash,
         size as i32,
     )
-    .await?;
-    api::Return::new(&media).build()
+         .await
+         .map_err(Into::into)
 }
 
 async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(), anyhow::Error> {
@@ -118,7 +118,7 @@ async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(),
     Ok(())
 }
 
-async fn get(req: Request<Body>) -> api::AppResult {
+async fn get(req: Request<Body>) -> Result<Response, AppError> {
     let MediaQuery { id, filename, download } = parse_query(req.uri())?;
     let method = req.method().clone();
 
@@ -149,7 +149,7 @@ async fn get(req: Request<Body>) -> api::AppResult {
         body
     };
 
-    let response = Response::builder()
+    let response = hyper::Response::builder()
         .header(
             header::CONTENT_TYPE,
             HeaderValue::from_str(&*media.mime_type).map_err(unexpected!())?,
@@ -165,18 +165,17 @@ async fn get(req: Request<Body>) -> api::AppResult {
     Ok(response)
 }
 
-async fn delete(_req: Request<Body>) -> api::AppResult {
+async fn delete(_req: Request<Body>) -> Result<(), AppError> {
     todo!()
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
+pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
     match (path, req.method().clone()) {
         ("/get", Method::GET) => get(req).await,
         ("/get", Method::HEAD) => get(req).await,
-        ("/upload", Method::POST) => upload(req).await,
-        ("/delete", Method::DELETE) => delete(req).await,
-        _ => Err(AppError::missing()),
+        ("/upload", Method::POST) => upload(req).await.map(ok_response),
+        _ => missing(),
     }
 }

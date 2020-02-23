@@ -8,7 +8,7 @@ pub use tokio_postgres::Error as DbError;
 pub enum AppError {
     #[error("An unexpected database error occurred")]
     Database(DbError),
-    #[error("An unexpected database error occurred")]
+    #[error("An unexpected cache database error occurred")]
     Cache(#[from] CacheError),
     #[error("Authentication failed")]
     Unauthenticated,
@@ -20,6 +20,8 @@ pub enum AppError {
     Validation(#[from] ValidationFailed),
     #[error("An unexpected error occurred")]
     Unexpected(anyhow::Error),
+    #[error("An unexpected serialize error occurred")]
+    Serialize(serde_json::Error),
     #[error("Wrong request format: {0}")]
     BadRequest(String),
     #[error("Method not allowed")]

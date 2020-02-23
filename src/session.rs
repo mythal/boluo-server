@@ -58,6 +58,13 @@ pub struct Session {
     pub user_id: Uuid,
 }
 
+pub async fn remove_session(id: Uuid) -> Result<(), CacheError> {
+    let mut cache = cache::get().await;
+    let key = make_key(&id);
+    cache.remove(&*key).await?;
+    Ok(())
+}
+
 fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
     static COOKIE_PATTERN: OnceCell<Regex> = OnceCell::new();
     let cookie_pattern = COOKIE_PATTERN.get_or_init(|| Regex::new(r#"\bsession=([^;]+)"#).unwrap());

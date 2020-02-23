@@ -9,7 +9,7 @@ use crate::error::{DbError, ModelError, ValidationFailed};
 use crate::utils::inner_map;
 use crate::validators::CHARACTER_NAME;
 
-#[derive(Debug, Serialize, Deserialize, FromSql)]
+#[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "messages")]
 pub struct Message {

@@ -6,14 +6,14 @@ use std::net::SocketAddr;
 use crate::context::debug;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server};
+use hyper::{Body, Request, Server};
 
 #[macro_use]
 mod utils;
 #[macro_use]
 mod error;
 mod date_format;
-mod api;
+mod common;
 mod cache;
 mod channels;
 mod context;
@@ -31,9 +31,11 @@ mod users;
 mod validators;
 
 use crate::events::periodical_cleaner;
-use error::AppError;
+use crate::common::{Response, missing, ok_response, err_response};
+use crate::error::AppError;
+use crate::cors::allow_origin;
 
-async fn router(req: Request<Body>) -> api::AppResult {
+async fn router(req: Request<Body>) -> Result<Response, AppError> {
     let path = req.uri().path().to_string();
     macro_rules! table {
         ($prefix: expr, $handler: expr) => {
@@ -44,7 +46,7 @@ async fn router(req: Request<Body>) -> api::AppResult {
         };
     }
     if path == "/api/csrf-token" {
-        return csrf::get_csrf_token(req).await;
+        return csrf::get_csrf_token(req).await.map(ok_response);
     }
     table!("/api/messages", messages::router);
     table!("/api/users", users::router);
@@ -52,45 +54,47 @@ async fn router(req: Request<Body>) -> api::AppResult {
     table!("/api/channels", channels::router);
     table!("/api/spaces", spaces::router);
     table!("/api/events", events::router);
-    Err(AppError::missing())
+    missing()
 }
 
-fn error_response(e: AppError) -> Response<Body> {
-    use std::error::Error;
-    if debug() {
-        if let Some(source) = e.source() {
-            log::debug!("{} Source: {:?}", &e, source);
-        } else {
-            log::debug!("{}", &e);
-        }
-    }
-
-    fn last_resort(e2: AppError) -> Response<Body> {
-        log::error!("An error occurred while processing the error: {}", e2);
-        Response::builder()
-            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("An error occurred while processing the error."))
-            .unwrap()
-    }
-
-    api::Return::<String>::form_error(e).build().unwrap_or_else(last_resort)
-}
-
-async fn handler(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     use std::time::SystemTime;
     let start = SystemTime::now();
     let method = req.method().clone();
+    let method = method.as_str();
     let uri = req.uri().clone();
     if context::debug() && req.method() == hyper::Method::OPTIONS {
         return Ok(cors::preflight_requests(req));
     }
-    let mut response = router(req).await.unwrap_or_else(error_response);
+    let mut response = router(req).await;
     if debug() {
-        response = cors::allow_origin(response);
+        response = response.map(allow_origin);
     }
-    let elapsed = SystemTime::now().duration_since(start).unwrap();
-    log::info!("{:>4}ms {:>5} {}", elapsed.as_millis(), method.as_str(), uri);
-    Ok(response)
+    let elapsed = SystemTime::now().duration_since(start).unwrap().as_millis();
+    match response {
+        Ok(response) => {
+            log::debug!("{:>6} {} {}ms", method, uri, elapsed);
+            Ok(response)
+        },
+        Err(e) => {
+            use std::error::Error;
+            use AppError::*;
+            match &e {
+                NotFound(_) | Conflict(_) =>
+                    log::debug!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
+                Validation(_) | BadRequest(_) | MethodNotAllowed =>
+                    log::info!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
+                e => {
+                    if let Some(source) = e.source() {
+                        log::error!("{:>6} {} {}ms - {} - source: {:?}", method, uri, elapsed, e, source)
+                    } else {
+                        log::error!("{:>6} {} {}ms - {}", method, uri, elapsed, e)
+                    }
+                }
+            }
+            Ok(err_response(e))
+        }
+    }
 }
 
 #[tokio::main]

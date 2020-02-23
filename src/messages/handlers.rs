@@ -1,17 +1,17 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
-use crate::api::parse_query;
+use crate::common::{parse_query, Response, missing, ok_response};
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::events::Event;
 use crate::messages::Preview;
 use crate::spaces::SpaceMember;
-use crate::{api, database};
+use crate::{common, database};
 use hyper::{Body, Request};
 use crate::messages::api::{ByChannel, NewPreview};
 
-async fn send(req: Request<Body>) -> api::AppResult {
+async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
     let NewMessage {
         message_id,
@@ -21,7 +21,7 @@ async fn send(req: Request<Body>) -> api::AppResult {
         entities,
         in_game,
         is_action,
-    } = api::parse_body(req).await?;
+    } = common::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
@@ -42,12 +42,11 @@ async fn send(req: Request<Body>) -> api::AppResult {
         None,
     )
     .await?;
-    let result = api::Return::new(&message).build();
-    Event::new_message(message);
-    result
+    Event::new_message(message.clone());
+    Ok(message)
 }
 
-async fn edit(req: Request<Body>) -> api::AppResult {
+async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
     let Edit {
         message_id,
@@ -56,7 +55,7 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         entities,
         in_game,
         is_action,
-    } = api::parse_body(req).await?;
+    } = common::parse_body(req).await?;
     let mut db = database::get().await;
     let mut trans = db.transaction().await?;
     let db = &mut trans;
@@ -75,23 +74,21 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         .await?
         .ok_or_else(|| unexpected!("The message had been delete."))?;
     trans.commit().await?;
-    let result = api::Return::new(&message).build();
-    Event::message_edited(message);
-    result
+    Event::message_edited(message.clone());
+    Ok(message)
 }
 
-async fn query(req: Request<Body>) -> api::AppResult {
-    let api::IdQuery { id } = api::parse_query(req.uri())?;
+async fn query(req: Request<Body>) -> Result<Message, AppError> {
+    let common::IdQuery { id } = common::parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
-    let message = Message::get(db, &id, user_id.as_ref()).await?;
-    api::Return::new(&message).build()
+    Message::get(db, &id, user_id.as_ref()).await?.ok_or(AppError::NotFound("message"))
 }
 
-async fn delete(req: Request<Body>) -> api::AppResult {
+async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
-    let api::IdQuery { id } = api::parse_body(req).await?;
+    let common::IdQuery { id } = common::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
     let message = Message::get(db, &id, None)
@@ -105,12 +102,12 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     }
     Message::delete(db, &id).await?;
     Event::message_deleted(message.channel_id, message.id);
-    api::Return::new(&message).build()
+    Ok(message)
 }
 
-async fn send_preview(req: Request<Body>) -> api::AppResult {
+async fn send_preview(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
-    let NewPreview { id, channel_id, name, media_id, in_game, is_action, text, entities, whisper_to_users, start } = api::parse_body(req).await?;
+    let NewPreview { id, channel_id, name, media_id, in_game, is_action, text, entities, whisper_to_users, start } = common::parse_body(req).await?;
 
 
     let mut conn = database::get().await;
@@ -137,10 +134,10 @@ async fn send_preview(req: Request<Body>) -> api::AppResult {
         is_master: member.is_master,
     };
     Event::message_preview(preview);
-    api::Return::new(true).build()
+    Ok(true)
 }
 
-async fn by_channel(req: Request<Body>) -> api::AppResult {
+async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
     let ByChannel { channel_id, before, amount } = parse_query(req.uri())?;
 
     let mut db = database::get().await;
@@ -149,20 +146,19 @@ async fn by_channel(req: Request<Body>) -> api::AppResult {
     Channel::get_by_id(db, &channel_id)
         .await?
         .ok_or(AppError::NotFound("channels"))?;
-    let messages = Message::get_by_channel(db, &channel_id, before, amount).await?;
-    api::Return::new(&messages).build()
+    Message::get_by_channel(db, &channel_id, before, amount).await.map_err(Into::into)
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
+pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/query", Method::GET) => query(req).await,
-        ("/by_channel", Method::GET) => by_channel(req).await,
-        ("/send", Method::POST) => send(req).await,
-        ("/delete", Method::POST) => delete(req).await,
-        ("/edit", Method::POST) => edit(req).await,
-        ("/preview", Method::POST) => send_preview(req).await,
-        _ => Err(AppError::missing()),
+        ("/query", Method::GET) => query(req).await.map(ok_response),
+        ("/by_channel", Method::GET) => by_channel(req).await.map(ok_response),
+        ("/send", Method::POST) => send(req).await.map(ok_response),
+        ("/delete", Method::POST) => delete(req).await.map(ok_response),
+        ("/edit", Method::POST) => edit(req).await.map(ok_response),
+        ("/preview", Method::POST) => send_preview(req).await.map(ok_response),
+        _ => missing(),
     }
 }

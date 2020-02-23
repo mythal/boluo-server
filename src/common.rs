@@ -1,61 +1,40 @@
 //! Types and functions for to help building APIs.
-use std::result::Result as StdResult;
-
-use hyper::{Body, Response, StatusCode};
+use hyper::{Body, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
 pub type Request = hyper::Request<hyper::Body>;
-pub type AppResult = std::result::Result<hyper::Response<hyper::Body>, AppError>;
+pub type Response = hyper::Response<hyper::Body>;
+pub type HyperResult = Result<hyper::Response<hyper::Body>, hyper::Error>;
 
-#[derive(Debug)]
-pub struct Return<T: Serialize> {
-    result: Result<T, AppError>,
-    status_code: StatusCode,
+
+fn build_response(bytes: Vec<u8>, status: StatusCode) -> Response {
+    hyper::Response::builder()
+        .header(hyper::header::CONTENT_TYPE, "application/json")
+        .status(status)
+        .body(Body::from(bytes))
+        .expect("Failed to build response")
 }
 
-impl<T: Serialize> Return<T> {
-    pub fn new(value: T) -> Return<T> {
-        Return {
-            result: Ok(value),
-            status_code: StatusCode::OK,
-        }
-    }
+pub fn err_response(e: AppError) -> Response {
+    let status = e.status_code();
+    serde_json::to_vec(&WebResult::<()>::err(e))
+        .map(|bytes| build_response(bytes, status))
+        .unwrap_or_else(|e| {
+            log::error!("Failed to serialize error: {}", e);
+            hyper::Response::builder()
+                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                .body(hyper::Body::from(include_str!("error_serialize_error.json")))
+                .expect("Failed to build serialize error response")
+        })
+}
 
-    pub fn form_error(e: AppError) -> Return<String> {
-        Return {
-            status_code: e.status_code(),
-            result: Err(e),
-        }
-    }
-
-    pub fn status(self, status_code: StatusCode) -> Return<T> {
-        Return { status_code, ..self }
-    }
-
-    pub fn build(self) -> AppResult {
-        let return_body = match self.result {
-            Ok(some) => WebResult {
-                is_ok: true,
-                ok: Some(some),
-                err: None,
-            },
-            Err(err) => WebResult {
-                is_ok: false,
-                ok: None,
-                err: Some(WebError::from(err)),
-            },
-        };
-
-        let bytes = serde_json::to_vec(&return_body).map_err(unexpected!())?;
-
-        Response::builder()
-            .header(hyper::header::CONTENT_TYPE, "application/json")
-            .status(self.status_code)
-            .body(Body::from(bytes))
-            .map_err(unexpected!())
-    }
+pub fn ok_response<T: Serialize>(value: T) -> Response {
+    serde_json::to_vec(&WebResult::ok(value))
+        .map(|bytes| build_response(bytes, hyper::StatusCode::OK))
+        .map_err(AppError::Serialize)
+        .unwrap_or_else(err_response)
 }
 
 #[derive(Serialize, Debug)]
@@ -83,7 +62,31 @@ pub struct WebResult<T: Serialize> {
     err: Option<WebError>,
 }
 
-pub fn parse_query<T>(uri: &hyper::http::Uri) -> StdResult<T, AppError>
+impl<T: Serialize> WebResult<T> {
+    pub fn ok(value: T) -> WebResult<T> {
+        WebResult {
+            is_ok: true,
+            ok: Some(value),
+            err: None,
+        }
+    }
+
+    pub fn err<E: Into<AppError>>(err: E) -> WebResult<T> {
+        WebResult {
+            is_ok: false,
+            ok: None,
+            err: Some(WebError::from(err.into())),
+        }
+
+    }
+}
+
+
+pub fn missing() -> Result<Response, AppError> {
+    Err(AppError::missing())
+}
+
+pub fn parse_query<T>(uri: &hyper::http::Uri) -> Result<T, AppError>
 where
     for<'de> T: Deserialize<'de>,
 {
@@ -95,7 +98,7 @@ where
     })
 }
 
-pub async fn parse_body<T>(req: hyper::Request<Body>) -> StdResult<T, AppError>
+pub async fn parse_body<T>(req: hyper::Request<Body>) -> Result<T, AppError>
 where
     for<'de> T: Deserialize<'de>,
 {
@@ -104,7 +107,6 @@ where
         .map_err(|_| AppError::BadRequest(format!("Failed to read the request body")))?;
     serde_json::from_slice(&*body).map_err(|_| AppError::BadRequest(format!("Failed to parse the request body")))
 }
-
 #[derive(Deserialize, Debug, Eq, PartialEq)]
 pub struct IdQuery {
     pub id: uuid::Uuid,

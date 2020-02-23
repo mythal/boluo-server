@@ -1,4 +1,3 @@
-use crate::api;
 use crate::error::AppError::{self, BadRequest, Unauthenticated};
 use crate::session::{self, Session};
 use crate::utils::{now_unix_duration, sign, verify};
@@ -72,13 +71,12 @@ pub fn generate_csrf_token(session_key: &Uuid) -> String {
     buffer
 }
 
-pub async fn get_csrf_token(req: Request<Body>) -> api::AppResult {
+pub async fn get_csrf_token(req: Request<Body>) -> Result<String, AppError> {
     let session_id = if let Ok(session) = session::authenticate(&req).await {
         session.id
     } else {
         Uuid::nil()
     };
 
-    let token = generate_csrf_token(&session_id);
-    api::Return::new(&token).build()
+    Ok(generate_csrf_token(&session_id))
 }

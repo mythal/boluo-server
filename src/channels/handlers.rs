@@ -1,7 +1,7 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::api::{self, parse_body, parse_query, IdQuery};
+use crate::common::{self, parse_body, parse_query, IdQuery, Response, missing, ok_response};
 use crate::channels::api::{JoinChannel, ChannelWithMember, ChannelWithRelated, EditMember};
 use crate::csrf::authenticate;
 use crate::database;
@@ -22,15 +22,14 @@ async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> 
     Ok(())
 }
 
-async fn query(req: Request<Body>) -> api::AppResult {
+async fn query(req: Request<Body>) -> Result<Channel, AppError> {
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut db = database::get().await;
-    let channel = Channel::get_by_id(&mut *db, &query.id).await?.ok_or(AppError::NotFound("channels"))?;
-    return api::Return::new(&channel).build();
+    Channel::get_by_id(&mut *db, &query.id).await?.ok_or(AppError::NotFound("channels"))
 }
 
-async fn query_with_related(req: Request<Body>) -> api::AppResult {
+async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, AppError> {
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut conn = database::get().await;
@@ -44,16 +43,16 @@ async fn query_with_related(req: Request<Body>) -> api::AppResult {
         members,
         color_list,
     };
-    return api::Return::new(&with_related).build();
+    Ok(with_related)
 }
 
-async fn create(req: Request<Body>) -> api::AppResult {
+async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     let session = authenticate(&req).await?;
     let Create {
         space_id,
         name,
         character_name,
-    } = api::parse_body(req).await?;
+    } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -70,12 +69,12 @@ async fn create(req: Request<Body>) -> api::AppResult {
         channel,
         member: channel_member,
     };
-    api::Return::new(&joined).build()
+    Ok(joined)
 }
 
-async fn edit(req: Request<Body>) -> api::AppResult {
+async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     let session = authenticate(&req).await?;
-    let Edit { channel_id, name } = api::parse_body(req).await?;
+    let Edit { channel_id, name } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -90,13 +89,14 @@ async fn edit(req: Request<Body>) -> api::AppResult {
         return Err(AppError::NoPermission);
     }
     let channel = Channel::edit(db, &channel_id, Some(&*name))
-        .await?;
-    api::Return::new(channel).build()
+        .await;
+    trans.commit().await?;
+    channel.map_err(Into::into)
 }
 
-async fn edit_member(req: Request<Body>) -> api::AppResult {
+async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
     let session = authenticate(&req).await?;
-    let EditMember { channel_id, character_name, text_color } = api::parse_body(req).await?;
+    let EditMember { channel_id, character_name, text_color } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -113,20 +113,18 @@ async fn edit_member(req: Request<Body>) -> api::AppResult {
     let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color)
         .await?;
     trans.commit().await?;
-
-    api::Return::new(channel_member).build()
+    channel_member.ok_or(AppError::NotFound("character member"))
 }
 
-async fn members(req: Request<Body>) -> api::AppResult {
+async fn members(req: Request<Body>) -> Result<Vec<ChannelMember>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
     let db = &mut *db;
 
-    let members = ChannelMember::get_by_channel(db, &id).await?;
-    api::Return::new(&members).build()
+    ChannelMember::get_by_channel(db, &id).await.map_err(Into::into)
 }
 
-async fn join(req: Request<Body>) -> api::AppResult {
+async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     let session = authenticate(&req).await?;
     let JoinChannel {
         channel_id,
@@ -142,19 +140,18 @@ async fn join(req: Request<Body>) -> api::AppResult {
         .await?
         .ok_or(AppError::NoPermission)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, false).await?;
-
-    api::Return::new(ChannelWithMember { channel, member }).build()
+    Ok(ChannelWithMember { channel, member })
 }
 
-async fn leave(req: Request<Body>) -> api::AppResult {
+async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
     ChannelMember::remove_user(&mut *db, &session.user_id, &id).await?;
-    api::Return::new(&true).build()
+    Ok(true)
 }
 
-async fn delete(req: Request<Body>) -> api::AppResult {
+async fn delete(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
@@ -170,41 +167,39 @@ async fn delete(req: Request<Body>) -> api::AppResult {
     Channel::delete(db, &id).await?;
     log::info!("channel {} was deleted.", &id);
     Event::channel_deleted(id);
-    return api::Return::new(true).build();
+    Ok(true)
 }
 
-async fn by_space(req: Request<Body>) -> api::AppResult {
+async fn by_space(req: Request<Body>) -> Result<Vec<Channel>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let channels = Channel::get_by_space(db, &id).await?;
-    return api::Return::new(&channels).build();
+    Channel::get_by_space(db, &id).await.map_err(Into::into)
 }
 
-async fn my_channels(req: Request<Body>) -> api::AppResult {
+async fn my_channels(req: Request<Body>) -> Result<Vec<ChannelWithMember>, AppError> {
     let session = authenticate(&req).await?;
 
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let joined_channels = Channel::get_by_user(db, session.user_id).await?;
-    return api::Return::new(joined_channels).build();
+    Channel::get_by_user(db, session.user_id).await.map_err(Into::into)
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> api::AppResult {
+pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/query", Method::GET) => query(req).await,
-        ("/query_with_related", Method::GET) => query_with_related(req).await,
-        ("/by_space", Method::GET) => by_space(req).await,
-        ("/my", Method::GET) => my_channels(req).await,
-        ("/create", Method::POST) => create(req).await,
-        ("/edit", Method::POST) => edit(req).await,
-        ("/edit_member", Method::POST) => edit_member(req).await,
-        ("/members", Method::GET) => members(req).await,
-        ("/join", Method::POST) => join(req).await,
-        ("/leave", Method::POST) => leave(req).await,
-        ("/delete", Method::POST) => delete(req).await,
-        _ => Err(AppError::missing()),
+        ("/query", Method::GET) => query(req).await.map(ok_response),
+        ("/query_with_related", Method::GET) => query_with_related(req).await.map(ok_response),
+        ("/by_space", Method::GET) => by_space(req).await.map(ok_response),
+        ("/my", Method::GET) => my_channels(req).await.map(ok_response),
+        ("/create", Method::POST) => create(req).await.map(ok_response),
+        ("/edit", Method::POST) => edit(req).await.map(ok_response),
+        ("/edit_member", Method::POST) => edit_member(req).await.map(ok_response),
+        ("/members", Method::GET) => members(req).await.map(ok_response),
+        ("/join", Method::POST) => join(req).await.map(ok_response),
+        ("/leave", Method::POST) => leave(req).await.map(ok_response),
+        ("/delete", Method::POST) => delete(req).await.map(ok_response),
+        _ => missing(),
     }
 }
