@@ -5,7 +5,7 @@ use crate::messages::{Message, Preview};
 use crate::utils::{self, timestamp};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
@@ -15,11 +15,6 @@ mod handlers;
 mod models;
 
 pub use handlers::router;
-
-struct EventQueue {
-    queue: VecDeque<Arc<Event>>,
-    last_timestamp: i64,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -92,32 +87,27 @@ impl Event {
         Ok(events)
     }
 
-    pub async fn wait(mailbox: Uuid) {
-        use tokio::sync::broadcast::RecvError;
-
-        match get_receiver(&mailbox).await.recv().await {
-            Ok(()) | Err(RecvError::Lagged(_)) => (),
-            Err(RecvError::Closed) => log::warn!("The subscription channel ({}) was close", mailbox),
-        }
+    pub async fn wait(mailbox: Uuid) -> Result<Arc<Event>, tokio::sync::broadcast::RecvError> {
+        get_receiver(&mailbox).await.recv().await
     }
 
     pub fn fire(event: Event, mailbox: Uuid) {
         use tokio::spawn;
+        let event = Arc::new(event);
         spawn(async move {
+            let broadcast_table = get_broadcast_table();
+            let table = broadcast_table.read().await;
+            if let Some(tx) = table.get(&mailbox) {
+                tx.send(event.clone()).ok();
+            }
+            drop(table);
             let mut cache = cache::get().await;
-            match serde_json::to_vec(&event) {
+            match serde_json::to_vec(&*event) {
                 Ok(encoded) => {
                     let key = Self::cache_key(&mailbox);
                     if let Err(e) = cache.set_with_time(&*key, &*encoded).await {
                         log::warn!("Failed to add event to redis: {}", e)
                     }
-
-                    let broadcast_table = get_broadcast_table();
-                    let table = broadcast_table.read().await;
-                    if let Some(tx) = table.get(&mailbox) {
-                        tx.send(()).ok();
-                    }
-                    drop(table);
                 }
                 Err(e) => {
                     log::error!("Failed to serialize event: {}", e);
@@ -136,9 +126,10 @@ pub enum EventBody {
     MessagePreview { preview: Box<Preview> },
     ChannelDeleted,
     ChannelEdited,
+    Refresh,
 }
 
-type BroadcastTable = RwLock<HashMap<Uuid, broadcast::Sender<()>>>;
+type BroadcastTable = RwLock<HashMap<Uuid, broadcast::Sender<Arc<Event>>>>;
 
 static BROADCAST_TABLE: OnceCell<BroadcastTable> = OnceCell::new();
 
@@ -146,14 +137,15 @@ fn get_broadcast_table() -> &'static BroadcastTable {
     BROADCAST_TABLE.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-pub async fn get_receiver(id: &Uuid) -> broadcast::Receiver<()> {
+pub async fn get_receiver(id: &Uuid) -> broadcast::Receiver<Arc<Event>> {
     let broadcast_table = get_broadcast_table();
     let table = broadcast_table.read().await;
     if let Some(sender) = table.get(id) {
         sender.subscribe()
     } else {
         drop(table);
-        let (tx, rx) = broadcast::channel(1);
+        let capacity = 16;
+        let (tx, rx) = broadcast::channel(capacity);
         let mut table = broadcast_table.write().await;
         table.insert(id.clone(), tx);
         rx
@@ -191,10 +183,9 @@ pub async fn periodical_cleaner() {
     tokio::spawn(redis_cleaner());
     loop {
         delay_for(Duration::from_secs(15)).await;
-        {
-            let mut broadcast_table = get_broadcast_table().write().await;
-            broadcast_table.retain(|_, v| v.receiver_count() != 0);
-        }
+        let mut broadcast_table = get_broadcast_table().write().await;
+        broadcast_table.retain(|_, v| v.receiver_count() != 0);
+        drop(broadcast_table);
         log::trace!("clean finished");
     }
 }
