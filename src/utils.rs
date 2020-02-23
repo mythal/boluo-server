@@ -51,6 +51,10 @@ pub fn sign(message: &str) -> hmac::Tag {
     hmac::sign(key(), message.as_bytes())
 }
 
+pub fn sha1(data: &[u8]) -> ring::digest::Digest {
+    ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, data)
+}
+
 pub fn verify(message: &str, signature: &str) -> Option<()> {
     let signature = base64::decode(signature).ok()?;
     hmac::verify(key(), message.as_bytes(), &*signature).ok()

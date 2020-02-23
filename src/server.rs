@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use crate::context::debug;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Server};
+use hyper::{Body, Request, Server, Uri};
 
 #[macro_use]
 mod utils;
@@ -28,6 +28,7 @@ mod pool;
 mod session;
 mod spaces;
 mod users;
+mod websocket;
 mod validators;
 
 use crate::events::periodical_cleaner;
@@ -57,6 +58,24 @@ async fn router(req: Request<Body>) -> Result<Response, AppError> {
     missing()
 }
 
+fn log_error(e: &AppError, method: &str, uri: &Uri, elapsed: u128) {
+    use std::error::Error;
+    use AppError::*;
+    match e {
+        NotFound(_) | Conflict(_) =>
+            log::debug!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
+        Validation(_) | BadRequest(_) | MethodNotAllowed =>
+            log::info!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
+        e => {
+            if let Some(source) = e.source() {
+                log::error!("{:>6} {} {}ms - {} - source: {:?}", method, uri, elapsed, e, source)
+            } else {
+                log::error!("{:>6} {} {}ms - {}", method, uri, elapsed, e)
+            }
+        }
+    }
+}
+
 async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     use std::time::SystemTime;
     let start = SystemTime::now();
@@ -77,21 +96,7 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
             Ok(response)
         },
         Err(e) => {
-            use std::error::Error;
-            use AppError::*;
-            match &e {
-                NotFound(_) | Conflict(_) =>
-                    log::debug!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
-                Validation(_) | BadRequest(_) | MethodNotAllowed =>
-                    log::info!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
-                e => {
-                    if let Some(source) = e.source() {
-                        log::error!("{:>6} {} {}ms - {} - source: {:?}", method, uri, elapsed, e, source)
-                    } else {
-                        log::error!("{:>6} {} {}ms - {}", method, uri, elapsed, e)
-                    }
-                }
-            }
+            log_error(&e, method, &uri, elapsed);
             Ok(err_response(e))
         }
     }

@@ -39,6 +39,7 @@ percent-encoding = "2.1.0"
 blake3 = "0.2.1"
 mime = "0.3.16"
 bytes = "0.5.4"
+tokio-tungstenite = "*"
 
 [dependencies.serde]
 version = "1.0"
