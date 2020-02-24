@@ -1,8 +1,9 @@
 use super::api::EventQuery;
 use super::Event;
-use crate::common::{parse_query, Response, missing, ok_response, IdQuery};
+use crate::common::{parse_query, Response, missing};
 use crate::error::AppError;
 use std::time::Duration;
+use anyhow::anyhow;
 use hyper::{Body, Request};
 use futures::{StreamExt, SinkExt, TryStreamExt};
 use futures::stream::SplitSink;
@@ -11,46 +12,74 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite;
 use hyper::upgrade::Upgraded;
 use uuid::Uuid;
-use crate::events::EventBody;
-use std::sync::Arc;
 use crate::events::api::ClientEvent;
 use crate::csrf::authenticate;
 use crate::database;
 use crate::channels::ChannelMember;
 use crate::messages::api::NewPreview;
 use crate::messages::Preview;
+use crate::events::get_receiver;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
-
-async fn events(req: Request<Body>) -> Result<Vec<Event>, AppError> {
-    let EventQuery { mailbox, after } = parse_query(req.uri())?;
-    Event::get_from_cache(&mailbox, after).await.map_err(Into::into)
-}
-
-async fn push(mailbox: Uuid, outgoing: &mut Sender) -> Result<(), anyhow::Error> {
+async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
     use tokio::time::interval;
-    
+    use tokio::sync::broadcast::RecvError;
+    use futures::channel::mpsc::channel;
     use tokio_tungstenite::tungstenite::Error::{ConnectionClosed, AlreadyClosed};
-    let ping = tungstenite::Message::Ping(Vec::new());
-    let refresh = Arc::new(Event::new(mailbox, EventBody::Refresh));
-    let mut interval = interval(Duration::from_secs(30));
-
-    loop {
-        let wait = Event::wait(mailbox);
-        let message = tokio::select! {
-            _ = interval.next() => ping.clone(),
-            event = wait => {
-                let event = event.unwrap_or_else(|_| refresh.clone());
-                tungstenite::Message::Text(serde_json::to_string(&*event)?)
-            },
-        };
-        match outgoing.send(message).await {
-            Ok(_) => (),
-            Err(ConnectionClosed) | Err(AlreadyClosed) => break,
-            e => e?,
+    let (tx, mut rx) = channel::<WsMessage>(32);
+    let send_message = async move {
+        while let Some(message) = rx.next().await {
+            match outgoing.send(message).await {
+                Ok(_) => (),
+                Err(ConnectionClosed) | Err(AlreadyClosed) => break,
+                Err(e) => return Err(e),
+            }
         }
+        Ok(())
+    };
+    let push = async {
+        let mut tx = tx.clone();
+        let (mut receiver, events) = futures::future::join(
+            get_receiver(&mailbox),
+            Event::get_from_cache(&mailbox, after)
+        ).await;
+        match events {
+            Ok(events) =>
+                for e in events {
+                    tx.send(WsMessage::Text(e)).await.ok();
+                },
+            Err(e) => Err(anyhow!("failed to get events from cache: {}", e))?,
+        }
+        loop {
+            let message = match receiver.recv().await {
+                Ok(event_encoded) => WsMessage::Text(event_encoded),
+                Err(RecvError::Lagged(lagged)) => {
+                    log::warn!("lagged {} at {}", lagged, mailbox);
+                    continue;
+                },
+                Err(RecvError::Closed) => return Err(anyhow!("broadcast ({}) is closed.", mailbox)),
+            };
+            if let Err(_) = tx.send(message).await {
+                break
+            }
+        }
+        Ok(())
+    };
+    let ping = interval(Duration::from_secs(30))
+        .for_each(|_| {
+            async {
+                tx.clone().send(WsMessage::Ping(Vec::new())).await.ok();
+            }
+        });
+
+    tokio::select! {
+        r = send_message => { r?; },
+        _ = ping => {},
+        r = push => { r? },
     }
+    Event::get_from_cache(&mailbox, after).await?;
+
     Ok(())
 }
 
@@ -102,11 +131,11 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
     use futures::future;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
 
-    let IdQuery { id } = parse_query(req.uri())?;
+    let EventQuery { mailbox, after } = parse_query(req.uri())?;
     establish_web_socket(req, move |ws_stream| async move {
         let (mut outgoing, incoming) = ws_stream.split();
         let handle_push = async move {
-            if let Err(e) = push(id, &mut outgoing).await {
+            if let Err(e) = push(mailbox, &mut outgoing, after).await {
                 log::warn!("Failed to push event: {}", e);
             }
             outgoing.close().await.ok();
@@ -136,7 +165,6 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/events", Method::GET) => events(req).await.map(ok_response),
         ("/connect", Method::GET) => connect(req).await,
         _ => missing(),
     }
