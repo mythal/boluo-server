@@ -46,6 +46,6 @@ pub struct Edit {
 #[serde(rename_all = "camelCase")]
 pub struct ByChannel {
     pub channel_id: Uuid,
+    pub after: Option<i64>,
     pub before: Option<i64>,
-    pub amount: Option<i32>,
 }
