@@ -4,17 +4,21 @@ use crate::common::{parse_query, Response, missing, ok_response, IdQuery};
 use crate::error::AppError;
 use std::time::Duration;
 use hyper::{Body, Request};
-
-
-use futures::{StreamExt, SinkExt};
+use futures::{StreamExt, SinkExt, TryStreamExt};
 use futures::stream::SplitSink;
-use crate::websocket::{establish_web_socket};
+use crate::websocket::{establish_web_socket, WsMessage, WsError};
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite;
 use hyper::upgrade::Upgraded;
 use uuid::Uuid;
 use crate::events::EventBody;
 use std::sync::Arc;
+use crate::events::api::ClientEvent;
+use crate::csrf::authenticate;
+use crate::database;
+use crate::channels::ChannelMember;
+use crate::messages::api::NewPreview;
+use crate::messages::Preview;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
@@ -24,13 +28,14 @@ async fn events(req: Request<Body>) -> Result<Vec<Event>, AppError> {
     Event::get_from_cache(&mailbox, after).await.map_err(Into::into)
 }
 
-async fn push(mailbox: Uuid, tx: &mut Sender) -> Result<(), anyhow::Error> {
+async fn push(mailbox: Uuid, outgoing: &mut Sender) -> Result<(), anyhow::Error> {
     use tokio::time::interval;
     
     use tokio_tungstenite::tungstenite::Error::{ConnectionClosed, AlreadyClosed};
     let ping = tungstenite::Message::Ping(Vec::new());
     let refresh = Arc::new(Event::new(mailbox, EventBody::Refresh));
     let mut interval = interval(Duration::from_secs(30));
+
     loop {
         let wait = Event::wait(mailbox);
         let message = tokio::select! {
@@ -40,7 +45,7 @@ async fn push(mailbox: Uuid, tx: &mut Sender) -> Result<(), anyhow::Error> {
                 tungstenite::Message::Text(serde_json::to_string(&*event)?)
             },
         };
-        match tx.send(message).await {
+        match outgoing.send(message).await {
             Ok(_) => (),
             Err(ConnectionClosed) | Err(AlreadyClosed) => break,
             e => e?,
@@ -49,49 +54,81 @@ async fn push(mailbox: Uuid, tx: &mut Sender) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
+    let event: ClientEvent = serde_json::from_str(&*message)?;
+    match event {
+        ClientEvent::Preview(
+            NewPreview {
+                id,
+                channel_id,
+                name,
+                media_id,
+                in_game,
+                is_action,
+                text,
+                entities,
+                whisper_to_users,
+                start
+            }
+        ) => {
+            let user_id = user_id.ok_or(AppError::Unauthenticated)?;
+            let mut conn = database::get().await;
+            let db = &mut *conn;
+            let member = ChannelMember::get(db, &user_id, &channel_id)
+                .await?
+                .ok_or(AppError::NoPermission)?;
+            Event::message_preview(Preview {
+                id,
+                sender_id: user_id,
+                channel_id,
+                parent_message_id: None,
+                name,
+                media_id,
+                in_game,
+                is_action,
+                text,
+                whisper_to_users,
+                entities,
+                start,
+                is_master: member.is_master,
+            })
+        },
+    }
+    Ok(())
+}
+
 async fn connect(req: Request<Body>) -> Result<Response, AppError> {
+    use tokio::stream::StreamExt as _;
+    use futures::future;
+    let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
+
     let IdQuery { id } = parse_query(req.uri())?;
     establish_web_socket(req, move |ws_stream| async move {
-        let (mut tx, mut rx) = ws_stream.split();
-        tokio::spawn(async move {
-            if let Err(e) = push(id, &mut tx).await {
-                log::warn!("push {}: {}", id, e);
+        let (mut outgoing, incoming) = ws_stream.split();
+        let handle_push = async move {
+            if let Err(e) = push(id, &mut outgoing).await {
+                log::warn!("Failed to push event: {}", e);
             }
-            tx.close().await.ok();
-            log::debug!("{} write stream close", id);
-        });
-        loop {
-            let close_timeout = tokio::time::delay_for(Duration::from_secs(60));
-            let message = tokio::select! {
-                _ = close_timeout => break,
-                message = rx.next() => message,
-            };
-            match message {
-                None | Some(Ok(tungstenite::Message::Close(_))) => break,
-                Some(Ok(tungstenite::Message::Pong(_))) => (),
-                Some(Ok(message)) => {
-                },
-                Some(Err(e)) => {
-                    log::warn!("read {}: {}", id, e);
-                    break;
-                },
-            }
-        }
-        while let Some(message) = rx.next().await {
-            match message {
-                Ok(tungstenite::Message::Close(_)) => break,
-                Ok(tungstenite::Message::Pong(_)) => {
-                    log::debug!("pong");
-                },
-                Ok(_message) => {
+            outgoing.close().await.ok();
+        };
+        let handle_messages = incoming
+            .timeout(Duration::from_secs(40))
+            .map_err(|_| WsError::AlreadyClosed)
+            .and_then(future::ready)
+            .try_for_each(|message: WsMessage| {
+                async move {
+                    if let WsMessage::Text(message) = message {
+                        if let Err(e) = receive_message(user_id, message).await {
+                            log::warn!("Failed to send event: {}", e);
+                        }
+                    }
+                    Ok(())
                 }
-                Err(e) => {
-                    log::warn!("read {}: {}", id, e);
-                    break;
-                }
-            }
-        }
-        log::debug!("read stream close");
+            });
+        futures::pin_mut!(handle_push);
+        futures::pin_mut!(handle_messages);
+        future::select(handle_push, handle_messages).await;
+        log::debug!("WebSocket connection close");
     })
 }
 

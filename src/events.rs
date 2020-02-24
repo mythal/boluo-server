@@ -113,6 +113,7 @@ impl Event {
                     log::error!("Failed to serialize event: {}", e);
                 }
             }
+            drop(cache);
         });
     }
 }

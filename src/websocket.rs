@@ -2,7 +2,7 @@ use hyper::header::{HeaderValue, HeaderMap, SEC_WEBSOCKET_KEY, UPGRADE, CONNECTI
 use hyper::upgrade::Upgraded;
 use std::future::Future;
 use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::Error;
+pub use tokio_tungstenite::tungstenite::{Message as WsMessage, Error as WsError};
 use crate::error::AppError;
 use crate::utils::sha1;
 use crate::common::{Request, Response};
@@ -60,12 +60,4 @@ where
         .header(header::SEC_WEBSOCKET_ACCEPT, accept)
         .body(Body::empty())
         .map_err(unexpected!())
-}
-
-pub fn log_error(e: &Error) {
-    match e {
-        Error::ConnectionClosed => (),
-        Error::AlreadyClosed => log::info!("{}", e),
-        e => log::warn!("{}", e),
-    }
 }

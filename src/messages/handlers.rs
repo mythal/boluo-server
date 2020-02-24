@@ -112,7 +112,6 @@ async fn send_preview(req: Request<Body>) -> Result<bool, AppError> {
 
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let channel_id = channel_id.clone();
 
     let member = ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
