@@ -18,7 +18,7 @@ pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppErr
     let connection = headers.get(CONNECTION)
         .and_then(|v| v.to_str().ok())
         .ok_or(AppError::BadRequest(String::new()))?;
-    if connection.trim() != "Upgrade" {
+    if connection.find("Upgrade").is_none() {
         return Err(AppError::BadRequest(String::new()));
     }
     let mut key = headers.get(SEC_WEBSOCKET_KEY)
