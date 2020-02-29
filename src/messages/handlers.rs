@@ -10,7 +10,6 @@ use crate::spaces::SpaceMember;
 use crate::{common, database};
 use hyper::{Body, Request};
 use crate::messages::api::{ByChannel, NewPreview};
-use crate::utils::timestamp;
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
@@ -138,7 +137,7 @@ async fn send_preview(req: Request<Body>) -> Result<bool, AppError> {
 }
 
 async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
-    let ByChannel { channel_id, after, before } = parse_query(req.uri())?;
+    let ByChannel { channel_id, limit, before } = parse_query(req.uri())?;
 
     let mut db = database::get().await;
     let db = &mut *db;
@@ -146,8 +145,8 @@ async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
     Channel::get_by_id(db, &channel_id)
         .await?
         .ok_or(AppError::NotFound("channels"))?;
-    let after = after.unwrap_or(before.unwrap_or_else(timestamp) - 1 * 60 * 60 * 1000);
-    Message::get_by_channel(db, &channel_id, after, before).await.map_err(Into::into)
+    let limit = limit.unwrap_or(128);
+    Message::get_by_channel(db, &channel_id, before, limit).await.map_err(Into::into)
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {

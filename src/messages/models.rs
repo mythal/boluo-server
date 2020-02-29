@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError, ValidationFailed};
-use crate::utils::{inner_map, timestamp};
+use crate::utils::inner_map;
 use crate::validators::CHARACTER_NAME;
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
@@ -46,15 +46,12 @@ impl Message {
         inner_map(result, |row| row.get(0))
     }
 
-    pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid, after: i64, before: Option<i64>) -> Result<Vec<Message>, ModelError> {
+    pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid, before: Option<i64>, limit: i32) -> Result<Vec<Message>, ModelError> {
         use postgres_types::Type;
-        let max_delta = 2 * 24 * 60 * 60 * 1000;
-        let delta = before.unwrap_or_else(timestamp) - after;
-        if delta < 100 || delta > max_delta {
-            Err(ValidationFailed("filter timestamps are wrong."))?;
+        if limit > 256 || limit < 1 {
+            Err(ValidationFailed("illegal limit range"))?;
         }
-
-        let rows = db.query_typed(include_str!("sql/get_by_channel.sql"), &[Type::UUID, Type::INT8, Type::INT8], &[channel_id, &after, &before]).await?;
+        let rows = db.query_typed(include_str!("sql/get_by_channel.sql"), &[Type::UUID, Type::INT8, Type::INT4], &[channel_id, &before, &limit]).await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
@@ -185,8 +182,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     ChannelMember::set_master(db, &user.id, &channel.id, false).await?;
     let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, "");
-    let after = timestamp() - 1000000;
-    let messages = Message::get_by_channel(db, &channel.id, after, None).await?;
+    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, message.id);
     Message::delete(db, &message.id).await?;

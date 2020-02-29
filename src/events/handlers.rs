@@ -86,8 +86,8 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
 async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
     let event: ClientEvent = serde_json::from_str(&*message)?;
     match event {
-        ClientEvent::Preview(
-            NewPreview {
+        ClientEvent::Preview {
+            preview: NewPreview {
                 id,
                 channel_id,
                 name,
@@ -99,7 +99,7 @@ async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), a
                 whisper_to_users,
                 start
             }
-        ) => {
+        } => {
             let user_id = user_id.ok_or(AppError::Unauthenticated)?;
             let mut conn = database::get().await;
             let db = &mut *conn;

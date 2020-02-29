@@ -10,8 +10,6 @@ use crate::utils;
 use futures::StreamExt;
 use hyper::header::{self, HeaderValue};
 use hyper::{Body, Request};
-use once_cell::sync::OnceCell;
-use regex::Regex;
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::prelude::*;
@@ -27,8 +25,7 @@ fn content_disposition(attachment: bool, filename: &str) -> HeaderValue {
 }
 
 fn filename_sanitizer(filename: String) -> String {
-    static FILENAME_REPLACE: OnceCell<Regex> = OnceCell::new();
-    let filename_replace = FILENAME_REPLACE.get_or_init(|| Regex::new(r#"[/?*:|<>\\]"#).unwrap());
+    let filename_replace = regex!(r#"[/?*:|<>\\]"#);
     filename_replace.replace_all(&filename, "_").to_string()
 }
 
@@ -69,6 +66,7 @@ async fn upload(req: Request<Body>) -> Result<Media, AppError> {
         let bytes = bytes?;
         size += bytes.len();
         if size > MAX_SIZE {
+            tokio::fs::remove_file(&*path).await.ok();
             return Err(AppError::BadRequest(format!(
                 "The maximum file size has been exceeded."
             )));

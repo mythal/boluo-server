@@ -111,7 +111,6 @@ pub enum EventBody {
     MessagePreview { preview: Box<Preview> },
     ChannelDeleted,
     ChannelEdited,
-    Refresh,
 }
 
 type BroadcastTable = RwLock<HashMap<Uuid, broadcast::Sender<String>>>;

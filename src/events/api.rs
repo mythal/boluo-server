@@ -12,5 +12,5 @@ pub struct EventQuery {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ClientEvent {
-    Preview (NewPreview),
+    Preview { preview: NewPreview },
 }
