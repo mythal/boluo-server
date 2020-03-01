@@ -13,6 +13,7 @@ pub struct NewMessage {
     pub entities: Vec<JsonValue>,
     pub in_game: bool,
     pub is_action: bool,
+    pub order_date: Option<i64>,
 }
 
 #[derive(Deserialize, Debug)]

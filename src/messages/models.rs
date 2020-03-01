@@ -68,7 +68,9 @@ impl Message {
         is_action: bool,
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
+        order_date: Option<i64>,
     ) -> Result<Message, ModelError> {
+        use postgres_types::Type;
         name = name.trim();
         if name.is_empty() {
             name = default_name.trim();
@@ -79,8 +81,21 @@ impl Message {
         }
         let entities = JsonValue::Array(entities);
         let row = db
-            .query_exactly_one(
+            .query_exactly_one_typed(
                 include_str!("sql/create.sql"),
+                &[
+                    Type::UUID,
+                    Type::UUID,
+                    Type::UUID,
+                    Type::TEXT,
+                    Type::TEXT,
+                    Type::JSON,
+                    Type::BOOL,
+                    Type::BOOL,
+                    Type::BOOL,
+                    Type::UUID_ARRAY,
+                    Type::INT8,
+                ],
                 &[
                     &message_id,
                     sender_id,
@@ -92,6 +107,7 @@ impl Message {
                     &is_action,
                     &is_master,
                     &whisper_to,
+                    &order_date,
                 ],
             )
             .await?;
@@ -164,6 +180,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         false,
         true,
         Some(vec![]),
+        None
     )
     .await?;
     assert_eq!(message.text, "");
