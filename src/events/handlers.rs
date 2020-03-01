@@ -18,7 +18,7 @@ use crate::database;
 use crate::channels::ChannelMember;
 use crate::messages::api::NewPreview;
 use crate::messages::Preview;
-use crate::events::get_receiver;
+use crate::events::{get_receiver, get_preview_cache};
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
@@ -40,15 +40,22 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
     };
     let push = async {
         let mut tx = tx.clone();
-        let (mut receiver, events) = futures::future::join(
-            get_receiver(&mailbox),
-            Event::get_from_cache(&mailbox, after)
-        ).await;
+        let mut receiver = get_receiver(&mailbox).await;
+        let events = Event::get_from_cache(&mailbox, after).await;
+        let previews: Vec<String> = {
+            let preview_cache = get_preview_cache();
+            let channel_map = preview_cache.lock().await;
+            channel_map
+                .get(&mailbox)
+                .map(|user_map| user_map.values().map(|(_, v)| v.clone()).collect())
+                .unwrap_or(Vec::new())
+        };
         match events {
-            Ok(events) =>
-                for e in events {
+            Ok(events) => {
+                for e in events.into_iter().chain(previews.into_iter()) {
                     tx.send(WsMessage::Text(e)).await.ok();
-                },
+                }
+            }
             Err(e) => Err(anyhow!("failed to get events from cache: {}", e))?,
         }
         loop {

@@ -7,7 +7,7 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, RwLock, Mutex};
 use uuid::Uuid;
 
 mod api;
@@ -16,6 +16,7 @@ mod models;
 
 pub use handlers::router;
 use futures::StreamExt;
+use chrono::NaiveDateTime;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -48,9 +49,15 @@ impl Event {
     }
 
     pub fn message_preview(preview: Preview) {
+        use tokio::spawn;
+
         let channel_id = preview.channel_id;
         let preview = Box::new(preview);
-        Event::fire(EventBody::MessagePreview { preview }, channel_id)
+        spawn(async move {
+            if let Err(e) = Event::fire_preview(preview, channel_id).await {
+                log::warn!("{}", e);
+            }
+        });
     }
 
     pub fn cache_key(mailbox: &Uuid) -> Vec<u8> {
@@ -72,8 +79,37 @@ impl Event {
         get_receiver(&mailbox).await.recv().await
     }
 
+    async fn fire_preview(preview: Box<Preview>, mailbox: Uuid) -> Result<(), anyhow::Error> {
+        let sender_id = preview.sender_id;
+        let start = preview.start.clone();
+        let event = Arc::new(Event{
+            mailbox,
+            body: EventBody::MessagePreview { preview },
+            timestamp: timestamp(),
+            event_id: utils::id(),
+        });
+        let encoded = serde_json::to_string(&*event)?;
+
+        let cache = get_preview_cache();
+        let mut mailbox_map = cache.lock().await;
+        if let Some(user_map) = mailbox_map.get_mut(&mailbox) {
+            user_map.insert(sender_id, (start, encoded.clone()));
+        } else {
+            let mut user_map = HashMap::new();
+            user_map.insert(sender_id, (start, encoded.clone()));
+            mailbox_map.insert(mailbox, user_map);
+        }
+        drop(cache);
+
+        let broadcast_table = get_broadcast_table();
+        let table = broadcast_table.read().await;
+        if let Some(tx) = table.get(&mailbox) {
+            tx.send(encoded).ok();
+        }
+        Ok(())
+    }
+
     async fn async_fire(body: EventBody, mailbox: Uuid) -> Result<(), anyhow::Error> {
-        let mut cache = cache::get().await;
         let event = Arc::new(Event{
             mailbox,
             body,
@@ -81,9 +117,12 @@ impl Event {
             event_id: utils::id(),
         });
         let encoded = serde_json::to_string(&*event)?;
+
+        let mut cache = cache::get().await;
         let key = Self::cache_key(&mailbox);
         cache.set_with_time(&*key, encoded.as_bytes()).await?;
         drop(cache);
+
         let broadcast_table = get_broadcast_table();
         let table = broadcast_table.read().await;
         if let Some(tx) = table.get(&mailbox) {
@@ -135,6 +174,15 @@ pub async fn get_receiver(id: &Uuid) -> broadcast::Receiver<String> {
         rx
     }
 }
+
+type PreviewCache = Mutex<HashMap<Uuid, HashMap<Uuid, (NaiveDateTime, String)>>>;
+
+static PREVIEW_CACHE: OnceCell<PreviewCache> = OnceCell::new();
+
+fn get_preview_cache() -> &'static PreviewCache {
+    PREVIEW_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 
 pub async fn periodical_cleaner() {
     use redis::{AsyncCommands, RedisError};
