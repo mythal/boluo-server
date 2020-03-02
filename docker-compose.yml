@@ -2,7 +2,7 @@ version: "3"
 services:
   server:
     build: .
-    image: quanbrew/boluo
+    image: quanbrew/boluo-server
     command: cargo run --release
     restart: always
     ports:
