@@ -142,9 +142,11 @@ impl Event {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum EventBody {
     NewMessage { message: Box<Message> },
+    #[serde(rename_all = "camelCase")]
     MessageDeleted { message_id: Uuid },
     MessageEdited { message: Box<Message> },
     MessagePreview { preview: Box<Preview> },
