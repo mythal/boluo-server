@@ -122,6 +122,7 @@ impl Message {
         entities: Option<Vec<JsonValue>>,
         in_game: Option<bool>,
         is_action: Option<bool>,
+        folded: Option<bool>,
     ) -> Result<Option<Message>, ModelError> {
         let entities = entities.map(JsonValue::Array);
         if let Some(name) = name {
@@ -130,7 +131,7 @@ impl Message {
         let result = db
             .query_one(
                 include_str!("sql/edit.sql"),
-                &[id, &name, &text, &entities, &in_game, &is_action],
+                &[id, &name, &text, &entities, &in_game, &is_action, &folded],
             )
             .await?;
         Ok(result.map(|row| row.get(0)))
@@ -189,7 +190,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     assert_eq!(message.text, text);
 
     let new_text = "cocona";
-    let edited = Message::edit(db, None, &message.id, Some(new_text), Some(vec![]), None, None)
+    let edited = Message::edit(db, None, &message.id, Some(new_text), Some(vec![]), None, None, None)
         .await?
         .unwrap();
     assert_eq!(edited.text, "");

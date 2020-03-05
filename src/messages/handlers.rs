@@ -71,7 +71,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     }
     let text = text.as_ref().map(String::as_str);
     let name = name.as_ref().map(String::as_str);
-    let message = Message::edit(db, name, &message_id, text, entities, in_game, is_action)
+    let message = Message::edit(db, name, &message_id, text, entities, in_game, is_action, None)
         .await?
         .ok_or_else(|| unexpected!("The message had been delete."))?;
     trans.commit().await?;
@@ -89,20 +89,42 @@ async fn query(req: Request<Body>) -> Result<Message, AppError> {
 
 async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
-    let common::IdQuery { id } = common::parse_body(req).await?;
+    let common::IdQuery { id } = common::parse_query(req.uri())?;
     let mut conn = database::get().await;
     let db = &mut *conn;
     let message = Message::get(db, &id, None)
         .await?
         .ok_or(AppError::NotFound("messages"))?;
-    let space_member = SpaceMember::get_by_channel(db, &session.id, &message.channel_id)
+    let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
+        .await?
+        .ok_or(AppError::NoPermission)?;
+    if !space_member.is_admin {
+        return Err(AppError::NoPermission);
+    }
+    Message::delete(db, &id).await?;
+    Event::message_deleted(message.channel_id, message.id);
+    Ok(message)
+}
+
+async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
+    let session = authenticate(&req).await?;
+    let common::IdQuery { id } = common::parse_query(req.uri())?;
+    let mut conn = database::get().await;
+    let db = &mut *conn;
+    let message = Message::get(db, &id, None)
+        .await?
+        .ok_or(AppError::NotFound("messages"))?;
+    let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
     if message.sender_id != session.user_id && !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
-    Message::delete(db, &id).await?;
-    Event::message_deleted(message.channel_id, message.id);
+    let folded = Some(!message.folded);
+    let message = Message::edit(db, None, &message.id, None, None, None, None, folded)
+        .await?
+        .ok_or_else(|| unexpected!("message not found"))?;
+    Event::message_edited(message.clone());
     Ok(message)
 }
 
@@ -126,8 +148,8 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/query", Method::GET) => query(req).await.map(ok_response),
         ("/by_channel", Method::GET) => by_channel(req).await.map(ok_response),
         ("/send", Method::POST) => send(req).await.map(ok_response),
+        ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
-        ("/edit", Method::POST) => edit(req).await.map(ok_response),
         _ => missing(),
     }
 }
