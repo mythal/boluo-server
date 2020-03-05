@@ -219,7 +219,7 @@ pub struct Preview {
     pub in_game: bool,
     pub is_action: bool,
     pub is_master: bool,
-    pub text: String,
+    pub text: Option<String>,
     pub whisper_to_users: Option<Vec<Uuid>>,
     pub entities: Vec<JsonValue>,
     #[serde(with = "crate::date_format")]

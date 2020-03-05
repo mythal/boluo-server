@@ -103,7 +103,6 @@ async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), a
                 is_action,
                 text,
                 entities,
-                whisper_to_users,
                 start
             }
         } => {
@@ -123,7 +122,7 @@ async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), a
                 in_game,
                 is_action,
                 text,
-                whisper_to_users,
+                whisper_to_users: None,
                 entities,
                 start,
                 is_master: member.is_master,

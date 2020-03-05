@@ -25,9 +25,8 @@ pub struct NewPreview {
     pub media_id: Option<Uuid>,
     pub in_game: bool,
     pub is_action: bool,
-    pub text: String,
+    pub text: Option<String>,
     pub entities: Vec<JsonValue>,
-    pub whisper_to_users: Option<Vec<Uuid>>,
     #[serde(with = "crate::date_format")]
     pub start: NaiveDateTime,
 }

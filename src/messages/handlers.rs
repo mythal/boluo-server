@@ -5,11 +5,10 @@ use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::events::Event;
-use crate::messages::Preview;
 use crate::spaces::SpaceMember;
 use crate::{common, database};
 use hyper::{Body, Request};
-use crate::messages::api::{ByChannel, NewPreview};
+use crate::messages::api::{ByChannel};
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
@@ -107,37 +106,6 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     Ok(message)
 }
 
-async fn send_preview(req: Request<Body>) -> Result<bool, AppError> {
-    let session = authenticate(&req).await?;
-    let NewPreview { id, channel_id, name, media_id, in_game, is_action, text, entities, whisper_to_users, start } = common::parse_body(req).await?;
-
-
-    let mut conn = database::get().await;
-    let db = &mut *conn;
-
-    let member = ChannelMember::get(db, &session.user_id, &channel_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
-
-    let preview = Preview {
-        id,
-        sender_id: session.user_id,
-        channel_id,
-        parent_message_id: None,
-        name,
-        media_id,
-        in_game,
-        is_action,
-        text,
-        whisper_to_users,
-        entities,
-        start,
-        is_master: member.is_master,
-    };
-    Event::message_preview(preview);
-    Ok(true)
-}
-
 async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
     let ByChannel { channel_id, limit, before } = parse_query(req.uri())?;
 
@@ -160,7 +128,6 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/send", Method::POST) => send(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
-        ("/preview", Method::POST) => send_preview(req).await.map(ok_response),
         _ => missing(),
     }
 }
