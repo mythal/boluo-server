@@ -21,6 +21,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         in_game,
         is_action,
         order_date,
+        media_id,
     } = common::parse_body(req).await?;
     let mut conn = database::get().await;
     let db = &mut *conn;
@@ -40,6 +41,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         is_action,
         channel_member.is_master,
         None,
+        media_id,
         order_date,
     )
     .await?;

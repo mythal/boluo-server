@@ -68,6 +68,7 @@ impl Message {
         is_action: bool,
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
+        media_id: Option<Uuid>,
         order_date: Option<i64>,
     ) -> Result<Message, ModelError> {
         use postgres_types::Type;
@@ -94,6 +95,7 @@ impl Message {
                     Type::BOOL,
                     Type::BOOL,
                     Type::UUID_ARRAY,
+                    Type::UUID,
                     Type::INT8,
                 ],
                 &[
@@ -107,6 +109,7 @@ impl Message {
                     &is_action,
                     &is_master,
                     &whisper_to,
+                    &media_id,
                     &order_date,
                 ],
             )
@@ -181,7 +184,8 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         false,
         true,
         Some(vec![]),
-        None
+        Some(Uuid::nil()),
+        None,
     )
     .await?;
     assert_eq!(message.text, "");
