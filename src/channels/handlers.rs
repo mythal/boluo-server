@@ -11,6 +11,7 @@ use crate::events::Event;
 use crate::spaces::{Space, SpaceMember};
 use hyper::{Body, Request};
 use uuid::Uuid;
+use crate::channels::models::Member;
 
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
     let member = SpaceMember::get(db, user_id, space_id)
@@ -35,7 +36,7 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
     let mut conn = database::get().await;
     let db = &mut *conn;
     let (channel, space) = Channel::get_with_space(db, &query.id).await?.ok_or(AppError::NotFound("channels"))?;
-    let members = ChannelMember::get_by_channel(db, &channel.id).await?;
+    let members = Member::get_by_channel(db, &channel.id).await?;
     let color_list = ChannelMember::get_color_list(db, &channel.id).await?;
     let with_related = ChannelWithRelated {
         channel,

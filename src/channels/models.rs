@@ -8,7 +8,10 @@ use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::{SpaceMember, Space};
 use crate::utils::inner_map;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use crate::users::User;
+use tokio::sync::{Mutex, MutexGuard};
+use once_cell::sync::OnceCell;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -136,7 +139,7 @@ impl ChannelMember {
 
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<ChannelMember>, DbError> {
         let rows = db
-            .query(include_str!("sql/get_members_of_channel.sql"), &[channel])
+            .query(include_str!("sql/get_channel_member_list.sql"), &[channel])
             .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
@@ -234,6 +237,76 @@ impl ChannelMember {
     }
 }
 
+
+type OnlineMap = HashMap<Uuid, HashSet<Uuid>>;
+static ONLINE_MAP: OnceCell<Mutex<OnlineMap>> = OnceCell::new();
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Member {
+    pub channel: ChannelMember,
+    pub space: SpaceMember,
+    pub user: User,
+    pub online: bool,
+}
+
+impl Member {
+    async fn get_online_map() -> MutexGuard<'static, OnlineMap> {
+        let map = ONLINE_MAP.get_or_init(|| Mutex::new(OnlineMap::new()));
+        map.lock().await
+    }
+
+    pub async fn set_online(channel_id: Uuid, user_id: Uuid) {
+        let mut map = Member::get_online_map().await;
+        let set = map.entry(channel_id).or_insert_with(HashSet::new);
+        set.insert(user_id);
+    }
+
+    pub async fn set_offline(channel_id: Uuid, user_id: Uuid) {
+        let mut map = Member::get_online_map().await;
+        if let Some(set) = map.get_mut(&channel_id) {
+            set.remove(&user_id);
+        }
+    }
+
+    fn mapper(row: tokio_postgres::Row, map: &MutexGuard<'static, OnlineMap>) -> Member {
+        let channel: ChannelMember = row.get(0);
+        let space: SpaceMember = row.get(1);
+        let user: User = row.get(2);
+        let online = if let Some(set) = map.get(&channel.channel_id) {
+            set.contains(&user.id)
+        } else {
+            false
+        };
+        Member {
+            channel,
+            space,
+            user,
+            online,
+        }
+    }
+
+    pub async fn get_by_user<T: Querist>(db: &mut T, channel_id: &Uuid, user_id: &Uuid) -> Result<Option<Member>, DbError> {
+        use postgres_types::Type;
+        let row = db
+            .query_one_typed(include_str!("sql/get_members_information_by_channel.sql"), &[Type::UUID, Type::UUID], &[channel_id, &user_id])
+            .await?;
+        let online_map = &Member::get_online_map().await;
+        Ok(row.map(|row| Member::mapper(row, online_map)))
+    }
+
+    pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<Member>, DbError> {
+        use postgres_types::Type;
+        let none_uuid: Option<Uuid> = None;
+        let rows = db
+            .query_typed(include_str!("sql/get_members_information_by_channel.sql"), &[Type::UUID, Type::UUID], &[channel, &none_uuid])
+            .await?;
+        let online_map = &Member::get_online_map().await;
+        Ok(rows.into_iter().map(|row| Member::mapper(row, online_map)).collect())
+    }
+}
+
+
 #[tokio::test]
 async fn channels_test() -> Result<(), crate::error::AppError> {
     use crate::database::Client;
@@ -295,6 +368,12 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     assert_eq!(joined.len(), 2);
     assert_eq!(joined[0].member.channel_id, channel.id);
     assert_eq!(joined[1].member.channel_id, channel_2.id);
+
+    Member::get_by_user(db, &channel.id, &user.id).await?.unwrap();
+    let member = Member::get_by_channel(db, &channel.id).await?;
+    assert_eq!(member.len(), 1);
+    Member::set_online(channel.id, user.id).await;
+    Member::set_offline(channel.id, user.id).await;
 
     ChannelMember::remove_user(db, &user.id, &channel.id).await?;
     ChannelMember::remove_user(db, &user.id, &channel_2.id).await?;

@@ -3,6 +3,7 @@ use crate::spaces::Space;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::collections::HashMap;
+use crate::channels::models::Member;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +34,7 @@ pub struct EditMember {
 #[serde(rename_all = "camelCase")]
 pub struct ChannelWithRelated {
     pub channel: Channel,
-    pub members: Vec<ChannelMember>,
+    pub members: Vec<Member>,
     pub space: Space,
     pub color_list: HashMap<Uuid, String>,
 }
