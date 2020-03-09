@@ -75,7 +75,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
 
 async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     let session = authenticate(&req).await?;
-    let Edit { channel_id, name } = common::parse_body(req).await?;
+    let Edit { channel_id, name, topic, default_dice_type } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -89,7 +89,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     if !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
-    let channel = Channel::edit(db, &channel_id, Some(&*name))
+    let channel = Channel::edit(db, &channel_id, name.as_ref().map(String::as_str), topic.as_ref().map(String::as_str), default_dice_type.as_ref().map(String::as_str))
         .await;
     trans.commit().await?;
     channel.map_err(Into::into)

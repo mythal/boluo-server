@@ -18,7 +18,9 @@ pub struct Create {
 #[serde(rename_all = "camelCase")]
 pub struct Edit {
     pub channel_id: Uuid,
-    pub name: String,
+    pub name: Option<String>,
+    pub topic: Option<String>,
+    pub default_dice_type: Option<String>,
 }
 
 
