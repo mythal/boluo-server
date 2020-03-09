@@ -1,4 +1,4 @@
-use super::api::EventQuery;
+use super::events::EventQuery;
 use super::Event;
 use crate::common::{parse_query, Response, missing};
 use crate::error::AppError;
@@ -12,13 +12,10 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite;
 use hyper::upgrade::Upgraded;
 use uuid::Uuid;
-use crate::events::api::ClientEvent;
+use crate::events::events::ClientEvent;
 use crate::csrf::authenticate;
-use crate::database;
-use crate::channels::ChannelMember;
-use crate::messages::api::NewPreview;
-use crate::messages::Preview;
-use crate::events::{get_receiver, get_preview_cache};
+use crate::events::context::{get_receiver, get_preview_cache};
+use crate::channels::models::Member;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
@@ -47,7 +44,7 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
             let channel_map = preview_cache.lock().await;
             channel_map
                 .get(&mailbox)
-                .map(|user_map| user_map.values().map(|(_, v)| v.clone()).collect())
+                .map(|user_map| user_map.values().map(|event| event.encoded.clone()).collect())
                 .unwrap_or(Vec::new())
         };
         match events {
@@ -60,7 +57,7 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
         }
         loop {
             let message = match receiver.recv().await {
-                Ok(event_encoded) => WsMessage::Text(event_encoded),
+                Ok(event) => WsMessage::Text(event.encoded),
                 Err(RecvError::Lagged(lagged)) => {
                     log::warn!("lagged {} at {}", lagged, mailbox);
                     continue;
@@ -93,40 +90,9 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
 async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
     let event: ClientEvent = serde_json::from_str(&*message)?;
     match event {
-        ClientEvent::Preview {
-            preview: NewPreview {
-                id,
-                channel_id,
-                name,
-                media_id,
-                in_game,
-                is_action,
-                text,
-                entities,
-                start
-            }
-        } => {
+        ClientEvent::Preview { preview } => {
             let user_id = user_id.ok_or(AppError::Unauthenticated)?;
-            let mut conn = database::get().await;
-            let db = &mut *conn;
-            let member = ChannelMember::get(db, &user_id, &channel_id)
-                .await?
-                .ok_or(AppError::NoPermission)?;
-            Event::message_preview(Preview {
-                id,
-                sender_id: user_id,
-                channel_id,
-                parent_message_id: None,
-                name,
-                media_id,
-                in_game,
-                is_action,
-                text,
-                whisper_to_users: None,
-                entities,
-                start,
-                is_master: member.is_master,
-            })
+            preview.broadcast(user_id).await?;
         },
     }
     Ok(())
@@ -139,6 +105,9 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
 
     let EventQuery { mailbox, after } = parse_query(req.uri())?;
     establish_web_socket(req, move |ws_stream| async move {
+        if let Some(user_id) = user_id {
+            Member::set_online(mailbox, user_id).await;
+        }
         let (mut outgoing, incoming) = ws_stream.split();
         let handle_push = async move {
             if let Err(e) = push(mailbox, &mut outgoing, after).await {
@@ -164,6 +133,9 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
         futures::pin_mut!(handle_messages);
         future::select(handle_push, handle_messages).await;
         log::debug!("WebSocket connection close");
+        if let Some(user_id) = user_id {
+            Member::set_offline(mailbox, user_id).await;
+        }
     })
 }
 

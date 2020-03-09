@@ -211,22 +211,3 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     assert!(Message::get(db, &message.id, Some(&user.id)).await?.is_none());
     Ok(())
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Preview {
-    pub id: Uuid,
-    pub sender_id: Uuid,
-    pub channel_id: Uuid,
-    pub parent_message_id: Option<Uuid>,
-    pub name: String,
-    pub media_id: Option<Uuid>,
-    pub in_game: bool,
-    pub is_action: bool,
-    pub is_master: bool,
-    pub text: Option<String>,
-    pub whisper_to_users: Option<Vec<Uuid>>,
-    pub entities: Vec<JsonValue>,
-    #[serde(with = "crate::date_format")]
-    pub start: NaiveDateTime,
-}
