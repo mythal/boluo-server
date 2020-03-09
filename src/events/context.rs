@@ -42,7 +42,7 @@ pub async fn get_receiver(id: &Uuid) -> broadcast::Receiver<SyncEvent> {
     }
 }
 
-type PreviewCache = Mutex<HashMap<Uuid, HashMap<Uuid, SyncEvent>>>;
+pub type PreviewCache = Mutex<HashMap<Uuid, HashMap<Uuid, SyncEvent>>>;
 
 static PREVIEW_CACHE: OnceCell<PreviewCache> = OnceCell::new();
 

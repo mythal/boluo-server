@@ -39,6 +39,7 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
         let mut tx = tx.clone();
         let mut receiver = get_receiver(&mailbox).await;
         let events = Event::get_from_cache(&mailbox, after).await;
+        Event::push_members(mailbox);
         let previews: Vec<String> = {
             let preview_cache = get_preview_cache();
             let channel_map = preview_cache.lock().await;
@@ -135,6 +136,7 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
         log::debug!("WebSocket connection close");
         if let Some(user_id) = user_id {
             Member::set_offline(mailbox, user_id).await;
+            Event::push_members(mailbox);
         }
     })
 }

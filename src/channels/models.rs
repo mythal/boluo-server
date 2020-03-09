@@ -74,6 +74,12 @@ impl Channel {
         if let Some(name) = name {
             validators::DISPLAY_NAME.run(name)?;
         }
+        if let Some(topic) = topic {
+            validators::TOPIC.run(topic)?;
+        }
+        if let Some(dice) = default_dice_type {
+            validators::DICE.run(dice)?;
+        }
         let row = db.query_exactly_one(include_str!("sql/edit_channel.sql"), &[id, &name, &topic, &default_dice_type]).await?;
         Ok(row.get(0))
     }
@@ -296,11 +302,11 @@ impl Member {
         Ok(row.map(|row| Member::mapper(row, online_map)))
     }
 
-    pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<Member>, DbError> {
+    pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: Uuid) -> Result<Vec<Member>, DbError> {
         use postgres_types::Type;
         let none_uuid: Option<Uuid> = None;
         let rows = db
-            .query_typed(include_str!("sql/get_members_information_by_channel.sql"), &[Type::UUID, Type::UUID], &[channel, &none_uuid])
+            .query_typed(include_str!("sql/get_members_information_by_channel.sql"), &[Type::UUID, Type::UUID], &[&channel_id, &none_uuid])
             .await?;
         let online_map = &Member::get_online_map().await;
         Ok(rows.into_iter().map(|row| Member::mapper(row, online_map)).collect())
@@ -371,7 +377,7 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     assert_eq!(joined[1].member.channel_id, channel_2.id);
 
     Member::get_by_user(db, &channel.id, &user.id).await?.unwrap();
-    let member = Member::get_by_channel(db, &channel.id).await?;
+    let member = Member::get_by_channel(db, channel.id).await?;
     assert_eq!(member.len(), 1);
     Member::set_online(channel.id, user.id).await;
     Member::set_offline(channel.id, user.id).await;

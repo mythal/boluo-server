@@ -3,11 +3,14 @@ use uuid::Uuid;
 use crate::events::context;
 use crate::messages::Message;
 use crate::error::CacheError;
-use crate::cache;
+use crate::{cache, database};
 use crate::utils::timestamp;
 use std::collections::HashMap;
 use crate::events::preview::{Preview, NewPreview};
 use crate::events::context::SyncEvent;
+use crate::channels::Channel;
+use crate::channels::models::Member;
+use tokio::spawn;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +26,7 @@ pub enum ClientEvent {
 }
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum EventBody {
@@ -33,10 +36,11 @@ pub enum EventBody {
     MessageEdited { message: Box<Message> },
     MessagePreview { preview: Box<Preview> },
     ChannelDeleted,
-    ChannelEdited,
+    ChannelEdited { channel: Channel },
+    Members { members: Vec<Member> },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Event {
     pub mailbox: Uuid,
@@ -66,8 +70,6 @@ impl Event {
     }
 
     pub fn message_preview(preview: Preview) {
-        use tokio::spawn;
-
         let channel_id = preview.channel_id;
         let preview = Box::new(preview);
         spawn(async move {
@@ -75,6 +77,19 @@ impl Event {
                 log::warn!("{}", e);
             }
         });
+    }
+
+    pub fn push_members(channel_id: Uuid) {
+        spawn(async move {
+            if let Err(e) = Event::fire_members(channel_id).await {
+                log::warn!("Failed to fetch member list: {}", e);
+            }
+        });
+    }
+
+    pub fn channel_edited(channel: Channel) {
+        let channel_id = channel.id;
+        Event::fire(EventBody::ChannelEdited { channel }, channel_id);
     }
 
     pub fn cache_key(mailbox: &Uuid) -> Vec<u8> {
@@ -96,6 +111,29 @@ impl Event {
         context::get_receiver(&mailbox).await.recv().await
     }
 
+    async fn send(mailbox: Uuid, event: SyncEvent) {
+        let broadcast_table = context::get_broadcast_table();
+        let table = broadcast_table.read().await;
+        if let Some(tx) = table.get(&mailbox) {
+            tx.send(event).ok();
+        }
+    }
+
+    async fn fire_members(channel_id: Uuid) -> Result<(), anyhow::Error> {
+
+        let mut db = database::get().await;
+        let members = Member::get_by_channel(&mut *db, channel_id).await?;
+        drop(db);
+        let event = SyncEvent::new(Event{
+            mailbox: channel_id,
+            body: EventBody::Members { members },
+            timestamp: timestamp(),
+        });
+
+        Event::send(channel_id, event).await;
+        Ok(())
+    }
+
     async fn fire_preview(preview: Box<Preview>, mailbox: Uuid) -> Result<(), anyhow::Error> {
         let sender_id = preview.sender_id;
         let event = SyncEvent::new(Event{
@@ -115,11 +153,7 @@ impl Event {
         }
         drop(mailbox_map);
 
-        let broadcast_table = context::get_broadcast_table();
-        let table = broadcast_table.read().await;
-        if let Some(tx) = table.get(&mailbox) {
-            tx.send(event).ok();
-        }
+        Event::send(mailbox, event).await;
         Ok(())
     }
 
@@ -135,16 +169,12 @@ impl Event {
         cache.set_with_time(&*key, event.encoded.as_bytes()).await?;
         drop(cache);
 
-        let broadcast_table = context::get_broadcast_table();
-        let table = broadcast_table.read().await;
-        if let Some(tx) = table.get(&mailbox) {
-            tx.send(event).ok();
-        }
+
+        Event::send(mailbox, event).await;
         Ok(())
     }
 
     pub fn fire(body: EventBody, mailbox: Uuid) {
-        use tokio::spawn;
         spawn(async move {
             if let Err(e) = Event::async_fire(body, mailbox).await {
                 log::warn!("Error on fire event: {}", e);

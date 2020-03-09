@@ -36,7 +36,7 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
     let mut conn = database::get().await;
     let db = &mut *conn;
     let (channel, space) = Channel::get_with_space(db, &query.id).await?.ok_or(AppError::NotFound("channels"))?;
-    let members = Member::get_by_channel(db, &channel.id).await?;
+    let members = Member::get_by_channel(db, channel.id).await?;
     let color_list = ChannelMember::get_color_list(db, &channel.id).await?;
     let with_related = ChannelWithRelated {
         channel,
@@ -73,7 +73,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     Ok(joined)
 }
 
-async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
+async fn edit(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let Edit { channel_id, name, topic, default_dice_type } = common::parse_body(req).await?;
 
@@ -90,9 +90,10 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
         return Err(AppError::NoPermission);
     }
     let channel = Channel::edit(db, &channel_id, name.as_ref().map(String::as_str), topic.as_ref().map(String::as_str), default_dice_type.as_ref().map(String::as_str))
-        .await;
+        .await?;
     trans.commit().await?;
-    channel.map_err(Into::into)
+    Event::channel_edited(channel);
+    Ok(true)
 }
 
 async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
@@ -114,6 +115,7 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
     let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color)
         .await?;
     trans.commit().await?;
+    Event::push_members(channel_id);
     channel_member.ok_or(AppError::NotFound("character member"))
 }
 
@@ -141,6 +143,7 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         .await?
         .ok_or(AppError::NoPermission)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, false).await?;
+    Event::push_members(channel_id);
     Ok(ChannelWithMember { channel, member })
 }
 
@@ -149,6 +152,7 @@ async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await;
     ChannelMember::remove_user(&mut *db, &session.user_id, &id).await?;
+    Event::push_members(id);
     Ok(true)
 }
 

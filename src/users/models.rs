@@ -1,5 +1,5 @@
 use postgres_types::FromSql;
-use serde::Serialize;
+use serde::{Serialize};
 use uuid::Uuid;
 
 use crate::database::Querist;

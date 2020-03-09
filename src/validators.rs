@@ -68,9 +68,13 @@ pub static HEX_COLOR: Validator<str> = Validator(&[
     ("Invalid color", &is_match!(r"#[0-9abcdef]{6}"))
 ]);
 
-pub static BIO: Validator<str> = Validator(&[("Bio shall not be more than 2048.", &max!(2048))]);
+pub static BIO: Validator<str> = Validator(&[("Bio shall not be more than 256.", &max!(256))]);
+
+pub static TOPIC: Validator<str> = Validator(&[("Topic shall not be more than 128.", &max!(128))]);
 
 pub static DESCRIPTION: Validator<str> = Validator(&[("Description shall not be more than 256.", &max!(256))]);
+
+pub static DICE: Validator<str> = Validator(&[("Illegal dice format.", &is_match!(r"^d\d{1,3}|FATE$"))]);
 
 #[test]
 fn validator_test() {
