@@ -35,14 +35,18 @@ impl Channel {
         space_id: &Uuid,
         name: &str,
         is_public: bool,
+        default_dice_type: Option<&str>,
     ) -> Result<Channel, ModelError> {
         use crate::validators;
 
         let name = name.trim();
         validators::DISPLAY_NAME.run(name)?;
+        if let Some(default_dice_type) = default_dice_type {
+            validators::DICE.run(default_dice_type)?;
+        }
 
         let row = db
-            .query_exactly_one(include_str!("sql/create_channel.sql"), &[space_id, &name, &is_public])
+            .query_exactly_one(include_str!("sql/create_channel.sql"), &[space_id, &name, &is_public, &default_dice_type])
             .await?;
 
         Ok(row.get(0))
@@ -126,7 +130,7 @@ impl ChannelMember {
 
         let character_name = character_name.trim();
         if character_name.len() > 0 {
-            validators::DISPLAY_NAME.run(character_name)?;
+            validators::CHARACTER_NAME.run(character_name)?;
         }
         db.query_exactly_one(
             include_str!("sql/add_user_to_channel.sql"),
@@ -330,9 +334,9 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     let space_name = "Test Space";
 
     let user = User::register(db, email, username, nickname, password).await?;
-    let space = Space::create(db, space_name.to_string(), &user.id, None).await?;
+    let space = Space::create(db, space_name.to_string(), &user.id, String::new(), None, None).await?;
     let channel_name = "Test Channel";
-    let channel = Channel::create(db, &space.id, "Test Channel", true).await?;
+    let channel = Channel::create(db, &space.id, "Test Channel", true, None).await?;
     let channel = Channel::get_by_id(db, &channel.id).await?.unwrap();
     assert_eq!(channel.space_id, space.id);
     assert_eq!(channel.name, channel_name);
@@ -367,7 +371,7 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
 
     ChannelMember::add_user(db, &user.id, &channel.id, "", false).await.unwrap();
 
-    let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true).await?;
+    let channel_2 = Channel::create(db, &space.id, "Test Channel 2", true, None).await?;
     ChannelMember::add_user(db, &user.id, &channel_2.id, "", false).await.unwrap();
     ChannelMember::get(db, &user.id, &channel.id).await.unwrap();
 

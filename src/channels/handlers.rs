@@ -53,6 +53,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         space_id,
         name,
         character_name,
+        default_dice_type
     } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
@@ -63,7 +64,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         .ok_or_else(|| AppError::BadRequest(format!("The space not found")))?;
     admin_only(db, &session.user_id, &space_id).await?;
 
-    let channel = Channel::create(db, &space_id, &*name, true).await?;
+    let channel = Channel::create(db, &space_id, &*name, true, default_dice_type.as_ref().map(String::as_str)).await?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, true).await?;
     trans.commit().await?;
     let joined = ChannelWithMember {

@@ -32,13 +32,19 @@ impl Space {
         db: &mut T,
         name: String,
         owner_id: &Uuid,
+        description: String,
         password: Option<String>,
+        default_dice_type: Option<String>,
     ) -> Result<Space, ModelError> {
-        use crate::validators::DISPLAY_NAME;
+        use crate::validators::{DISPLAY_NAME, DICE, DESCRIPTION};
         let name = name.trim();
         DISPLAY_NAME.run(name)?;
+        if let Some(default_dice_type) = default_dice_type.as_ref() {
+            DICE.run(default_dice_type)?;
+        }
+        DESCRIPTION.run(description.as_str())?;
         let row = db
-            .query_exactly_one(include_str!("sql/create.sql"), &[&name, owner_id, &password])
+            .query_exactly_one(include_str!("sql/create.sql"), &[&name, owner_id, &password, &default_dice_type, &description])
             .await?;
         Ok(row.get(0))
     }
@@ -83,6 +89,7 @@ impl Space {
         space_id: Uuid,
         name: Option<String>,
         description: Option<String>,
+        default_dice_type: Option<String>,
     ) -> Result<Option<Space>, ModelError> {
         use crate::validators;
         let name = name.as_ref().map(|s| s.trim());
@@ -93,7 +100,10 @@ impl Space {
         if let Some(description) = description {
             validators::DESCRIPTION.run(description)?;
         }
-        let result = db.query_one(include_str!("sql/edit.sql"), &[&space_id, &name, &description]).await?;
+        if let Some(dice) = default_dice_type.as_ref() {
+            validators::DICE.run(dice)?;
+        }
+        let result = db.query_one(include_str!("sql/edit.sql"), &[&space_id, &name, &description, &default_dice_type]).await?;
         Ok(result.map(|row| row.get(0)))
     }
 
@@ -216,7 +226,7 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     let nickname = "Test User";
     let space_name = "Pure Illusion";
     let user = User::register(db, email, username, nickname, password).await.unwrap();
-    let space = Space::create(db, space_name.to_string(), &user.id, None).await?;
+    let space = Space::create(db, space_name.to_string(), &user.id, String::new(), None, None).await?;
     let space = Space::get_by_name(db, &space.name).await?.unwrap();
     let space = Space::get_by_id(db, &space.id).await?.unwrap();
     assert!(Space::is_public(db, &space.id).await?.unwrap());
@@ -224,10 +234,10 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
     let new_name = "Mythal";
     let description = "some description".to_string();
-    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description)).await?.unwrap();
+    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None).await?.unwrap();
     assert_eq!(space_edited.name, new_name);
 
-    let _space_2 = Space::create(db, "学园都市".to_string(), &user.id, None).await?;
+    let _space_2 = Space::create(db, "学园都市".to_string(), &user.id, String::new(), None, None).await?;
     // let result = Space::edit(db, _space_2.id, Some(new_name.to_string())).await;
     // assert!(if let Err(ModelError::Conflict(_)) = result { true } else { false });
     // members

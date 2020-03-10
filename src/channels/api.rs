@@ -12,6 +12,7 @@ pub struct Create {
     pub name: String,
     #[serde(default)]
     pub character_name: String,
+    pub default_dice_type: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]

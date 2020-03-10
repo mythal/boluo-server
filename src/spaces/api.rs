@@ -6,6 +6,8 @@ use uuid::Uuid;
 pub struct Create {
     pub name: String,
     pub password: Option<String>,
+    pub description: String,
+    pub default_dice_type: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -14,6 +16,7 @@ pub struct Edit {
     pub space_id: Uuid,
     pub name: Option<String>,
     pub description: Option<String>,
+    pub default_dice_type: Option<String>,
 }
 
 #[derive(Serialize, Debug)]

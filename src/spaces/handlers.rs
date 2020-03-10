@@ -43,12 +43,12 @@ async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError>
 
 async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let session = authenticate(&req).await?;
-    let Create { name, password }: Create = common::parse_body(req).await?;
+    let Create { name, password, description, default_dice_type }: Create = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let space = Space::create(db, name, &session.user_id, password).await?;
+    let space = Space::create(db, name, &session.user_id, description, password, default_dice_type).await?;
     let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
     trans.commit().await?;
     log::info!("a channel ({}) was just created", space.id);
@@ -57,7 +57,7 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
 
 async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let session = authenticate(&req).await?;
-    let Edit { space_id, name, description }: Edit = common::parse_body(req).await?;
+    let Edit { space_id, name, description, default_dice_type }: Edit = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -69,7 +69,7 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     if !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
-    let space = Space::edit(db, space_id, name, description)
+    let space = Space::edit(db, space_id, name, description, default_dice_type)
         .await?
         .ok_or_else(|| unexpected!("No such space found."))?;
     trans.commit().await?;

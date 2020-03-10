@@ -163,11 +163,11 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let space_name = "Test Space";
 
     let user = User::register(db, email, username, nickname, password).await.unwrap();
-    let space = Space::create(db, space_name.to_string(), &user.id, None).await?;
+    let space = Space::create(db, space_name.to_string(), &user.id, String::new(), None, None).await?;
     SpaceMember::add_admin(db, &user.id, &space.id).await?;
 
     let channel_name = "Test Channel";
-    let channel = Channel::create(db, &space.id, channel_name, true).await?;
+    let channel = Channel::create(db, &space.id, channel_name, true, None).await?;
     ChannelMember::add_user(db, &user.id, &channel.id, "", false).await?;
     ChannelMember::set_master(db, &user.id, &channel.id, true).await?;
     let text = "hello, world";
