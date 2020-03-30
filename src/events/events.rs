@@ -20,24 +20,35 @@ pub struct EventQuery {
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "UPPERCASE", tag = "type")]
 pub enum ClientEvent {
+    #[serde(rename_all = "camelCase")]
     Preview { preview: NewPreview },
+    #[serde(rename_all = "camelCase")]
+    Heartbeat { mailbox: Uuid },
 }
 
 
 #[derive(Serialize, Debug)]
 #[serde(tag = "type")]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum EventBody {
+    #[serde(rename_all = "camelCase")]
     NewMessage { message: Box<Message> },
     #[serde(rename_all = "camelCase")]
     MessageDeleted { message_id: Uuid },
+    #[serde(rename_all = "camelCase")]
     MessageEdited { message: Box<Message> },
+    #[serde(rename_all = "camelCase")]
     MessagePreview { preview: Box<Preview> },
     ChannelDeleted,
+    #[serde(rename_all = "camelCase")]
     ChannelEdited { channel: Channel },
+    #[serde(rename_all = "camelCase")]
     Members { members: Vec<Member> },
+    Initialized,
+    #[serde(rename_all = "camelCase")]
+    Heartbeat { user_id: Uuid },
 }
 
 #[derive(Serialize, Debug)]
@@ -76,6 +87,16 @@ impl Event {
             if let Err(e) = Event::fire_preview(preview, channel_id).await {
                 log::warn!("{}", e);
             }
+        });
+    }
+
+    pub fn heartbeat(mailbox: Uuid, user_id: Uuid) {
+        spawn(async move {
+            Event::send(mailbox, SyncEvent::new(Event {
+                mailbox,
+                body: EventBody::Heartbeat { user_id },
+                timestamp: timestamp(),
+            })).await;
         });
     }
 

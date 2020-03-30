@@ -15,7 +15,6 @@ use uuid::Uuid;
 use crate::events::events::ClientEvent;
 use crate::csrf::authenticate;
 use crate::events::context::{get_receiver, get_preview_cache};
-use crate::channels::models::Member;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
@@ -95,6 +94,11 @@ async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), a
             let user_id = user_id.ok_or(AppError::Unauthenticated)?;
             preview.broadcast(user_id).await?;
         },
+        ClientEvent::Heartbeat { mailbox } => {
+            if let Some(user_id) = user_id {
+                Event::heartbeat(mailbox, user_id);
+            }
+        },
     }
     Ok(())
 }
@@ -106,9 +110,6 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
 
     let EventQuery { mailbox, after } = parse_query(req.uri())?;
     establish_web_socket(req, move |ws_stream| async move {
-        if let Some(user_id) = user_id {
-            Member::set_online(mailbox, user_id).await;
-        }
         let (mut outgoing, incoming) = ws_stream.split();
         let handle_push = async move {
             if let Err(e) = push(mailbox, &mut outgoing, after).await {
@@ -134,10 +135,6 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
         futures::pin_mut!(handle_messages);
         future::select(handle_push, handle_messages).await;
         log::debug!("WebSocket connection close");
-        if let Some(user_id) = user_id {
-            Member::set_offline(mailbox, user_id).await;
-            Event::push_members(mailbox);
-        }
     })
 }
 
