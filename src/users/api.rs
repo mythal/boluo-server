@@ -1,8 +1,8 @@
 use super::User;
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use crate::channels::api::ChannelWithMember;
 use crate::spaces::api::SpaceWithMember;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -64,9 +64,7 @@ pub static EMAIL: Validator<str> = Validator(&[
     ("Invalid e-mail address", &is_match!(r"^\S+@\S+\.\S+$")),
 ]);
 
-pub static HEX_COLOR: Validator<str> = Validator(&[
-    ("Invalid color", &is_match!(r"#[0-9abcdef]{6}"))
-]);
+pub static HEX_COLOR: Validator<str> = Validator(&[("Invalid color", &is_match!(r"#[0-9abcdef]{6}"))]);
 
 pub static BIO: Validator<str> = Validator(&[("Bio shall not be more than 256.", &max!(256))]);
 

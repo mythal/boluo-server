@@ -1,5 +1,5 @@
 use postgres_types::FromSql;
-use serde::{Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::database::Querist;
@@ -38,7 +38,7 @@ impl User {
         nickname: &str,
         password: &str,
     ) -> Result<User, ModelError> {
-        use crate::validators::{EMAIL, DISPLAY_NAME, PASSWORD, NAME};
+        use crate::validators::{DISPLAY_NAME, EMAIL, NAME, PASSWORD};
         let username = username.trim();
         let nickname = nickname.trim();
         let email = email.to_ascii_lowercase();

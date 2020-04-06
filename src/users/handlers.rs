@@ -1,16 +1,16 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::common::{parse_body, parse_query, Response, missing, ok_response};
+use crate::common::{missing, ok_response, parse_body, parse_query, Response};
 use crate::database;
-use crate::session::{revoke_session, remove_session};
+use crate::session::{remove_session, revoke_session};
 
+use crate::channels::Channel;
 use crate::error::AppError;
-use crate::users::api::{Edit, QueryUser, GetMe};
+use crate::spaces::Space;
+use crate::users::api::{Edit, GetMe, QueryUser};
 use crate::{common, context};
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
-use crate::channels::{Channel};
-use crate::spaces::Space;
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -49,7 +49,11 @@ pub async fn get_me(req: Request<Body>) -> Result<Option<GetMe>, AppError> {
         if let Some(user) = user {
             let my_spaces = Space::get_by_user(db, user.id).await?;
             let my_channels = Channel::get_by_user(db, user.id).await?;
-            Ok(Some(GetMe { user, my_channels, my_spaces }))
+            Ok(Some(GetMe {
+                user,
+                my_channels,
+                my_spaces,
+            }))
         } else {
             remove_session(session.id).await?;
             log::warn!("session is valid, but user can't be found at database.");
@@ -90,7 +94,11 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let token = if form.with_token { Some(token) } else { None };
     let my_spaces = Space::get_by_user(db, user.id).await?;
     let my_channels = Channel::get_by_user(db, user.id).await?;
-    let me = GetMe { user, my_spaces, my_channels };
+    let me = GetMe {
+        user,
+        my_spaces,
+        my_channels,
+    };
     let mut response = ok_response(LoginReturn { me, token });
     let headers = response.headers_mut();
     headers.insert(SET_COOKIE, HeaderValue::from_str(&*session_cookie).unwrap());
@@ -127,7 +135,9 @@ pub async fn edit(req: Request<Body>) -> Result<User, AppError> {
     let session = authenticate(&req).await?;
     let Edit { nickname, bio, avatar }: Edit = parse_body(req).await?;
     let mut db = database::get().await;
-    User::edit(&mut *db, &session.user_id, nickname, bio, avatar).await.map_err(Into::into)
+    User::edit(&mut *db, &session.user_id, nickname, bio, avatar)
+        .await
+        .map_err(Into::into)
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {

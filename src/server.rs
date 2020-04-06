@@ -12,14 +12,14 @@ use hyper::{Body, Request, Server, Uri};
 mod utils;
 #[macro_use]
 mod error;
-mod date_format;
-mod common;
 mod cache;
 mod channels;
+mod common;
 mod context;
 mod cors;
 mod csrf;
 mod database;
+mod date_format;
 mod events;
 mod logger;
 mod media;
@@ -28,12 +28,12 @@ mod pool;
 mod session;
 mod spaces;
 mod users;
-mod websocket;
 mod validators;
+mod websocket;
 
-use crate::common::{Response, missing, ok_response, err_response};
-use crate::error::AppError;
+use crate::common::{err_response, missing, ok_response, Response};
 use crate::cors::allow_origin;
+use crate::error::AppError;
 
 async fn router(req: Request<Body>) -> Result<Response, AppError> {
     let path = req.uri().path().to_string();
@@ -61,10 +61,8 @@ fn log_error(e: &AppError, method: &str, uri: &Uri, elapsed: u128) {
     use std::error::Error;
     use AppError::*;
     match e {
-        NotFound(_) | Conflict(_) =>
-            log::debug!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
-        Validation(_) | BadRequest(_) | MethodNotAllowed =>
-            log::info!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
+        NotFound(_) | Conflict(_) => log::debug!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
+        Validation(_) | BadRequest(_) | MethodNotAllowed => log::info!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
         e => {
             if let Some(source) = e.source() {
                 log::error!("{:>6} {} {}ms - {} - source: {:?}", method, uri, elapsed, e, source)
@@ -93,7 +91,7 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
         Ok(response) => {
             log::debug!("{:>6} {} {}ms", method, uri, elapsed);
             Ok(response)
-        },
+        }
         Err(e) => {
             log_error(&e, method, &uri, elapsed);
             Ok(err_response(e))

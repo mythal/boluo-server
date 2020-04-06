@@ -1,27 +1,30 @@
-use hyper::header::{HeaderValue, HeaderMap, SEC_WEBSOCKET_KEY, UPGRADE, CONNECTION};
-use hyper::upgrade::Upgraded;
-use std::future::Future;
-use tokio_tungstenite::WebSocketStream;
-pub use tokio_tungstenite::tungstenite::{Message as WsMessage, Error as WsError};
+use crate::common::{Request, Response};
 use crate::error::AppError;
 use crate::utils::sha1;
-use crate::common::{Request, Response};
+use hyper::header::{HeaderMap, HeaderValue, CONNECTION, SEC_WEBSOCKET_KEY, UPGRADE};
+use hyper::upgrade::Upgraded;
 use hyper::Body;
+use std::future::Future;
+pub use tokio_tungstenite::tungstenite::{Error as WsError, Message as WsMessage};
+use tokio_tungstenite::WebSocketStream;
 
 pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppError> {
-    let upgrade = headers.get(UPGRADE)
+    let upgrade = headers
+        .get(UPGRADE)
         .and_then(|v| v.to_str().ok())
         .ok_or(AppError::BadRequest(String::new()))?;
     if upgrade.trim() != "websocket" {
         return Err(AppError::BadRequest(String::new()));
     }
-    let connection = headers.get(CONNECTION)
+    let connection = headers
+        .get(CONNECTION)
         .and_then(|v| v.to_str().ok())
         .ok_or(AppError::BadRequest(String::new()))?;
     if connection.find("Upgrade").is_none() {
         return Err(AppError::BadRequest(String::new()));
     }
-    let mut key = headers.get(SEC_WEBSOCKET_KEY)
+    let mut key = headers
+        .get(SEC_WEBSOCKET_KEY)
         .and_then(|key| key.to_str().ok())
         .ok_or(AppError::BadRequest("Failed to read ws key from headers".to_string()))?
         .to_string();
@@ -30,15 +33,14 @@ pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppErr
     HeaderValue::from_str(&*accept).map_err(unexpected!())
 }
 
-
 pub fn establish_web_socket<H, F>(req: Request, handler: H) -> Result<Response, AppError>
 where
     H: FnOnce(WebSocketStream<Upgraded>) -> F,
     H: Send + 'static,
-    F: Future<Output=()> + Send,
+    F: Future<Output = ()> + Send,
 {
-    use tokio_tungstenite::tungstenite::protocol::Role;
     use hyper::{header, StatusCode};
+    use tokio_tungstenite::tungstenite::protocol::Role;
     let accept = check_websocket_header(req.headers())?;
     tokio::spawn(async {
         match req.into_body().on_upgrade().await {

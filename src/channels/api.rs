@@ -1,9 +1,9 @@
 use super::models::{Channel, ChannelMember};
+use crate::channels::models::Member;
 use crate::spaces::Space;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::collections::HashMap;
-use crate::channels::models::Member;
+use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +23,6 @@ pub struct Edit {
     pub topic: Option<String>,
     pub default_dice_type: Option<String>,
 }
-
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

@@ -1,7 +1,7 @@
 use super::api::{Create, Edit, SpaceWithRelated};
 use super::{Space, SpaceMember};
-use crate::common::{self, parse_query, IdQuery, Response, missing, ok_response};
 use crate::channels::Channel;
+use crate::common::{self, missing, ok_response, parse_query, IdQuery, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
@@ -43,7 +43,12 @@ async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError>
 
 async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let session = authenticate(&req).await?;
-    let Create { name, password, description, default_dice_type }: Create = common::parse_body(req).await?;
+    let Create {
+        name,
+        password,
+        description,
+        default_dice_type,
+    }: Create = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -57,7 +62,12 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
 
 async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let session = authenticate(&req).await?;
-    let Edit { space_id, name, description, default_dice_type }: Edit = common::parse_body(req).await?;
+    let Edit {
+        space_id,
+        name,
+        description,
+        default_dice_type,
+    }: Edit = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -122,7 +132,7 @@ async fn delete(req: Request<Body>) -> Result<Space, AppError> {
     if space.owner_id == session.user_id {
         Space::delete(db, &id).await?;
         log::info!("A space ({}) was deleted", space.id);
-        return Ok(space)
+        return Ok(space);
     }
     log::warn!("The user {} failed to try delete a space {}", session.user_id, space.id);
     Err(AppError::NoPermission)

@@ -1,28 +1,28 @@
 use super::events::EventQuery;
 use super::Event;
-use crate::common::{parse_query, Response, missing};
-use crate::error::AppError;
-use std::time::Duration;
-use anyhow::anyhow;
-use hyper::{Body, Request};
-use futures::{StreamExt, SinkExt, TryStreamExt};
-use futures::stream::SplitSink;
-use crate::websocket::{establish_web_socket, WsMessage, WsError};
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite;
-use hyper::upgrade::Upgraded;
-use uuid::Uuid;
-use crate::events::events::ClientEvent;
+use crate::common::{missing, parse_query, Response};
 use crate::csrf::authenticate;
-use crate::events::context::{get_receiver, get_preview_cache};
+use crate::error::AppError;
+use crate::events::context::{get_preview_cache, get_receiver};
+use crate::events::events::ClientEvent;
+use crate::websocket::{establish_web_socket, WsError, WsMessage};
+use anyhow::anyhow;
+use futures::stream::SplitSink;
+use futures::{SinkExt, StreamExt, TryStreamExt};
+use hyper::upgrade::Upgraded;
+use hyper::{Body, Request};
+use std::time::Duration;
+use tokio_tungstenite::tungstenite;
+use tokio_tungstenite::WebSocketStream;
+use uuid::Uuid;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
 async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
-    use tokio::time::interval;
-    use tokio::sync::broadcast::RecvError;
     use futures::channel::mpsc::channel;
-    use tokio_tungstenite::tungstenite::Error::{ConnectionClosed, AlreadyClosed};
+    use tokio::sync::broadcast::RecvError;
+    use tokio::time::interval;
+    use tokio_tungstenite::tungstenite::Error::{AlreadyClosed, ConnectionClosed};
     let (tx, mut rx) = channel::<WsMessage>(32);
     let send_message = async move {
         while let Some(message) = rx.next().await {
@@ -61,21 +61,18 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
                 Err(RecvError::Lagged(lagged)) => {
                     log::warn!("lagged {} at {}", lagged, mailbox);
                     continue;
-                },
+                }
                 Err(RecvError::Closed) => return Err(anyhow!("broadcast ({}) is closed.", mailbox)),
             };
             if let Err(_) = tx.send(message).await {
-                break
+                break;
             }
         }
         Ok(())
     };
-    let ping = interval(Duration::from_secs(30))
-        .for_each(|_| {
-            async {
-                tx.clone().send(WsMessage::Ping(Vec::new())).await.ok();
-            }
-        });
+    let ping = interval(Duration::from_secs(30)).for_each(|_| async {
+        tx.clone().send(WsMessage::Ping(Vec::new())).await.ok();
+    });
 
     tokio::select! {
         r = send_message => { r?; },
@@ -93,19 +90,19 @@ async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), a
         ClientEvent::Preview { preview } => {
             let user_id = user_id.ok_or(AppError::Unauthenticated)?;
             preview.broadcast(user_id).await?;
-        },
+        }
         ClientEvent::Heartbeat { mailbox } => {
             if let Some(user_id) = user_id {
                 Event::heartbeat(mailbox, user_id);
             }
-        },
+        }
     }
     Ok(())
 }
 
 async fn connect(req: Request<Body>) -> Result<Response, AppError> {
-    use tokio::stream::StreamExt as _;
     use futures::future;
+    use tokio::stream::StreamExt as _;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
 
     let EventQuery { mailbox, after } = parse_query(req.uri())?;
@@ -121,15 +118,13 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
             .timeout(Duration::from_secs(40))
             .map_err(|_| WsError::AlreadyClosed)
             .and_then(future::ready)
-            .try_for_each(|message: WsMessage| {
-                async move {
-                    if let WsMessage::Text(message) = message {
-                        if let Err(e) = receive_message(user_id, message).await {
-                            log::warn!("Failed to send event: {}", e);
-                        }
+            .try_for_each(|message: WsMessage| async move {
+                if let WsMessage::Text(message) = message {
+                    if let Err(e) = receive_message(user_id, message).await {
+                        log::warn!("Failed to send event: {}", e);
                     }
-                    Ok(())
                 }
+                Ok(())
             });
         futures::pin_mut!(handle_push);
         futures::pin_mut!(handle_messages);

@@ -1,6 +1,6 @@
 use super::api::Upload;
 use super::models::Media;
-use crate::common::{parse_query, Response, missing, ok_response};
+use crate::common::{missing, ok_response, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
@@ -88,7 +88,7 @@ async fn upload(req: Request<Body>) -> Result<Media, AppError> {
     }
 
     let mut conn = database::get().await;
-     Media::create(
+    Media::create(
         &mut *conn,
         &*mime_type,
         session.user_id,
@@ -97,8 +97,8 @@ async fn upload(req: Request<Body>) -> Result<Media, AppError> {
         hash,
         size as i32,
     )
-         .await
-         .map_err(Into::into)
+    .await
+    .map_err(Into::into)
 }
 
 async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(), anyhow::Error> {

@@ -129,8 +129,8 @@ impl Client {
         log::warn!("A postgres connection was broken.");
     }
     pub async fn with_config(config: &tokio_postgres::Config) -> Client {
-        use tokio::time::delay_for;
         use std::time::Duration;
+        use tokio::time::delay_for;
 
         let mut connect_result = config.connect(tokio_postgres::NoTls).await;
         let mut duration = Duration::from_secs(1);

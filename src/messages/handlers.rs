@@ -1,14 +1,14 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
-use crate::common::{parse_query, Response, missing, ok_response};
 use crate::channels::{Channel, ChannelMember};
+use crate::common::{missing, ok_response, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::events::Event;
+use crate::messages::api::ByChannel;
 use crate::spaces::SpaceMember;
 use crate::{common, database};
 use hyper::{Body, Request};
-use crate::messages::api::{ByChannel};
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
@@ -86,7 +86,9 @@ async fn query(req: Request<Body>) -> Result<Message, AppError> {
     let mut conn = database::get().await;
     let db = &mut *conn;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
-    Message::get(db, &id, user_id.as_ref()).await?.ok_or(AppError::NotFound("message"))
+    Message::get(db, &id, user_id.as_ref())
+        .await?
+        .ok_or(AppError::NotFound("message"))
 }
 
 async fn delete(req: Request<Body>) -> Result<Message, AppError> {
@@ -131,7 +133,11 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
 }
 
 async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
-    let ByChannel { channel_id, limit, before } = parse_query(req.uri())?;
+    let ByChannel {
+        channel_id,
+        limit,
+        before,
+    } = parse_query(req.uri())?;
 
     let mut db = database::get().await;
     let db = &mut *db;
@@ -140,7 +146,9 @@ async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
         .await?
         .ok_or(AppError::NotFound("channels"))?;
     let limit = limit.unwrap_or(128);
-    Message::get_by_channel(db, &channel_id, before, limit).await.map_err(Into::into)
+    Message::get_by_channel(db, &channel_id, before, limit)
+        .await
+        .map_err(Into::into)
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {

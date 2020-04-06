@@ -1,16 +1,16 @@
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
-use crate::events::context;
-use crate::messages::Message;
-use crate::error::CacheError;
-use crate::{cache, database};
-use crate::utils::timestamp;
-use std::collections::HashMap;
-use crate::events::preview::{Preview, NewPreview};
-use crate::events::context::SyncEvent;
-use crate::channels::Channel;
 use crate::channels::models::Member;
+use crate::channels::Channel;
+use crate::error::CacheError;
+use crate::events::context;
+use crate::events::context::SyncEvent;
+use crate::events::preview::{NewPreview, Preview};
+use crate::messages::Message;
+use crate::utils::timestamp;
+use crate::{cache, database};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::spawn;
+use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -28,27 +28,40 @@ pub enum ClientEvent {
     Heartbeat { mailbox: Uuid },
 }
 
-
 #[derive(Serialize, Debug)]
 #[serde(tag = "type")]
 #[serde(rename_all = "UPPERCASE")]
 pub enum EventBody {
     #[serde(rename_all = "camelCase")]
-    NewMessage { message: Box<Message> },
+    NewMessage {
+        message: Box<Message>,
+    },
     #[serde(rename_all = "camelCase")]
-    MessageDeleted { message_id: Uuid },
+    MessageDeleted {
+        message_id: Uuid,
+    },
     #[serde(rename_all = "camelCase")]
-    MessageEdited { message: Box<Message> },
+    MessageEdited {
+        message: Box<Message>,
+    },
     #[serde(rename_all = "camelCase")]
-    MessagePreview { preview: Box<Preview> },
+    MessagePreview {
+        preview: Box<Preview>,
+    },
     ChannelDeleted,
     #[serde(rename_all = "camelCase")]
-    ChannelEdited { channel: Channel },
+    ChannelEdited {
+        channel: Channel,
+    },
     #[serde(rename_all = "camelCase")]
-    Members { members: Vec<Member> },
+    Members {
+        members: Vec<Member>,
+    },
     Initialized,
     #[serde(rename_all = "camelCase")]
-    Heartbeat { user_id: Uuid },
+    Heartbeat {
+        user_id: Uuid,
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -92,11 +105,15 @@ impl Event {
 
     pub fn heartbeat(mailbox: Uuid, user_id: Uuid) {
         spawn(async move {
-            Event::send(mailbox, SyncEvent::new(Event {
+            Event::send(
                 mailbox,
-                body: EventBody::Heartbeat { user_id },
-                timestamp: timestamp(),
-            })).await;
+                SyncEvent::new(Event {
+                    mailbox,
+                    body: EventBody::Heartbeat { user_id },
+                    timestamp: timestamp(),
+                }),
+            )
+            .await;
         });
     }
 
@@ -141,11 +158,10 @@ impl Event {
     }
 
     async fn fire_members(channel_id: Uuid) -> Result<(), anyhow::Error> {
-
         let mut db = database::get().await;
         let members = Member::get_by_channel(&mut *db, channel_id).await?;
         drop(db);
-        let event = SyncEvent::new(Event{
+        let event = SyncEvent::new(Event {
             mailbox: channel_id,
             body: EventBody::Members { members },
             timestamp: timestamp(),
@@ -157,7 +173,7 @@ impl Event {
 
     async fn fire_preview(preview: Box<Preview>, mailbox: Uuid) -> Result<(), anyhow::Error> {
         let sender_id = preview.sender_id;
-        let event = SyncEvent::new(Event{
+        let event = SyncEvent::new(Event {
             mailbox,
             body: EventBody::MessagePreview { preview },
             timestamp: timestamp(),
@@ -179,7 +195,7 @@ impl Event {
     }
 
     async fn async_fire(body: EventBody, mailbox: Uuid) -> Result<(), anyhow::Error> {
-        let event = SyncEvent::new(Event{
+        let event = SyncEvent::new(Event {
             mailbox,
             body,
             timestamp: timestamp(),
@@ -189,7 +205,6 @@ impl Event {
         let key = Self::cache_key(&mailbox);
         cache.set_with_time(&*key, event.encoded.as_bytes()).await?;
         drop(cache);
-
 
         Event::send(mailbox, event).await;
         Ok(())

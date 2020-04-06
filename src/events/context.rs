@@ -1,9 +1,9 @@
-use tokio::sync::{broadcast, RwLock, Mutex};
-use uuid::Uuid;
-use std::collections::{HashMap};
-use once_cell::sync::OnceCell;
 use crate::events::Event;
+use once_cell::sync::OnceCell;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::{broadcast, Mutex, RwLock};
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct SyncEvent {

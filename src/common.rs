@@ -8,7 +8,6 @@ pub type Request = hyper::Request<hyper::Body>;
 pub type Response = hyper::Response<hyper::Body>;
 pub type HyperResult = Result<hyper::Response<hyper::Body>, hyper::Error>;
 
-
 fn build_response(bytes: Vec<u8>, status: StatusCode) -> Response {
     hyper::Response::builder()
         .header(hyper::header::CONTENT_TYPE, "application/json")
@@ -77,10 +76,8 @@ impl<T: Serialize> WebResult<T> {
             ok: None,
             err: Some(WebError::from(err.into())),
         }
-
     }
 }
-
 
 pub fn missing() -> Result<Response, AppError> {
     Err(AppError::missing())

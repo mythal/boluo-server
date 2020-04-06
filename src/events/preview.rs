@@ -1,11 +1,11 @@
-use serde::{Serialize, Deserialize};
-use serde_json::Value as JsonValue;
-use chrono::NaiveDateTime;
-use uuid::Uuid;
 use crate::channels::ChannelMember;
+use crate::database;
 use crate::error::AppError;
 use crate::events::Event;
-use crate::database;
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +42,6 @@ pub struct NewPreview {
 }
 
 impl NewPreview {
-
     pub async fn broadcast(self, user_id: Uuid) -> Result<(), AppError> {
         let NewPreview {
             id,
@@ -53,7 +52,7 @@ impl NewPreview {
             is_action,
             text,
             entities,
-            start
+            start,
         } = self;
 
         let mut conn = database::get().await;
@@ -79,5 +78,3 @@ impl NewPreview {
         Ok(())
     }
 }
-
-

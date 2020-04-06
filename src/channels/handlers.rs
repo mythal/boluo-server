@@ -1,8 +1,9 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::common::{self, parse_body, parse_query, IdQuery, Response, missing, ok_response};
-use crate::channels::api::{JoinChannel, ChannelWithMember, ChannelWithRelated, EditMember};
+use crate::channels::api::{ChannelWithMember, ChannelWithRelated, EditMember, JoinChannel};
+use crate::channels::models::Member;
+use crate::common::{self, missing, ok_response, parse_body, parse_query, IdQuery, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
@@ -11,7 +12,6 @@ use crate::events::Event;
 use crate::spaces::{Space, SpaceMember};
 use hyper::{Body, Request};
 use uuid::Uuid;
-use crate::channels::models::Member;
 
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
     let member = SpaceMember::get(db, user_id, space_id)
@@ -27,7 +27,9 @@ async fn query(req: Request<Body>) -> Result<Channel, AppError> {
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut db = database::get().await;
-    Channel::get_by_id(&mut *db, &query.id).await?.ok_or(AppError::NotFound("channels"))
+    Channel::get_by_id(&mut *db, &query.id)
+        .await?
+        .ok_or(AppError::NotFound("channels"))
 }
 
 async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, AppError> {
@@ -35,7 +37,9 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
 
     let mut conn = database::get().await;
     let db = &mut *conn;
-    let (channel, space) = Channel::get_with_space(db, &query.id).await?.ok_or(AppError::NotFound("channels"))?;
+    let (channel, space) = Channel::get_with_space(db, &query.id)
+        .await?
+        .ok_or(AppError::NotFound("channels"))?;
     let members = Member::get_by_channel(db, channel.id).await?;
     let color_list = ChannelMember::get_color_list(db, &channel.id).await?;
     let with_related = ChannelWithRelated {
@@ -53,7 +57,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         space_id,
         name,
         character_name,
-        default_dice_type
+        default_dice_type,
     } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
@@ -64,7 +68,14 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         .ok_or_else(|| AppError::BadRequest(format!("The space not found")))?;
     admin_only(db, &session.user_id, &space_id).await?;
 
-    let channel = Channel::create(db, &space_id, &*name, true, default_dice_type.as_ref().map(String::as_str)).await?;
+    let channel = Channel::create(
+        db,
+        &space_id,
+        &*name,
+        true,
+        default_dice_type.as_ref().map(String::as_str),
+    )
+    .await?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, true).await?;
     trans.commit().await?;
     let joined = ChannelWithMember {
@@ -76,7 +87,12 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
 
 async fn edit(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
-    let Edit { channel_id, name, topic, default_dice_type } = common::parse_body(req).await?;
+    let Edit {
+        channel_id,
+        name,
+        topic,
+        default_dice_type,
+    } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -84,14 +100,18 @@ async fn edit(req: Request<Body>) -> Result<bool, AppError> {
 
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &channel_id)
         .await?
-        .ok_or_else(|| {
-            AppError::NoPermission
-        })?;
+        .ok_or_else(|| AppError::NoPermission)?;
     if !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
-    let channel = Channel::edit(db, &channel_id, name.as_ref().map(String::as_str), topic.as_ref().map(String::as_str), default_dice_type.as_ref().map(String::as_str))
-        .await?;
+    let channel = Channel::edit(
+        db,
+        &channel_id,
+        name.as_ref().map(String::as_str),
+        topic.as_ref().map(String::as_str),
+        default_dice_type.as_ref().map(String::as_str),
+    )
+    .await?;
     trans.commit().await?;
     Event::channel_edited(channel);
     Ok(true)
@@ -99,7 +119,11 @@ async fn edit(req: Request<Body>) -> Result<bool, AppError> {
 
 async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
     let session = authenticate(&req).await?;
-    let EditMember { channel_id, character_name, text_color } = common::parse_body(req).await?;
+    let EditMember {
+        channel_id,
+        character_name,
+        text_color,
+    } = common::parse_body(req).await?;
 
     let mut conn = database::get().await;
     let mut trans = conn.transaction().await?;
@@ -107,14 +131,11 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
 
     ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
-        .ok_or_else(|| {
-            AppError::NoPermission
-        })?;
+        .ok_or_else(|| AppError::NoPermission)?;
 
     let character_name = character_name.as_ref().map(String::as_str);
     let text_color = text_color.as_ref().map(String::as_str);
-    let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color)
-        .await?;
+    let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color).await?;
     trans.commit().await?;
     Event::push_members(channel_id);
     channel_member.ok_or(AppError::NotFound("character member"))

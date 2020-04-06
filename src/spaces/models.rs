@@ -36,7 +36,7 @@ impl Space {
         password: Option<String>,
         default_dice_type: Option<String>,
     ) -> Result<Space, ModelError> {
-        use crate::validators::{DISPLAY_NAME, DICE, DESCRIPTION};
+        use crate::validators::{DESCRIPTION, DICE, DISPLAY_NAME};
         let name = name.trim();
         DISPLAY_NAME.run(name)?;
         if let Some(default_dice_type) = default_dice_type.as_ref() {
@@ -44,7 +44,10 @@ impl Space {
         }
         DESCRIPTION.run(description.as_str())?;
         let row = db
-            .query_exactly_one(include_str!("sql/create.sql"), &[&name, owner_id, &password, &default_dice_type, &description])
+            .query_exactly_one(
+                include_str!("sql/create.sql"),
+                &[&name, owner_id, &password, &default_dice_type, &description],
+            )
             .await?;
         Ok(row.get(0))
     }
@@ -103,7 +106,12 @@ impl Space {
         if let Some(dice) = default_dice_type.as_ref() {
             validators::DICE.run(dice)?;
         }
-        let result = db.query_one(include_str!("sql/edit.sql"), &[&space_id, &name, &description, &default_dice_type]).await?;
+        let result = db
+            .query_one(
+                include_str!("sql/edit.sql"),
+                &[&space_id, &name, &description, &default_dice_type],
+            )
+            .await?;
         Ok(result.map(|row| row.get(0)))
     }
 
@@ -234,7 +242,9 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
     let new_name = "Mythal";
     let description = "some description".to_string();
-    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None).await?.unwrap();
+    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None)
+        .await?
+        .unwrap();
     assert_eq!(space_edited.name, new_name);
 
     let _space_2 = Space::create(db, "学园都市".to_string(), &user.id, String::new(), None, None).await?;

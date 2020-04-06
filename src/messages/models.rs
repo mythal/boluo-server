@@ -46,12 +46,23 @@ impl Message {
         inner_map(result, |row| row.get(0))
     }
 
-    pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid, before: Option<i64>, limit: i32) -> Result<Vec<Message>, ModelError> {
+    pub async fn get_by_channel<T: Querist>(
+        db: &mut T,
+        channel_id: &Uuid,
+        before: Option<i64>,
+        limit: i32,
+    ) -> Result<Vec<Message>, ModelError> {
         use postgres_types::Type;
         if limit > 256 || limit < 1 {
             Err(ValidationFailed("illegal limit range"))?;
         }
-        let rows = db.query_typed(include_str!("sql/get_by_channel.sql"), &[Type::UUID, Type::INT8, Type::INT4], &[channel_id, &before, &limit]).await?;
+        let rows = db
+            .query_typed(
+                include_str!("sql/get_by_channel.sql"),
+                &[Type::UUID, Type::INT8, Type::INT4],
+                &[channel_id, &before, &limit],
+            )
+            .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
