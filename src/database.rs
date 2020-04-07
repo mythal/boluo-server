@@ -109,7 +109,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn new() -> Client {
+    pub async fn new() -> Result<Client, DbError> {
         Client::with_config(&get_postgres_url().parse().unwrap()).await
     }
 
@@ -128,27 +128,17 @@ impl Client {
         self.broken = true;
         log::warn!("A postgres connection was broken.");
     }
-    pub async fn with_config(config: &tokio_postgres::Config) -> Client {
-        use std::time::Duration;
-        use tokio::time::delay_for;
 
-        let mut connect_result = config.connect(tokio_postgres::NoTls).await;
-        let mut duration = Duration::from_secs(1);
-        while let Err(ref e) = connect_result {
-            log::error!("Failed to connect to database: {}", e);
-            duration += Duration::from_secs(1);
-            delay_for(duration).await;
-            connect_result = config.connect(tokio_postgres::NoTls).await;
-        }
-        let (client, connection) = connect_result.unwrap();
+    pub async fn with_config(config: &tokio_postgres::Config) -> Result<Client, DbError> {
+        let (client, connection) = config.connect(tokio_postgres::NoTls).await?;
         tokio::spawn(connection);
         let prepared = HashMap::with_capacity_and_hasher(64, CrcBuilder);
         let broken = false;
-        Client {
+        Ok(Client {
             client,
             prepared,
             broken,
-        }
+        })
     }
 
     pub async fn transaction(&'_ mut self) -> Result<Transaction<'_>, DbError> {

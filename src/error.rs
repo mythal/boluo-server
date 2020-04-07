@@ -1,3 +1,4 @@
+use crate::pool::PoolError;
 use hyper::StatusCode;
 pub use redis::RedisError as CacheError;
 use std::error::Error;
@@ -75,6 +76,12 @@ impl AppError {
     }
 
     pub fn unexpected<E: Error + Send + Sync + 'static>(e: E) -> AppError {
+        AppError::Unexpected(e.into())
+    }
+}
+
+impl From<PoolError> for AppError {
+    fn from(e: PoolError) -> AppError {
         AppError::Unexpected(e.into())
     }
 }

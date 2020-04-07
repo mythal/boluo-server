@@ -23,7 +23,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         order_date,
         media_id,
     } = common::parse_body(req).await?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
@@ -59,7 +59,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
         in_game,
         is_action,
     } = common::parse_body(req).await?;
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     let mut trans = db.transaction().await?;
     let db = &mut trans;
     let message = Message::get(db, &message_id, Some(&session.user_id))
@@ -83,7 +83,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
 
 async fn query(req: Request<Body>) -> Result<Message, AppError> {
     let common::IdQuery { id } = common::parse_query(req.uri())?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
     Message::get(db, &id, user_id.as_ref())
@@ -94,7 +94,7 @@ async fn query(req: Request<Body>) -> Result<Message, AppError> {
 async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
     let common::IdQuery { id } = common::parse_query(req.uri())?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let message = Message::get(db, &id, None)
         .await?
@@ -113,7 +113,7 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
 async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
     let common::IdQuery { id } = common::parse_query(req.uri())?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let message = Message::get(db, &id, None)
         .await?
@@ -139,7 +139,7 @@ async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
         before,
     } = parse_query(req.uri())?;
 
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     let db = &mut *db;
 
     Channel::get_by_id(db, &channel_id)

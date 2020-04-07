@@ -6,13 +6,29 @@ use std::sync::{Arc, Weak};
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum PoolError {
+    #[error("timeout")]
+    Timeout,
+    #[error("canceled")]
+    Canceled,
+}
 
 pub struct Connect<F: Factory> {
     connect: Option<F::Output>,
     pool: Weak<SharedPool<F>>,
 }
 
-impl<F: Factory> Connect<F> {}
+impl<F: Factory> Connect<F> {
+    pub fn new(conn: F::Output) -> Connect<F> {
+        Connect {
+            connect: Some(conn),
+            pool: Weak::new(),
+        }
+    }
+}
 
 impl<F: Factory> Deref for Connect<F> {
     type Target = F::Output;
@@ -32,7 +48,7 @@ impl<F: Factory> Drop for Connect<F> {
     fn drop(&mut self) {
         if let Some(pool) = self.pool.upgrade() {
             let mut tx = pool.connect_sender.clone();
-            if let Err(e) = tx.try_send(self.connect.take().unwrap()) {
+            if let Err(e) = tx.try_send(self.connect.take()) {
                 log::error!("Unable to send the connection to `recycle`: {}", e);
             }
         }
@@ -41,44 +57,43 @@ impl<F: Factory> Drop for Connect<F> {
 
 struct InternalPool<C> {
     waiters: VecDeque<oneshot::Sender<C>>,
-    conns: VecDeque<C>,
+    conns: VecDeque<Option<C>>,
     num: usize,
 }
 
 impl<C> InternalPool<C> {
-    fn put_back(&mut self, mut connect: C) {
+    fn put_back(&mut self, mut connection: Option<C>) {
         while let Some(waiter) = self.waiters.pop_front() {
-            if let Err(returned) = waiter.send(connect) {
-                connect = returned;
-            } else {
-                return;
+            if let Some(conn) = connection {
+                if let Err(returned) = waiter.send(conn) {
+                    connection = Some(returned);
+                } else {
+                    return;
+                }
             }
         }
-        self.conns.push_back(connect);
+        self.conns.push_back(connection);
     }
 }
 
-struct SharedPool<F: Factory> {
+pub struct SharedPool<F: Factory> {
     factory: F,
     inner: Mutex<InternalPool<F::Output>>,
-    connect_sender: mpsc::Sender<F::Output>,
+    connect_sender: mpsc::Sender<Option<F::Output>>,
 }
 
 #[derive(Clone)]
 pub struct Pool<F: Factory> {
-    inner: Arc<SharedPool<F>>,
+    pub inner: Arc<SharedPool<F>>,
 }
 
 impl<F: Factory> Pool<F> {
-    async fn recycle(shared: Weak<SharedPool<F>>, mut rx: mpsc::Receiver<F::Output>) {
+    async fn recycle(shared_pool_weak: Weak<SharedPool<F>>, mut rx: mpsc::Receiver<Option<F::Output>>) {
         use futures::stream::StreamExt;
-        while let Some(mut conn) = StreamExt::next(&mut rx).await {
-            if let Some(shared) = shared.upgrade() {
-                if F::is_broken(&conn) {
-                    log::info!("Recreating connection");
-                    conn = shared.factory.make().await;
-                }
-                let mut pool = shared.inner.lock().await;
+        while let Some(conn) = StreamExt::next(&mut rx).await {
+            if let Some(shared_pool) = shared_pool_weak.upgrade() {
+                let conn = conn.and_then(|conn| if F::is_broken(&conn) { None } else { Some(conn) });
+                let mut pool = shared_pool.inner.lock().await;
                 pool.put_back(conn);
             } else {
                 log::info!("Pool was dropped, stop the recycle.");
@@ -89,14 +104,14 @@ impl<F: Factory> Pool<F> {
 
     pub async fn with_num(num: usize, factory: F) -> Pool<F> {
         use tokio::task::spawn;
-        let mut conns: VecDeque<F::Output> = VecDeque::with_capacity(num);
+        let mut conns = VecDeque::with_capacity(num);
         for _ in 0..num {
-            conns.push_back(factory.make().await);
+            conns.push_back(factory.make().await.ok());
         }
         let waiters = VecDeque::new();
         let internal_pool = InternalPool { waiters, conns, num };
 
-        let (tx, rx) = mpsc::channel::<F::Output>(num);
+        let (tx, rx) = mpsc::channel::<Option<F::Output>>(num);
 
         let shared_pool = Arc::new(SharedPool {
             inner: Mutex::new(internal_pool),
@@ -108,36 +123,64 @@ impl<F: Factory> Pool<F> {
         Pool { inner: shared_pool }
     }
 
-    pub async fn get(&self) -> Connect<F> {
-        let mut internal = self.inner.inner.lock().await;
+    pub async fn get(&self) -> Result<Connect<F>, F::Error> {
+        use futures::channel::oneshot::Canceled;
+        use std::time::Duration;
+
+        let timeout_ms = 500;
+
         let pool = Arc::downgrade(&self.inner);
-        if let Some(conn) = internal.conns.pop_front() {
-            Connect {
-                connect: Some(conn),
-                pool,
+        let mut internal = self.inner.inner.lock().await;
+        let conn = if let Some(conn) = internal.conns.pop_front() {
+            drop(internal);
+            if let Some(conn) = conn {
+                conn
+            } else {
+                self.inner.factory.make().await?
             }
         } else {
             let (tx, rx) = oneshot::channel::<F::Output>();
             internal.waiters.push_back(tx);
             drop(internal);
-            let connect = Some(rx.await.expect("Unable to receive new connection from the pool."));
-            Connect { connect, pool }
-        }
+            match tokio::time::timeout(Duration::from_millis(timeout_ms), rx).await {
+                Ok(Ok(connection)) => connection,
+                Ok(Err(Canceled)) | Err(_) => self.inner.factory.make().await?,
+            }
+        };
+        Ok(Connect {
+            connect: Some(conn),
+            pool,
+        })
     }
 }
 
 #[tokio::test]
-async fn pool_test() {
+#[allow(unused_variables)]
+async fn pool_test() -> Result<(), tokio_postgres::Error> {
     use crate::database::pool::PostgresFactory;
     let config = PostgresFactory::new();
     let pool = Pool::with_num(10, config).await;
-    let _db = pool.get().await;
+    for _ in 0..100 {
+        let db = pool.get().await?;
+        let db = pool.get().await?;
+        let db = pool.get().await?;
+        let db = pool.get().await?;
+        let db = pool.get().await?;
+        let db = pool.get().await?;
+        let mut db = pool.get().await?;
+        db.connect.take();
+        let db = pool.get().await?;
+        let db = pool.get().await?;
+        let db = pool.get().await?;
+    }
+    Ok(())
 }
 
 #[async_trait]
 pub trait Factory: Send + Sync + 'static {
     type Output: Send;
+    type Error: std::fmt::Display;
 
     fn is_broken(connection: &Self::Output) -> bool;
-    async fn make(&self) -> Self::Output;
+    async fn make(&self) -> Result<Self::Output, Self::Error>;
 }

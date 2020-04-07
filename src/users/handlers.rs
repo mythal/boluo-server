@@ -19,7 +19,7 @@ async fn register(req: Request<Body>) -> Result<User, AppError> {
         nickname,
         password,
     }: Register = common::parse_body(req).await?;
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     let user = User::register(&mut *db, &*email, &*username, &*nickname, &*password).await?;
     log::info!("{} ({}) was registered.", user.username, user.email);
     Ok(user)
@@ -36,14 +36,14 @@ pub async fn query_user(req: Request<Body>) -> Result<User, AppError> {
         authenticate(&req).await?.user_id
     };
 
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     User::get_by_id(&mut *db, &id).await?.ok_or(AppError::NotFound("user"))
 }
 
 pub async fn get_me(req: Request<Body>) -> Result<Option<GetMe>, AppError> {
     use crate::session::authenticate;
     if let Ok(session) = authenticate(&req).await {
-        let mut conn = database::get().await;
+        let mut conn = database::get().await?;
         let db = &mut *conn;
         let user = User::get_by_id(db, &session.user_id).await?;
         if let Some(user) = user {
@@ -70,7 +70,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     use hyper::header::{HeaderValue, SET_COOKIE};
 
     let form: Login = common::parse_body(req).await?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let login = User::login(db, &*form.username, &*form.password)
         .await?
@@ -105,13 +105,13 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     Ok(response)
 }
 
-pub async fn logout(req: Request<Body>) -> Response {
+pub async fn logout(req: Request<Body>) -> Result<Response, AppError> {
     use crate::session::authenticate;
     use cookie::CookieBuilder;
     use hyper::header::{HeaderValue, SET_COOKIE};
 
     if let Ok(session) = authenticate(&req).await {
-        revoke_session(&session.id).await;
+        revoke_session(&session.id).await?;
     }
     let mut response = ok_response(true);
     let header = response.headers_mut();
@@ -127,14 +127,14 @@ pub async fn logout(req: Request<Body>) -> Response {
         HeaderValue::from_str(&*cookie).unwrap()
     });
     header.append(SET_COOKIE, header_value.clone());
-    response
+    Ok(response)
 }
 
 pub async fn edit(req: Request<Body>) -> Result<User, AppError> {
     use crate::csrf::authenticate;
     let session = authenticate(&req).await?;
     let Edit { nickname, bio, avatar }: Edit = parse_body(req).await?;
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     User::edit(&mut *db, &session.user_id, nickname, bio, avatar)
         .await
         .map_err(Into::into)
@@ -144,7 +144,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
     match (path, req.method().clone()) {
         ("/login", Method::POST) => login(req).await,
         ("/register", Method::POST) => register(req).await.map(ok_response),
-        ("/logout", _) => Ok(logout(req).await),
+        ("/logout", _) => logout(req).await,
         ("/query", Method::GET) => query_user(req).await.map(ok_response),
         ("/get_me", Method::GET) => get_me(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),

@@ -55,7 +55,7 @@ impl NewPreview {
             start,
         } = self;
 
-        let mut conn = database::get().await;
+        let mut conn = database::get().await?;
         let db = &mut *conn;
         let member = ChannelMember::get(db, &user_id, &channel_id)
             .await?

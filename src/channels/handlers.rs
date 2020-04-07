@@ -26,7 +26,7 @@ async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> 
 async fn query(req: Request<Body>) -> Result<Channel, AppError> {
     let query: IdQuery = parse_query(req.uri())?;
 
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     Channel::get_by_id(&mut *db, &query.id)
         .await?
         .ok_or(AppError::NotFound("channels"))
@@ -35,7 +35,7 @@ async fn query(req: Request<Body>) -> Result<Channel, AppError> {
 async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, AppError> {
     let query: IdQuery = parse_query(req.uri())?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let (channel, space) = Channel::get_with_space(db, &query.id)
         .await?
@@ -60,7 +60,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         default_dice_type,
     } = common::parse_body(req).await?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
     Space::get_by_id(db, &space_id)
@@ -94,7 +94,7 @@ async fn edit(req: Request<Body>) -> Result<bool, AppError> {
         default_dice_type,
     } = common::parse_body(req).await?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
@@ -125,7 +125,7 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
         text_color,
     } = common::parse_body(req).await?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
@@ -143,7 +143,7 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
 
 async fn members(req: Request<Body>) -> Result<Vec<ChannelMember>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     let db = &mut *db;
 
     ChannelMember::get_by_channel(db, &id).await.map_err(Into::into)
@@ -155,7 +155,7 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         channel_id,
         character_name,
     } = parse_body(req).await?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
 
     let channel = Channel::get_by_id(db, &channel_id)
@@ -172,7 +172,7 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
 async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     ChannelMember::remove_user(&mut *db, &session.user_id, &id).await?;
     Event::push_members(id);
     Ok(true)
@@ -182,7 +182,7 @@ async fn delete(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
 
     let channel = Channel::get_by_id(db, &id)
@@ -199,7 +199,7 @@ async fn delete(req: Request<Body>) -> Result<bool, AppError> {
 
 async fn by_space(req: Request<Body>) -> Result<Vec<Channel>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     Channel::get_by_space(db, &id).await.map_err(Into::into)
 }
@@ -207,7 +207,7 @@ async fn by_space(req: Request<Body>) -> Result<Vec<Channel>, AppError> {
 async fn my_channels(req: Request<Body>) -> Result<Vec<ChannelWithMember>, AppError> {
     let session = authenticate(&req).await?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     Channel::get_by_user(db, session.user_id).await.map_err(Into::into)
 }

@@ -9,20 +9,20 @@ use crate::spaces::api::SpaceWithMember;
 use hyper::{Body, Request};
 
 async fn list(_req: Request<Body>) -> Result<Vec<Space>, AppError> {
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     Space::all(&mut *conn).await.map_err(Into::into)
 }
 
 async fn query(req: Request<Body>) -> Result<Space, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("space"))
 }
 
 async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("spaces"))?;
     let members = SpaceMember::get_by_space(db, &id).await?;
@@ -36,7 +36,7 @@ async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppE
 
 async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError> {
     let session = authenticate(&req).await?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     Space::get_by_user(db, session.user_id).await.map_err(Into::into)
 }
@@ -50,7 +50,7 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
         default_dice_type,
     }: Create = common::parse_body(req).await?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
     let space = Space::create(db, name, &session.user_id, description, password, default_dice_type).await?;
@@ -69,7 +69,7 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
         default_dice_type,
     }: Edit = common::parse_body(req).await?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
@@ -90,7 +90,7 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     let db = &mut *db;
 
     let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("spaces"))?;
@@ -107,7 +107,7 @@ async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let IdQuery { id } = parse_query(req.uri())?;
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
@@ -118,14 +118,14 @@ async fn leave(req: Request<Body>) -> Result<bool, AppError> {
 
 async fn members(req: Request<Body>) -> Result<Vec<SpaceMember>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
-    let mut db = database::get().await;
+    let mut db = database::get().await?;
     let db = &mut *db;
     SpaceMember::get_by_space(&mut *db, &id).await.map_err(Into::into)
 }
 
 async fn delete(req: Request<Body>) -> Result<Space, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let session = authenticate(&req).await?;
     let db = &mut *conn;
     let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("spaces"))?;

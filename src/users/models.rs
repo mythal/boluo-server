@@ -135,7 +135,7 @@ async fn user_test() -> Result<(), crate::error::AppError> {
     use crate::database::Client;
     use crate::media::Media;
 
-    let mut client = Client::new().await;
+    let mut client = Client::new().await?;
     let mut trans = client.transaction().await.unwrap();
     let db = &mut trans;
     let email = "humura@humura.net";

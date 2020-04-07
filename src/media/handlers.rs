@@ -87,7 +87,7 @@ async fn upload(req: Request<Body>) -> Result<Media, AppError> {
         tokio::fs::rename(path, new_path).await?;
     }
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     Media::create(
         &mut *conn,
         &*mime_type,
@@ -120,7 +120,7 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
     let MediaQuery { id, filename, download } = parse_query(req.uri())?;
     let method = req.method().clone();
 
-    let mut conn = database::get().await;
+    let mut conn = database::get().await?;
     let db = &mut *conn;
     let mut media: Option<Media> = None;
     if let Some(id) = id {

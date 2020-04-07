@@ -311,7 +311,7 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     use crate::spaces::Space;
     use crate::users::User;
 
-    let mut client = Client::new().await;
+    let mut client = Client::new().await?;
     let mut trans = client.transaction().await?;
     let db = &mut trans;
     let email = "test@mythal.net";

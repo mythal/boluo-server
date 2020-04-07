@@ -135,7 +135,7 @@ impl Event {
     }
 
     pub async fn get_from_cache(mailbox: &Uuid, after: i64) -> Result<Vec<String>, CacheError> {
-        let mut cache = cache::get().await;
+        let mut cache = cache::get().await?;
         let bytes_array = cache.get_after(&*Self::cache_key(mailbox), after + 1).await?;
         let events = bytes_array
             .into_iter()
@@ -158,7 +158,7 @@ impl Event {
     }
 
     async fn fire_members(channel_id: Uuid) -> Result<(), anyhow::Error> {
-        let mut db = database::get().await;
+        let mut db = database::get().await?;
         let members = Member::get_by_channel(&mut *db, channel_id).await?;
         drop(db);
         let event = SyncEvent::new(Event {
@@ -201,7 +201,7 @@ impl Event {
             timestamp: timestamp(),
         });
 
-        let mut cache = cache::get().await;
+        let mut cache = cache::get().await?;
         let key = Self::cache_key(&mailbox);
         cache.set_with_time(&*key, event.encoded.as_bytes()).await?;
         drop(cache);

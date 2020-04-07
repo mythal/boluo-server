@@ -69,6 +69,7 @@ impl Connection {
     }
 }
 
+#[derive(Clone)]
 pub struct RedisFactory {
     client: redis::Client,
 }
@@ -85,29 +86,27 @@ impl RedisFactory {
 #[async_trait]
 impl Factory for RedisFactory {
     type Output = Connection;
+    type Error = CacheError;
 
     fn is_broken(connection: &Connection) -> bool {
         connection.broken
     }
 
-    async fn make(&self) -> Connection {
-        let conn = self
-            .client
-            .get_async_connection()
-            .await
-            .expect("Unable to connect to the Redis server");
-        Connection::new(conn)
+    async fn make(&self) -> Result<Connection, CacheError> {
+        let conn = self.client.get_async_connection().await?;
+        Ok(Connection::new(conn))
     }
 }
 
-pub async fn get() -> Connect<RedisFactory> {
+pub async fn get() -> Result<Connect<RedisFactory>, CacheError> {
     use once_cell::sync::OnceCell;
+    static FACTORY: OnceCell<RedisFactory> = OnceCell::new();
+    let factory = FACTORY.get_or_init(RedisFactory::new);
     static POOL: OnceCell<Pool<RedisFactory>> = OnceCell::new();
     if let Some(pool) = POOL.get() {
         pool.get().await
     } else {
-        let factory = RedisFactory::new();
-        let pool = Pool::with_num(8, factory).await;
+        let pool = Pool::with_num(8, factory.clone()).await;
         POOL.get_or_init(move || pool).get().await
     }
 }
