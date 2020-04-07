@@ -28,11 +28,11 @@ CREATE TABLE users
     "joined"      timestamp NOT NULL DEFAULT now(),
     "deactivated" boolean   NOT NULL DEFAULT false,
     "avatar_id"   uuid               DEFAULT NULL
-        CONSTRAINT user_avatar REFERENCES media (id) ON DELETE SET NULL
+        CONSTRAINT "user_avatar" REFERENCES media (id) ON DELETE SET NULL
 );
 
 ALTER TABLE media
-    ADD CONSTRAINT media_uploader FOREIGN KEY (uploader_id) REFERENCES users (id);
+    ADD CONSTRAINT "media_uploader" FOREIGN KEY (uploader_id) REFERENCES users (id) ON DELETE RESTRICT;
 
 CREATE TABLE spaces
 (
@@ -42,7 +42,7 @@ CREATE TABLE spaces
     "created"           timestamp NOT NULL DEFAULT now(),
     "modified"          timestamp NOT NULL DEFAULT now(),
     "owner_id"          uuid      NOT NULL
-        CONSTRAINT space_owner REFERENCES users (id) ON DELETE RESTRICT,
+        CONSTRAINT "space_owner" REFERENCES users (id) ON DELETE RESTRICT,
     "is_public"         boolean   NOT NULL DEFAULT true,
     "deleted"           boolean   NOT NULL DEFAULT false,
     "password"          text      NOT NULL DEFAULT '',   -- plain text
@@ -53,9 +53,9 @@ CREATE TABLE spaces
 CREATE TABLE space_members
 (
     "user_id"   uuid      NOT NULL
-        CONSTRAINT space_member_user REFERENCES users (id) ON DELETE CASCADE,
+        CONSTRAINT "space_member_user" REFERENCES users (id) ON DELETE CASCADE,
     "space_id"  uuid      NOT NULL
-        CONSTRAINT space_member_space REFERENCES spaces (id) ON DELETE CASCADE,
+        CONSTRAINT "space_member_space" REFERENCES spaces (id) ON DELETE CASCADE,
     "is_admin"  boolean   NOT NULL DEFAULT false,
     "join_date" timestamp NOT NULL DEFAULT now(),
     CONSTRAINT "user_space_id_pair" PRIMARY KEY ("user_id", "space_id")
@@ -63,23 +63,24 @@ CREATE TABLE space_members
 
 CREATE TABLE channels
 (
-    "id"        uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
-    "name"      text      NOT NULL,
-    "topic"     text      NOT NULL DEFAULT '',
-    "space_id"  uuid      NOT NULL
-        CONSTRAINT channel_space REFERENCES spaces (id) ON DELETE CASCADE,
-    "created"   timestamp NOT NULL DEFAULT now(),
-    "is_public" boolean   NOT NULL DEFAULT true,
-    "deleted"   boolean   NOT NULL DEFAULT false,
-    CONSTRAINT unique_channel_name_in_space UNIQUE (space_id, name)
+    "id"                uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
+    "name"              text      NOT NULL,
+    "topic"             text      NOT NULL DEFAULT '',
+    "space_id"          uuid      NOT NULL
+        CONSTRAINT "channel_space" REFERENCES spaces (id) ON DELETE CASCADE,
+    "created"           timestamp NOT NULL DEFAULT now(),
+    "is_public"         boolean   NOT NULL DEFAULT true,
+    "deleted"           boolean   NOT NULL DEFAULT false,
+    "default_dice_type" text      NOT NULL DEFAULT 'd20',
+    CONSTRAINT "unique_channel_name_in_space" UNIQUE (space_id, name)
 );
 
 CREATE TABLE channel_members
 (
     "user_id"        uuid      NOT NULL
-        CONSTRAINT channel_member_user REFERENCES users (id) ON DELETE CASCADE,
+        CONSTRAINT "channel_member_user" REFERENCES users (id) ON DELETE CASCADE,
     "channel_id"     uuid      NOT NULL
-        CONSTRAINT channel_member_channel REFERENCES channels (id) ON DELETE CASCADE,
+        CONSTRAINT "channel_member_channel" REFERENCES channels (id) ON DELETE CASCADE,
     "join_date"      timestamp NOT NULL DEFAULT now(),
     "character_name" text      NOT NULL,
     text_color       text               DEFAULT NULL,
@@ -92,11 +93,11 @@ CREATE TABLE messages
 (
     "id"                uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
     "sender_id"         uuid      NOT NULL
-        CONSTRAINT message_sender REFERENCES users (id) ON DELETE CASCADE,
+        CONSTRAINT "message_sender" REFERENCES users (id) ON DELETE CASCADE,
     "channel_id"        uuid      NOT NULL
-        CONSTRAINT message_channel REFERENCES channels (id) ON DELETE CASCADE,
+        CONSTRAINT "message_channel" REFERENCES channels (id) ON DELETE CASCADE,
     "parent_message_id" uuid               DEFAULT null
-        CONSTRAINT message_parent REFERENCES messages (id) ON DELETE CASCADE,
+        CONSTRAINT "message_parent" REFERENCES messages (id) ON DELETE CASCADE,
     "name"              text      NOT NULL,
     "media_id"          uuid               DEFAULT null,
     "seed"              bytea     NOT NULL DEFAULT gen_random_bytes(4),
@@ -121,25 +122,25 @@ CREATE TABLE messages
     "order_offset"      integer   NOT NULL DEFAULT 0
 );
 
-CREATE INDEX message_tags ON messages USING GIN (tags);
-CREATE INDEX order_index ON messages (order_date DESC, order_offset ASC);
-CREATE INDEX message_channel ON messages USING btree (channel_id);
+CREATE INDEX "message_tags" ON messages USING GIN (tags);
+CREATE INDEX "order_index" ON messages (order_date DESC, order_offset ASC);
+CREATE INDEX "message_channel" ON messages USING btree (channel_id);
 
 CREATE TABLE restrained_members
 (
     "user_id"         uuid      NOT NULL
-        CONSTRAINT restrained_member_user REFERENCES users (id) ON DELETE CASCADE,
+        CONSTRAINT "restrained_member_user" REFERENCES users (id) ON DELETE CASCADE,
     "space_id"        uuid      NOT NULL
-        CONSTRAINT restrained_member_space REFERENCES spaces (id) ON DELETE CASCADE,
+        CONSTRAINT "restrained_member_space" REFERENCES spaces (id) ON DELETE CASCADE,
     "blocked"         boolean   NOT NULL DEFAULT false,
     "muted"           boolean   NOT NULL DEFAULT false,
     "restrained_date" timestamp NOT NULL DEFAULT now(),
     "operator_id"     uuid               DEFAULT null
-        CONSTRAINT restrain_operator REFERENCES users (id) ON DELETE SET NULL,
+        CONSTRAINT "restrain_operator" REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT "restrained_space_id_pair" PRIMARY KEY (user_id, space_id)
 );
 
-
+DROP FUNCTION IF EXISTS hide;
 CREATE FUNCTION hide(messages) RETURNS messages AS
 $$
 SELECT CASE
@@ -168,6 +169,7 @@ SELECT CASE
                $1.order_offset
                )::messages END AS result;
 $$ LANGUAGE SQL;
+
 CREATE TYPE event_type AS ENUM (
     'Joined',
     'Left',
@@ -180,11 +182,11 @@ CREATE TABLE events
     "id"          uuid       NOT NULL PRIMARY KEY,
     "type"        event_type NOT NULL,
     "channel_id"  uuid                DEFAULT NULL
-        CONSTRAINT event_channel REFERENCES channels (id) ON DELETE CASCADE,
+        CONSTRAINT "event_channel" REFERENCES channels (id) ON DELETE CASCADE,
     "space_id"    uuid                DEFAULT NULL
-        CONSTRAINT event_space REFERENCES spaces (id) ON DELETE CASCADE,
+        CONSTRAINT "event_space" REFERENCES spaces (id) ON DELETE CASCADE,
     "receiver_id" uuid
-        CONSTRAINT event_receiver REFERENCES users (id) ON DELETE CASCADE,
+        CONSTRAINT "event_receiver" REFERENCES users (id) ON DELETE CASCADE,
     "payload"     jsonb      NOT NULL DEFAULT '{}',
     "created"     timestamp  NOT NULL default now()
 );
