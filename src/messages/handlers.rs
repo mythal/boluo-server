@@ -1,13 +1,13 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
 use crate::channels::{Channel, ChannelMember};
-use crate::common::{missing, ok_response, parse_query, Response};
+use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::events::Event;
 use crate::messages::api::ByChannel;
 use crate::spaces::SpaceMember;
-use crate::{common, database};
+use crate::{interface, database};
 use hyper::{Body, Request};
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {
@@ -22,7 +22,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         is_action,
         order_date,
         media_id,
-    } = common::parse_body(req).await?;
+    } = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
@@ -58,7 +58,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
         entities,
         in_game,
         is_action,
-    } = common::parse_body(req).await?;
+    } = interface::parse_body(req).await?;
     let mut db = database::get().await?;
     let mut trans = db.transaction().await?;
     let db = &mut trans;
@@ -82,7 +82,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
 }
 
 async fn query(req: Request<Body>) -> Result<Message, AppError> {
-    let common::IdQuery { id } = common::parse_query(req.uri())?;
+    let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
@@ -93,7 +93,7 @@ async fn query(req: Request<Body>) -> Result<Message, AppError> {
 
 async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
-    let common::IdQuery { id } = common::parse_query(req.uri())?;
+    let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let message = Message::get(db, &id, None)
@@ -112,7 +112,7 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
 
 async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
-    let common::IdQuery { id } = common::parse_query(req.uri())?;
+    let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let message = Message::get(db, &id, None)

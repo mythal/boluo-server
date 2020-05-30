@@ -1,6 +1,6 @@
 use super::api::Upload;
 use super::models::Media;
-use crate::common::{missing, ok_response, parse_query, Response};
+use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;

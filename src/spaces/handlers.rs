@@ -1,7 +1,7 @@
 use super::api::{Create, Edit, SpaceWithRelated};
 use super::{Space, SpaceMember};
 use crate::channels::Channel;
-use crate::common::{self, missing, ok_response, parse_query, IdQuery, Response};
+use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
@@ -48,7 +48,7 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
         password,
         description,
         default_dice_type,
-    }: Create = common::parse_body(req).await?;
+    }: Create = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
@@ -67,7 +67,7 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
         name,
         description,
         default_dice_type,
-    }: Edit = common::parse_body(req).await?;
+    }: Edit = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;

@@ -1,6 +1,6 @@
 use super::events::EventQuery;
 use super::Event;
-use crate::common::{missing, parse_query, Response};
+use crate::interface::{missing, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::events::context::{get_preview_cache, get_receiver};

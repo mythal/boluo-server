@@ -3,7 +3,7 @@ use super::models::ChannelMember;
 use super::Channel;
 use crate::channels::api::{ChannelWithMember, ChannelWithRelated, EditMember, JoinChannel};
 use crate::channels::models::Member;
-use crate::common::{self, missing, ok_response, parse_body, parse_query, IdQuery, Response};
+use crate::interface::{self, missing, ok_response, parse_body, parse_query, IdQuery, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
@@ -58,7 +58,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         name,
         character_name,
         default_dice_type,
-    } = common::parse_body(req).await?;
+    } = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
@@ -92,7 +92,7 @@ async fn edit(req: Request<Body>) -> Result<bool, AppError> {
         name,
         topic,
         default_dice_type,
-    } = common::parse_body(req).await?;
+    } = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
@@ -123,7 +123,7 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
         channel_id,
         character_name,
         text_color,
-    } = common::parse_body(req).await?;
+    } = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;

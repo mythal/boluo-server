@@ -1,6 +1,6 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::common::{missing, ok_response, parse_body, parse_query, Response};
+use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::database;
 use crate::session::{remove_session, revoke_session};
 
@@ -8,7 +8,7 @@ use crate::channels::Channel;
 use crate::error::AppError;
 use crate::spaces::Space;
 use crate::users::api::{Edit, GetMe, QueryUser};
-use crate::{common, context};
+use crate::{interface, context};
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
 
@@ -18,7 +18,7 @@ async fn register(req: Request<Body>) -> Result<User, AppError> {
         username,
         nickname,
         password,
-    }: Register = common::parse_body(req).await?;
+    }: Register = interface::parse_body(req).await?;
     let mut db = database::get().await?;
     let user = User::register(&mut *db, &*email, &*username, &*nickname, &*password).await?;
     log::info!("{} ({}) was registered.", user.username, user.email);
@@ -69,7 +69,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     use cookie::{CookieBuilder, SameSite};
     use hyper::header::{HeaderValue, SET_COOKIE};
 
-    let form: Login = common::parse_body(req).await?;
+    let form: Login = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let login = User::login(db, &*form.username, &*form.password)
@@ -79,7 +79,6 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
         log::warn!("Someone failed to try to login: {}", form.username);
     }
     let user = login?;
-    let expires = time::now() + time::Duration::days(256);
     let session = session::start(&user.id).await.map_err(unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
@@ -87,7 +86,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
         .secure(!context::debug())
         .http_only(true)
         .path("/api/")
-        .expires(expires)
+        .max_age(time::Duration::days(256))
         .finish()
         .to_string();
 
@@ -121,7 +120,7 @@ pub async fn logout(req: Request<Body>) -> Result<Response, AppError> {
         let cookie = CookieBuilder::new("session", "")
             .http_only(true)
             .path("/api/")
-            .expires(time::empty_tm())
+            .expires(time::OffsetDateTime::now_utc())
             .finish()
             .to_string();
         HeaderValue::from_str(&*cookie).unwrap()

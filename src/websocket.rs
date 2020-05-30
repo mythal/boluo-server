@@ -1,4 +1,4 @@
-use crate::common::{Request, Response};
+use crate::interface::{Request, Response};
 use crate::error::AppError;
 use crate::utils::sha1;
 use hyper::header::{HeaderMap, HeaderValue, CONNECTION, SEC_WEBSOCKET_KEY, UPGRADE};

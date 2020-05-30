@@ -14,7 +14,7 @@ mod utils;
 mod error;
 mod cache;
 mod channels;
-mod common;
+mod interface;
 mod context;
 mod cors;
 mod csrf;
@@ -31,7 +31,7 @@ mod users;
 mod validators;
 mod websocket;
 
-use crate::common::{err_response, missing, ok_response, Response};
+use crate::interface::{err_response, missing, ok_response, Response};
 use crate::cors::allow_origin;
 use crate::error::AppError;
 
