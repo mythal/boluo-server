@@ -28,8 +28,7 @@ pub fn token_verify(token: &str) -> Result<Uuid, AppError> {
 
 pub async fn revoke_session(id: &Uuid) -> Result<(), CacheError> {
     let key = make_key(id);
-    let mut redis = cache::get().await?;
-    redis.remove(&*key).await
+    cache::get().remove(&*key).await
 }
 
 #[test]
@@ -47,8 +46,7 @@ fn make_key(session: &Uuid) -> Vec<u8> {
 pub async fn start(user_id: &Uuid) -> Result<Uuid, CacheError> {
     let session = utils::id();
     let key = make_key(&session);
-    let mut r = cache::get().await?;
-    r.set(&key, user_id.as_bytes()).await?;
+    cache::get().set(&key, user_id.as_bytes()).await?;
     Ok(session)
 }
 
@@ -59,9 +57,8 @@ pub struct Session {
 }
 
 pub async fn remove_session(id: Uuid) -> Result<(), CacheError> {
-    let mut cache = cache::get().await?;
     let key = make_key(&id);
-    cache.remove(&*key).await?;
+    cache::get().remove(&*key).await?;
     Ok(())
 }
 
@@ -88,8 +85,7 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     let id = token_verify(token)?;
 
     let key = make_key(&id);
-    let mut cache = cache::get().await?;
-    let bytes: Vec<u8> = cache.get(&*key).await.map_err(unexpected!())?.ok_or(Unauthenticated)?;
+    let bytes: Vec<u8> = cache::get().get(&*key).await.map_err(unexpected!())?.ok_or(Unauthenticated)?;
 
     let user_id = Uuid::from_slice(&*bytes).map_err(unexpected!())?;
     Ok(Session { id, user_id })

@@ -57,17 +57,18 @@ async fn router(req: Request<Body>) -> Result<Response, AppError> {
     missing()
 }
 
-fn log_error(e: &AppError, method: &str, uri: &Uri, elapsed: u128) {
+pub fn log_error(e: &AppError, method: &str, uri: &Uri, elapsed: u128) {
     use std::error::Error;
     use AppError::*;
     match e {
         NotFound(_) | Conflict(_) => log::debug!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
         Validation(_) | BadRequest(_) | MethodNotAllowed => log::info!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
         e => {
-            if let Some(source) = e.source() {
-                log::error!("{:>6} {} {}ms - {} - source: {:?}", method, uri, elapsed, e, source)
-            } else {
-                log::error!("{:>6} {} {}ms - {}", method, uri, elapsed, e)
+            log::error!("{:>6} {} {}ms - {}", method, uri, elapsed, e);
+            let mut maybe_source = Error::source(e);
+            while let Some(source) = maybe_source {
+                log::error!("- {:?}", source);
+                maybe_source = Error::source(source);
             }
         }
     }

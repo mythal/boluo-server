@@ -6,8 +6,8 @@ use futures::StreamExt;
 async fn redis_clean() -> Result<(), anyhow::Error> {
     use redis::AsyncCommands;
 
-    let mut cache = cache::get().await?;
-    let keys: Vec<Vec<u8>> = (&mut *cache).inner.keys(b"mailbox:*").await?;
+    let mut cache = cache::get();
+    let keys: Vec<Vec<u8>> = cache.inner.keys(b"mailbox:*").await?;
     let before = timestamp() - 24 * 60 * 60 * 1000;
     for key in keys.into_iter() {
         if let Err(e) = cache.clear_before(&*key, before).await {

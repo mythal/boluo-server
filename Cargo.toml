@@ -58,8 +58,14 @@ version = "0.2.11"
 features = ["full"]
 
 [dependencies.redis]
-git = "https://github.com/mitsuhiko/redis-rs.git"
+version = "0.16.0"
+features = ["connection-manager"]
 
 [dependencies.fern]
 version = "0.5"
 features = ["colored"]
+
+[dependencies.sqlx]
+version = "0.3"
+default-features = false
+features = ["runtime-tokio", "macros", "postgres", "uuid", "chrono", "json"]

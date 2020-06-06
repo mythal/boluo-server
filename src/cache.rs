@@ -1,71 +1,51 @@
 use crate::error::CacheError;
-use crate::pool::{Connect, Factory, Pool};
 use crate::utils::timestamp;
-use async_trait::async_trait;
+pub use redis::aio::ConnectionManager;
 pub use redis::AsyncCommands;
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct Connection {
-    pub inner: redis::aio::Connection,
-    broken: bool,
+    pub inner: ConnectionManager,
 }
 
 impl Connection {
-    fn new(inner: redis::aio::Connection) -> Connection {
-        let broken = false;
-        Connection { inner, broken }
-    }
-
-    fn check<T>(&mut self, result: Result<T, CacheError>) -> Result<T, CacheError> {
-        if let Err(ref e) = result {
-            if e.is_connection_dropped() || e.is_connection_refusal() || e.is_timeout() || e.is_io_error() {
-                self.broken = true;
-            }
-            log::error!("redis: {}", e);
-        }
-        result
+    fn new(inner: ConnectionManager) -> Connection {
+        Connection { inner }
     }
 
     pub async fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, CacheError> {
-        let result = self.inner.get(key).await;
-        self.check(result)
+        self.inner.get(key).await
     }
 
     pub async fn set(&mut self, key: &[u8], value: &[u8]) -> Result<(), CacheError> {
-        let result = self.inner.set(key, value).await;
-        self.check(result)
+        self.inner.set(key, value).await
     }
 
     pub async fn remove(&mut self, key: &[u8]) -> Result<(), CacheError> {
-        let result = self.inner.del(key).await;
-        self.check(result)
+        self.inner.del(key).await
     }
 
     pub async fn set_with_time(&mut self, key: &[u8], value: &[u8]) -> Result<(), CacheError> {
-        let result = self.inner.zadd(key, value, timestamp()).await;
-        self.check(result)
+        self.inner.zadd(key, value, timestamp()).await
     }
 
     pub async fn get_after(&mut self, key: &[u8], start: i64) -> Result<Vec<Vec<u8>>, CacheError> {
-        let result: Result<Vec<Vec<u8>>, _> = self.inner.zrangebyscore(key, start, "+inf").await;
-        self.check(result)
+        self.inner.zrangebyscore(key, start, "+inf").await
     }
 
     pub async fn clear_before(&mut self, key: &[u8], end: i64) -> Result<(), CacheError> {
-        let result: Result<(), _> = self.inner.zrembyscore(key, "-inf", end).await;
-        self.check(result)
+        self.inner.zrembyscore(key, "-inf", end).await
     }
 
     pub async fn get_min_time(&mut self, key: &[u8]) -> Result<i64, CacheError> {
-        let result: Result<(Vec<u8>, String), _> = self.inner.zrange_withscores(key, 0, 0).await;
-        let (_, timestamp) = self.check(result)?;
-        Ok(timestamp.parse().expect("Unexpected redis parse error."))
+        let (_, timestamp): (Vec<u8>, String) = self.inner.zrange_withscores(key, 0, 0).await?;
+        Ok(timestamp.parse().expect("Unable to parse timestamp in the redis."))
     }
 
     pub async fn get_max_time(&mut self, key: &[u8]) -> Result<i64, CacheError> {
-        let result: Result<(Vec<u8>, String), _> = self.inner.zrevrange_withscores(key, 0, 0).await;
-        let (_, timestamp) = self.check(result)?;
-        Ok(timestamp.parse().expect("Unexpected redis parse error."))
+        let (_, timestamp): (Vec<u8>, String) = self.inner.zrevrange_withscores(key, 0, 0).await?;
+        Ok(timestamp.parse().expect("Unable to parse timestamp in the redis."))
     }
 }
 
@@ -83,32 +63,19 @@ impl RedisFactory {
     }
 }
 
-#[async_trait]
-impl Factory for RedisFactory {
-    type Output = Connection;
-    type Error = CacheError;
-
-    fn is_broken(connection: &Connection) -> bool {
-        connection.broken
-    }
-
-    async fn make(&self) -> Result<Connection, CacheError> {
-        let conn = self.client.get_async_connection().await?;
-        Ok(Connection::new(conn))
-    }
-}
-
-pub async fn get() -> Result<Connect<RedisFactory>, CacheError> {
+pub fn get() -> Connection {
     use once_cell::sync::OnceCell;
-    static FACTORY: OnceCell<RedisFactory> = OnceCell::new();
-    let factory = FACTORY.get_or_init(RedisFactory::new);
-    static POOL: OnceCell<Pool<RedisFactory>> = OnceCell::new();
-    if let Some(pool) = POOL.get() {
-        pool.get().await
-    } else {
-        let pool = Pool::with_num(8, factory.clone()).await;
-        POOL.get_or_init(move || pool).get().await
-    }
+    static FACTORY: OnceCell<Connection> = OnceCell::new();
+    FACTORY
+        .get_or_init(|| {
+            use std::env::var;
+            let url = var("REDIS_URL").expect("Failed to load Redis URL");
+            let client = redis::Client::open(&*url).unwrap();
+            let runtime = tokio::runtime::Handle::current();
+            let connect_manager = runtime.block_on(async { client.get_tokio_connection_manager().await });
+            Connection::new(connect_manager.expect("Unable to get tokio connection manager"))
+        })
+        .clone()
 }
 
 pub fn make_key(type_name: &[u8], id: &Uuid, field_name: &[u8]) -> Vec<u8> {
