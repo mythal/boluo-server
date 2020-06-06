@@ -6,7 +6,7 @@ use futures::StreamExt;
 async fn redis_clean() -> Result<(), anyhow::Error> {
     use redis::AsyncCommands;
 
-    let mut cache = cache::get();
+    let mut cache = cache::conn();
     let keys: Vec<Vec<u8>> = cache.inner.keys(b"mailbox:*").await?;
     let before = timestamp() - 24 * 60 * 60 * 1000;
     for key in keys.into_iter() {

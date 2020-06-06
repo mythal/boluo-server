@@ -63,7 +63,8 @@ impl RedisFactory {
     }
 }
 
-pub fn get() -> Connection {
+/// Get cache database connection.
+pub fn conn() -> Connection {
     use once_cell::sync::OnceCell;
     static FACTORY: OnceCell<Connection> = OnceCell::new();
     FACTORY
@@ -72,7 +73,7 @@ pub fn get() -> Connection {
             let url = var("REDIS_URL").expect("Failed to load Redis URL");
             let client = redis::Client::open(&*url).unwrap();
             let runtime = tokio::runtime::Handle::current();
-            let connect_manager = runtime.block_on(async { client.get_tokio_connection_manager().await });
+            let connect_manager = runtime.block_on(client.get_tokio_connection_manager());
             Connection::new(connect_manager.expect("Unable to get tokio connection manager"))
         })
         .clone()
