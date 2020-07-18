@@ -26,7 +26,7 @@ impl Connection {
         self.inner.del(key).await
     }
 
-    pub async fn set_with_time(&mut self, key: &[u8], value: &[u8]) -> Result<(), CacheError> {
+    pub async fn set_with_timestamp(&mut self, key: &[u8], value: &[u8]) -> Result<(), CacheError> {
         self.inner.zadd(key, value, timestamp()).await
     }
 

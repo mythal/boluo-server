@@ -22,8 +22,8 @@ pub fn token_verify(token: &str) -> Result<Uuid, AppError> {
     let session = iter.next().ok_or_else(parse_failed)?;
     let signature = iter.next().ok_or_else(parse_failed)?;
     utils::verify(session, signature).ok_or(Unauthenticated)?;
-    let session = base64::decode(session).map_err(unexpected!())?;
-    Uuid::from_slice(session.as_slice()).map_err(unexpected!())
+    let session = base64::decode(session).map_err(error_unexpected!())?;
+    Uuid::from_slice(session.as_slice()).map_err(error_unexpected!())
 }
 
 pub async fn revoke_session(id: &Uuid) -> Result<(), CacheError> {
@@ -85,8 +85,8 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     let id = token_verify(token)?;
 
     let key = make_key(&id);
-    let bytes: Vec<u8> = cache::conn().get(&*key).await.map_err(unexpected!())?.ok_or(Unauthenticated)?;
+    let bytes: Vec<u8> = cache::conn().get(&*key).await.map_err(error_unexpected!())?.ok_or(Unauthenticated)?;
 
-    let user_id = Uuid::from_slice(&*bytes).map_err(unexpected!())?;
+    let user_id = Uuid::from_slice(&*bytes).map_err(error_unexpected!())?;
     Ok(Session { id, user_id })
 }

@@ -30,7 +30,7 @@ pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppErr
         .to_string();
     key.push_str("258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
     let accept = base64::encode(sha1(key.as_bytes()).as_ref());
-    HeaderValue::from_str(&*accept).map_err(unexpected!())
+    HeaderValue::from_str(&*accept).map_err(error_unexpected!())
 }
 
 pub fn establish_web_socket<H, F>(req: Request, handler: H) -> Result<Response, AppError>
@@ -61,5 +61,5 @@ where
         .header(header::CONNECTION, "Upgrade")
         .header(header::SEC_WEBSOCKET_ACCEPT, accept)
         .body(Body::empty())
-        .map_err(unexpected!())
+        .map_err(error_unexpected!())
 }

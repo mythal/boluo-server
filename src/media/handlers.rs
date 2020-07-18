@@ -150,7 +150,7 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
     let response = hyper::Response::builder()
         .header(
             header::CONTENT_TYPE,
-            HeaderValue::from_str(&*media.mime_type).map_err(unexpected!())?,
+            HeaderValue::from_str(&*media.mime_type).map_err(error_unexpected!())?,
         )
         .header(
             header::CONTENT_DISPOSITION,
@@ -159,7 +159,7 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
         .header(header::ACCEPT_RANGES, HeaderValue::from_static("none"))
         .header(header::CONTENT_LENGTH, HeaderValue::from(media.size))
         .body(body)
-        .map_err(unexpected!())?;
+        .map_err(error_unexpected!())?;
     Ok(response)
 }
 

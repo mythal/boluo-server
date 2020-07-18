@@ -27,7 +27,7 @@ pub fn get_broadcast_table() -> &'static BroadcastTable {
     BROADCAST_TABLE.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-pub async fn get_receiver(id: &Uuid) -> broadcast::Receiver<SyncEvent> {
+pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<SyncEvent> {
     let broadcast_table = get_broadcast_table();
     let table = broadcast_table.read().await;
     if let Some(sender) = table.get(id) {

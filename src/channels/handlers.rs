@@ -138,7 +138,7 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
     let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color).await?;
     trans.commit().await?;
     Event::push_members(channel_id);
-    channel_member.ok_or(AppError::NotFound("character member"))
+    channel_member.ok_or(unexpected!("database returns no result when the user editing channel member."))
 }
 
 async fn members(req: Request<Body>) -> Result<Vec<ChannelMember>, AppError> {

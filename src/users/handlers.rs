@@ -79,7 +79,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
         log::warn!("Someone failed to try to login: {}", form.username);
     }
     let user = login?;
-    let session = session::start(&user.id).await.map_err(unexpected!())?;
+    let session = session::start(&user.id).await.map_err(error_unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)

@@ -3,7 +3,7 @@ use super::Event;
 use crate::interface::{missing, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::error::AppError;
-use crate::events::context::{get_preview_cache, get_receiver};
+use crate::events::context::{get_preview_cache, get_mailbox_broadcast_rx};
 use crate::events::events::ClientEvent;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
 use anyhow::anyhow;
@@ -18,13 +18,13 @@ use uuid::Uuid;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
-async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
+async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
     use tokio::sync::broadcast::RecvError;
     use tokio::time::interval;
     use tokio_tungstenite::tungstenite::Error::{AlreadyClosed, ConnectionClosed};
     let (tx, mut rx) = channel::<WsMessage>(32);
-    let send_message = async move {
+    let message_sender = async move {
         while let Some(message) = rx.next().await {
             match outgoing.send(message).await {
                 Ok(_) => (),
@@ -34,12 +34,12 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
         }
         Ok(())
     };
+
     let push = async {
         let mut tx = tx.clone();
-        let mut receiver = get_receiver(&mailbox).await;
-        let events = Event::get_from_cache(&mailbox, after).await;
-        Event::push_members(mailbox);
-        let previews: Vec<String> = {
+        let mut mailbox_rx = get_mailbox_broadcast_rx(&mailbox).await;
+        let cached_events = Event::get_from_cache(&mailbox, after).await;
+        let channel_preview_list: Vec<String> = {
             let preview_cache = get_preview_cache();
             let channel_map = preview_cache.lock().await;
             channel_map
@@ -47,16 +47,16 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
                 .map(|user_map| user_map.values().map(|event| event.encoded.clone()).collect())
                 .unwrap_or(Vec::new())
         };
-        match events {
+        match cached_events {
             Ok(events) => {
-                for e in events.into_iter().chain(previews.into_iter()) {
+                for e in events.into_iter().chain(channel_preview_list.into_iter()) {
                     tx.send(WsMessage::Text(e)).await.ok();
                 }
             }
             Err(e) => Err(anyhow!("failed to get events from cache: {}", e))?,
         }
         loop {
-            let message = match receiver.recv().await {
+            let message = match mailbox_rx.recv().await {
                 Ok(event) => WsMessage::Text(event.encoded),
                 Err(RecvError::Lagged(lagged)) => {
                     log::warn!("lagged {} at {}", lagged, mailbox);
@@ -70,12 +70,13 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
         }
         Ok(())
     };
+
     let ping = interval(Duration::from_secs(30)).for_each(|_| async {
         tx.clone().send(WsMessage::Ping(Vec::new())).await.ok();
     });
 
     tokio::select! {
-        r = send_message => { r?; },
+        r = message_sender => { r? },
         _ = ping => {},
         r = push => { r? },
     }
@@ -84,16 +85,16 @@ async fn push(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), an
     Ok(())
 }
 
-async fn receive_message(user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
+async fn handle_client_event(user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
     let event: ClientEvent = serde_json::from_str(&*message)?;
     match event {
         ClientEvent::Preview { preview } => {
             let user_id = user_id.ok_or(AppError::Unauthenticated)?;
             preview.broadcast(user_id).await?;
         }
-        ClientEvent::Heartbeat { mailbox } => {
+        ClientEvent::Heartbeat { mailbox, mailbox_type } => {
             if let Some(user_id) = user_id {
-                Event::heartbeat(mailbox, user_id);
+                Event::heartbeat(mailbox, mailbox_type, user_id);
             }
         }
     }
@@ -108,27 +109,29 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
     let EventQuery { mailbox, after } = parse_query(req.uri())?;
     establish_web_socket(req, move |ws_stream| async move {
         let (mut outgoing, incoming) = ws_stream.split();
-        let handle_push = async move {
-            if let Err(e) = push(mailbox, &mut outgoing, after).await {
-                log::warn!("Failed to push event: {}", e);
+
+        let server_push_events = async move {
+            if let Err(e) = push_events(mailbox, &mut outgoing, after).await {
+                log::warn!("Failed to push events: {}", e);
             }
             outgoing.close().await.ok();
         };
-        let handle_messages = incoming
+
+        let receive_client_events = incoming
             .timeout(Duration::from_secs(40))
             .map_err(|_| WsError::AlreadyClosed)
             .and_then(future::ready)
             .try_for_each(|message: WsMessage| async move {
                 if let WsMessage::Text(message) = message {
-                    if let Err(e) = receive_message(user_id, message).await {
+                    if let Err(e) = handle_client_event(user_id, message).await {
                         log::warn!("Failed to send event: {}", e);
                     }
                 }
                 Ok(())
             });
-        futures::pin_mut!(handle_push);
-        futures::pin_mut!(handle_messages);
-        future::select(handle_push, handle_messages).await;
+        futures::pin_mut!(server_push_events);
+        futures::pin_mut!(receive_client_events);
+        future::select(server_push_events, receive_client_events).await;
         log::debug!("WebSocket connection close");
     })
 }
