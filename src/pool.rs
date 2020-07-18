@@ -63,6 +63,10 @@ struct InternalPool<C> {
 
 impl<C> InternalPool<C> {
     fn put_back(&mut self, mut connection: Option<C>) {
+        if connection.is_none() {
+            self.conns.push_back(None);
+            return;
+        }
         while let Some(waiter) = self.waiters.pop_front() {
             if let Some(conn) = connection {
                 if let Err(returned) = waiter.send(conn) {
