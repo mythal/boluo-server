@@ -3,7 +3,7 @@ use crate::channels::Channel;
 use crate::error::CacheError;
 use crate::events::context;
 use crate::events::context::SyncEvent;
-use crate::events::preview::{NewPreview, Preview};
+use crate::events::preview::{PreviewPost, Preview};
 use crate::messages::Message;
 use crate::utils::timestamp;
 use crate::{cache, database};
@@ -16,11 +16,12 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct EventQuery {
     pub mailbox: Uuid,
+    pub mailbox_type: MailBoxType,
     /// timestamp
     pub after: i64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum MailBoxType {
     Channel,
@@ -30,9 +31,9 @@ pub enum MailBoxType {
 #[serde(rename_all = "UPPERCASE", tag = "type")]
 pub enum ClientEvent {
     #[serde(rename_all = "camelCase")]
-    Preview { preview: NewPreview },
+    Preview { preview: PreviewPost },
     #[serde(rename_all = "camelCase")]
-    Heartbeat { mailbox: Uuid, mailbox_type: MailBoxType },
+    Heartbeat,
 }
 
 #[derive(Serialize, Debug)]
@@ -103,9 +104,8 @@ impl Event {
     }
 
     pub fn message_preview(preview: Preview) {
-        let channel_id = preview.channel_id;
         let preview = Box::new(preview);
-        spawn(Event::fire_preview(preview, channel_id));
+        spawn(Event::fire_preview(preview));
     }
 
     pub fn heartbeat(mailbox: Uuid, mailbox_type: MailBoxType, user_id: Uuid) {
@@ -173,11 +173,13 @@ impl Event {
         Ok(())
     }
 
-    async fn fire_preview(preview: Box<Preview>, mailbox: Uuid) {
+    async fn fire_preview(preview: Box<Preview>) {
+        let mailbox = preview.mailbox;
+        let mailbox_type = preview.mailbox_type;
         let sender_id = preview.sender_id;
         let event = SyncEvent::new(Event {
             mailbox,
-            mailbox_type: MailBoxType::Channel,
+            mailbox_type,
             body: EventBody::MessagePreview { preview },
             timestamp: timestamp(),
         });
