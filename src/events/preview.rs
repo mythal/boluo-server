@@ -54,7 +54,7 @@ impl PreviewPost {
             entities,
         } = self;
         let start = {
-            let mut cache = cache::conn();
+            let mut cache = cache::conn().await;
             let key = make_key(b"preview", &id, b"start");
             if let Some(bytes) = cache.get(&key).await? {
                 serde_json::from_slice(&*bytes).map_err(error_unexpected!())?

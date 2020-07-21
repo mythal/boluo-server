@@ -141,7 +141,7 @@ impl Event {
     }
 
     pub async fn get_from_cache(mailbox: &Uuid, after: i64) -> Result<Vec<String>, CacheError> {
-        let bytes_array = cache::conn().get_after(&*Self::cache_key(mailbox), after + 1).await?;
+        let bytes_array = cache::conn().await.get_after(&*Self::cache_key(mailbox), after + 1).await?;
         let events = bytes_array
             .into_iter()
             .map(|bytes| String::from_utf8(bytes).ok())
@@ -209,7 +209,7 @@ impl Event {
         let key = Self::cache_key(&mailbox);
 
         // client fetch event cache by time
-        if let Err(e) = cache::conn().set_with_timestamp(&*key, event.encoded.as_bytes()).await {
+        if let Err(e) = cache::conn().await.set_with_timestamp(&*key, event.encoded.as_bytes()).await {
             log::warn!("Failed to cache event: {}", e);
         }
 

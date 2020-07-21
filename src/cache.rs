@@ -68,19 +68,25 @@ impl RedisFactory {
 }
 
 /// Get cache database connection.
-pub fn conn() -> Connection {
+pub async fn conn() -> Connection {
     use once_cell::sync::OnceCell;
     static FACTORY: OnceCell<Connection> = OnceCell::new();
-    FACTORY
-        .get_or_init(|| {
-            use std::env::var;
-            let url = var("REDIS_URL").expect("Failed to load Redis URL");
-            let client = redis::Client::open(&*url).unwrap();
-            let runtime = tokio::runtime::Handle::current();
-            let connect_manager = runtime.block_on(client.get_tokio_connection_manager());
-            Connection::new(connect_manager.expect("Unable to get tokio connection manager"))
-        })
-        .clone()
+    if let Some(connecion) = FACTORY.get() {
+        connecion.clone()
+    } else {
+        use std::env::var;
+        let url = var("REDIS_URL").expect("Failed to load Redis URL");
+        let connection_manager = redis::Client::open(&*url)
+            .expect("Unable to open redis")
+            .get_tokio_connection_manager()
+            .await
+            .expect("Unable to get tokio connection manager");
+        let connection = Connection::new(connection_manager);
+        if let Err(_) = FACTORY.set(connection.clone()) {
+            panic!("Unable to set redis `FACTORY`.")
+        }
+        connection
+    }
 }
 
 pub fn make_key(type_name: &[u8], id: &Uuid, field_name: &[u8]) -> Vec<u8> {
