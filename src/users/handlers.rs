@@ -7,7 +7,7 @@ use crate::session::{remove_session, revoke_session};
 use crate::channels::Channel;
 use crate::error::AppError;
 use crate::spaces::Space;
-use crate::users::api::{Edit, GetMe, QueryUser};
+use crate::users::api::{Edit, GetMe, QueryUser, CheckUsernameExists, CheckEmailExists};
 use crate::{interface, context};
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
@@ -139,6 +139,20 @@ pub async fn edit(req: Request<Body>) -> Result<User, AppError> {
         .map_err(Into::into)
 }
 
+pub async fn check_email_exists(req: Request<Body>) -> Result<bool, AppError> {
+    let CheckEmailExists { email } = parse_query(req.uri())?;
+    let mut db = database::get().await?;
+    let user = User::get_by_email(&mut *db, &*email).await?;
+    return Ok(user.is_some())
+}
+
+pub async fn check_username_exists(req: Request<Body>) -> Result<bool, AppError> {
+    let CheckUsernameExists { username } = parse_query(req.uri())?;
+    let mut db = database::get().await?;
+    let user = User::get_by_username(&mut *db, &*username).await?;
+    return Ok(user.is_some())
+}
+
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     match (path, req.method().clone()) {
         ("/login", Method::POST) => login(req).await,
@@ -147,6 +161,8 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/query", Method::GET) => query_user(req).await.map(ok_response),
         ("/get_me", Method::GET) => get_me(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
+        ("/check_username", Method::GET) => check_username_exists(req).await.map(ok_response),
+        ("/check_email", Method::GET) => check_email_exists(req).await.map(ok_response),
         _ => missing(),
     }
 }
