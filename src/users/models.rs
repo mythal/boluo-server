@@ -40,8 +40,9 @@ impl User {
     ) -> Result<User, ModelError> {
         use crate::validators::{DISPLAY_NAME, EMAIL, NAME, PASSWORD};
         let username = username.trim();
-        let nickname = nickname.trim();
+        let nickname = regex!(r"\s+").replace_all(nickname, " ").trim().to_string();
         let email = email.to_ascii_lowercase();
+
 
         EMAIL.run(&email)?;
         DISPLAY_NAME.run(&nickname)?;
@@ -51,7 +52,7 @@ impl User {
         let row = db
             .query_exactly_one(
                 include_str!("sql/create.sql"),
-                &[&email, &username, &nickname, &password],
+                &[&email, &username, &&*nickname, &password],
             )
             .await?;
         Ok(row.get(0))
