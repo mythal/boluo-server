@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError, ValidationFailed};
-use crate::utils::inner_map;
+use crate::utils::{inner_map, merge_space};
 use crate::validators::CHARACTER_NAME;
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
@@ -72,7 +72,7 @@ impl Message {
         channel_id: &Uuid,
         sender_id: &Uuid,
         default_name: &str,
-        mut name: &str,
+        name: &str,
         text: &str,
         entities: Vec<JsonValue>,
         in_game: bool,
@@ -83,11 +83,11 @@ impl Message {
         order_date: Option<i64>,
     ) -> Result<Message, ModelError> {
         use postgres_types::Type;
-        name = name.trim();
+        let mut name = merge_space(&*name);
         if name.is_empty() {
-            name = default_name.trim();
+            name = default_name.trim().to_string();
         }
-        CHARACTER_NAME.run(name)?;
+        CHARACTER_NAME.run(&name)?;
         if text.is_empty() {
             Err(ValidationFailed("Text is empty."))?;
         }
@@ -139,7 +139,8 @@ impl Message {
         folded: Option<bool>,
     ) -> Result<Option<Message>, ModelError> {
         let entities = entities.map(JsonValue::Array);
-        if let Some(name) = name {
+        let name = name.map(merge_space);
+        if let Some(ref name) = name {
             CHARACTER_NAME.run(name)?;
         }
         let result = db

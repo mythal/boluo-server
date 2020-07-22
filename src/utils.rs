@@ -69,6 +69,10 @@ pub fn inner_map<T, E, U, F: Fn(T) -> U>(x: Result<Option<T>, E>, mapper: F) -> 
     x.map(|y| y.map(mapper))
 }
 
+pub fn merge_space(s: &str) -> String {
+    regex!(r"\s+").replace_all(s, " ").trim().to_string()
+}
+
 #[test]
 fn test_sign() {
     let message = "hello, world";

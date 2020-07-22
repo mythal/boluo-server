@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::utils::inner_map;
+use crate::utils::{inner_map, merge_space};
 
 #[derive(Debug, Serialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ impl User {
     ) -> Result<User, ModelError> {
         use crate::validators::{DISPLAY_NAME, EMAIL, NAME, PASSWORD};
         let username = username.trim();
-        let nickname = regex!(r"\s+").replace_all(nickname, " ").trim().to_string();
+        let nickname = merge_space(nickname);
         let email = email.to_ascii_lowercase();
 
 
