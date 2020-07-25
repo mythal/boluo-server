@@ -9,12 +9,11 @@ use crate::media::api::MediaQuery;
 use crate::utils;
 use futures::StreamExt;
 use hyper::header::{self, HeaderValue};
-use hyper::{Body, Request};
+use hyper::{Body, Request, Uri};
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::prelude::*;
-
-const MAX_SIZE: usize = 1024 * 1024 * 16;
+use crate::media::models::MediaFile;
 
 fn content_disposition(attachment: bool, filename: &str) -> HeaderValue {
     use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
@@ -29,32 +28,18 @@ fn filename_sanitizer(filename: String) -> String {
     filename_replace.replace_all(&filename, "_").to_string()
 }
 
-fn get_content_type(headers: &header::HeaderMap) -> Option<String> {
-    let value = headers.get(header::CONTENT_TYPE)?;
-    let str = value.to_str().ok()?;
-    Some(str.to_string())
-}
-
-fn get_mime_type(mime_type: Option<String>, headers: &header::HeaderMap) -> String {
-    mime_type
-        .or_else(|| get_content_type(headers))
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(mime::TEXT_PLAIN)
-        .to_string()
-}
-
-async fn upload(req: Request<Body>) -> Result<Media, AppError> {
-    let Upload { filename, mime_type } = parse_query(req.uri())?;
-    let session = authenticate(&req).await?;
-    let id = utils::id();
-
+pub fn upload_params(uri: &Uri) -> Result<Upload, AppError> {
+    let Upload { filename, mime_type } = parse_query(uri)?;
     if filename.len() > 200 {
-        Err(ValidationFailed("The filename is too long"))?;
+        Err(ValidationFailed("File Name is too long"))?;
     }
-
-    let mime_type = get_mime_type(mime_type, req.headers());
-
     let filename = filename_sanitizer(filename);
+    Ok(Upload { filename, mime_type })
+}
+
+pub async fn upload(req: Request<Body>, params: Upload, max_size: usize) -> Result<MediaFile, AppError> {
+    let Upload { filename, mime_type } = params;
+    let id = utils::id();
     let temp_filename = format!("{}_{}", id, filename);
 
     let path = Media::path(&*temp_filename);
@@ -65,7 +50,7 @@ async fn upload(req: Request<Body>) -> Result<Media, AppError> {
     while let Some(bytes) = body.next().await {
         let bytes = bytes?;
         size += bytes.len();
-        if size > MAX_SIZE {
+        if size > max_size {
             tokio::fs::remove_file(&*path).await.ok();
             return Err(AppError::BadRequest(format!(
                 "The maximum file size has been exceeded."
@@ -81,24 +66,32 @@ async fn upload(req: Request<Body>) -> Result<Media, AppError> {
 
     let new_filename = format!("{}.{}", hash, ext);
     let new_path = Media::path(&*new_filename);
-    if new_path.exists() {
+    let duplicate = new_path.exists();
+    if duplicate {
         tokio::fs::remove_file(path).await?;
     } else {
         tokio::fs::rename(path, new_path).await?;
     }
 
-    let mut conn = database::get().await?;
-    Media::create(
-        &mut *conn,
-        &*mime_type,
-        session.user_id,
-        &*new_filename,
-        &*filename,
+    let mime_type = mime_type.unwrap_or_default();
+    let media_file = MediaFile {
+        mime_type,
+        filename: new_filename,
+        original_filename: filename,
         hash,
-        size as i32,
-    )
-    .await
-    .map_err(Into::into)
+        size,
+        duplicate,
+    };
+    Ok(media_file)
+}
+
+async fn media_upload(req: Request<Body>) -> Result<Media, AppError> {
+    let session = authenticate(&req).await?;
+    let params = upload_params(req.uri())?;
+    let media_file = upload(req, params, 1024 * 1024 * 16).await?;
+    let mut conn = database::get().await?;
+    media_file.create(&mut *conn, session.user_id).await.map_err(Into::into)
+
 }
 
 async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(), anyhow::Error> {
@@ -147,17 +140,21 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
         body
     };
 
-    let response = hyper::Response::builder()
-        .header(
-            header::CONTENT_TYPE,
-            HeaderValue::from_str(&*media.mime_type).map_err(error_unexpected!())?,
-        )
+    let mut response_builder = hyper::Response::builder()
+        .header(header::ACCEPT_RANGES, HeaderValue::from_static("none"))
+        .header(header::CONTENT_LENGTH, HeaderValue::from(media.size))
         .header(
             header::CONTENT_DISPOSITION,
             content_disposition(download, &*media.original_filename),
-        )
-        .header(header::ACCEPT_RANGES, HeaderValue::from_static("none"))
-        .header(header::CONTENT_LENGTH, HeaderValue::from(media.size))
+        );
+    if !media.mime_type.is_empty() {
+        response_builder = response_builder
+            .header(
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(&*media.mime_type).map_err(error_unexpected!())?,
+            );
+    }
+    let response = response_builder
         .body(body)
         .map_err(error_unexpected!())?;
     Ok(response)
@@ -173,7 +170,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
     match (path, req.method().clone()) {
         ("/get", Method::GET) => get(req).await,
         ("/get", Method::HEAD) => get(req).await,
-        ("/upload", Method::POST) => upload(req).await.map(ok_response),
+        ("/upload", Method::POST) => media_upload(req).await.map(ok_response),
         _ => missing(),
     }
 }

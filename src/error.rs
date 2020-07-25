@@ -72,7 +72,7 @@ impl AppError {
     }
 
     pub fn missing() -> AppError {
-        AppError::BadRequest(format!("The request was sent with the wrong path or method"))
+        AppError::NotFound("The request was sent with the wrong path or method")
     }
 
     pub fn unexpected<E: Error + Send + Sync + 'static>(e: E) -> AppError {

@@ -5,7 +5,7 @@ use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Respons
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
-use crate::spaces::api::SpaceWithMember;
+use crate::spaces::api::{SpaceWithMember, CheckSpaceNameExists};
 use hyper::{Body, Request};
 
 async fn list(_req: Request<Body>) -> Result<Vec<Space>, AppError> {
@@ -48,15 +48,18 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
         password,
         description,
         default_dice_type,
+        first_channel_name,
     }: Create = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
+    let default_dice_type = default_dice_type.as_ref().map(|s| s.as_str());
     let space = Space::create(db, name, &session.user_id, description, password, default_dice_type).await?;
     let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
+    Channel::create(db, &space.id, &*first_channel_name, true, default_dice_type).await?;
     trans.commit().await?;
-    log::info!("a channel ({}) was just created", space.id);
+    log::info!("a space ({}) was just created", space.id);
     Ok(SpaceWithMember { space, member })
 }
 
@@ -138,6 +141,13 @@ async fn delete(req: Request<Body>) -> Result<Space, AppError> {
     Err(AppError::NoPermission)
 }
 
+pub async fn check_space_name_exists(req: Request<Body>) -> Result<bool, AppError> {
+    let CheckSpaceNameExists { name } = parse_query(req.uri())?;
+    let mut db = database::get().await?;
+    let space = Space::get_by_name(&mut *db, &*name).await?;
+    return Ok(space.is_some());
+}
+
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
@@ -152,6 +162,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/leave", Method::POST) => leave(req).await.map(ok_response),
         ("/members", Method::GET) => members(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
+        ("/check_name", Method::GET) => check_space_name_exists(req).await.map(ok_response),
         _ => missing(),
     }
 }

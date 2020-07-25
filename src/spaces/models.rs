@@ -34,12 +34,12 @@ impl Space {
         owner_id: &Uuid,
         description: String,
         password: Option<String>,
-        default_dice_type: Option<String>,
+        default_dice_type: Option<&str>,
     ) -> Result<Space, ModelError> {
         use crate::validators::{DESCRIPTION, DICE, DISPLAY_NAME};
         let name = merge_space(&*name);
         DISPLAY_NAME.run(&name)?;
-        if let Some(default_dice_type) = default_dice_type.as_ref() {
+        if let Some(default_dice_type) = default_dice_type {
             DICE.run(default_dice_type)?;
         }
         DESCRIPTION.run(description.as_str())?;

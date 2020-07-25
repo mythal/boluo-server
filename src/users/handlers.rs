@@ -5,12 +5,13 @@ use crate::database;
 use crate::session::{remove_session, revoke_session};
 
 use crate::channels::Channel;
-use crate::error::AppError;
+use crate::error::{AppError, ValidationFailed};
 use crate::spaces::Space;
 use crate::users::api::{Edit, GetMe, QueryUser, CheckUsernameExists, CheckEmailExists};
 use crate::{interface, context};
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
+use crate::media::{upload, upload_params};
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -139,6 +140,30 @@ pub async fn edit(req: Request<Body>) -> Result<User, AppError> {
         .map_err(Into::into)
 }
 
+pub fn is_image(mime: &Option<String>) -> bool {
+    if let Some(mime) = mime {
+        if mime == r"image/png" || mime == r"image/gif" || mime == r"image/jpeg" {
+            return true;
+        }
+    }
+    return false;
+}
+
+pub async fn edit_avatar(req: Request<Body>) -> Result<User, AppError> {
+    use crate::csrf::authenticate;
+    let session = authenticate(&req).await?;
+    let params = upload_params(req.uri())?;
+    if !is_image(&params.mime_type) {
+        Err(ValidationFailed("Incorrect File Format"))?;
+    }
+    let media = upload(req, params, 1 * 1024 * 1024).await?;
+    let mut db = database::get().await?;
+    let media = media.create(&mut *db, session.user_id).await?;
+    User::edit(&mut *db, &session.user_id, None, None, Some(media.id))
+        .await
+        .map_err(Into::into)
+}
+
 pub async fn check_email_exists(req: Request<Body>) -> Result<bool, AppError> {
     let CheckEmailExists { email } = parse_query(req.uri())?;
     let mut db = database::get().await?;
@@ -153,6 +178,7 @@ pub async fn check_username_exists(req: Request<Body>) -> Result<bool, AppError>
     return Ok(user.is_some())
 }
 
+
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     match (path, req.method().clone()) {
         ("/login", Method::POST) => login(req).await,
@@ -161,6 +187,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/query", Method::GET) => query_user(req).await.map(ok_response),
         ("/get_me", Method::GET) => get_me(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
+        ("/edit_avatar", Method::POST) => edit_avatar(req).await.map(ok_response),
         ("/check_username", Method::GET) => check_username_exists(req).await.map(ok_response),
         ("/check_email", Method::GET) => check_email_exists(req).await.map(ok_response),
         _ => missing(),

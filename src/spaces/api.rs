@@ -8,6 +8,7 @@ pub struct Create {
     pub password: Option<String>,
     pub description: String,
     pub default_dice_type: Option<String>,
+    pub first_channel_name: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -32,4 +33,10 @@ pub struct SpaceWithRelated {
 pub struct SpaceWithMember {
     pub space: super::Space,
     pub member: super::SpaceMember,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckSpaceNameExists {
+    pub name: String,
 }

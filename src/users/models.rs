@@ -116,9 +116,9 @@ impl User {
         avatar: Option<Uuid>,
     ) -> Result<User, ModelError> {
         use crate::validators::{BIO, DISPLAY_NAME};
-        let nickname = nickname.as_ref().map(|s| s.trim());
+        let nickname = nickname.map(|s| merge_space(&*s));
         let bio = bio.as_ref().map(|s| s.trim());
-        if let Some(nickname) = nickname {
+        if let Some(nickname) = &nickname {
             DISPLAY_NAME.run(nickname)?;
         }
         if let Some(bio) = bio {
