@@ -3,12 +3,12 @@ use super::models::ChannelMember;
 use super::Channel;
 use crate::channels::api::{ChannelWithMember, ChannelWithRelated, EditMember, JoinChannel};
 use crate::channels::models::Member;
-use crate::interface::{self, missing, ok_response, parse_body, parse_query, IdQuery, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
 use crate::error::AppError;
 use crate::events::Event;
+use crate::interface::{self, missing, ok_response, parse_body, parse_query, IdQuery, Response};
 use crate::spaces::{Space, SpaceMember};
 use hyper::{Body, Request};
 use uuid::Uuid;
@@ -138,7 +138,9 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
     let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color).await?;
     trans.commit().await?;
     Event::push_members(channel_id);
-    channel_member.ok_or(unexpected!("database returns no result when the user editing channel member."))
+    channel_member.ok_or(unexpected!(
+        "database returns no result when the user editing channel member."
+    ))
 }
 
 async fn members(req: Request<Body>) -> Result<Vec<ChannelMember>, AppError> {

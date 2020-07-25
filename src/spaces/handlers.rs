@@ -1,11 +1,11 @@
 use super::api::{Create, Edit, SpaceWithRelated};
 use super::{Space, SpaceMember};
 use crate::channels::Channel;
-use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
-use crate::spaces::api::{SpaceWithMember, CheckSpaceNameExists};
+use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
+use crate::spaces::api::{CheckSpaceNameExists, SpaceWithMember};
 use hyper::{Body, Request};
 
 async fn list(_req: Request<Body>) -> Result<Vec<Space>, AppError> {

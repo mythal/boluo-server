@@ -1,10 +1,10 @@
 use super::events::EventQuery;
 use super::Event;
-use crate::interface::{missing, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::error::AppError;
-use crate::events::context::{get_preview_cache, get_mailbox_broadcast_rx};
+use crate::events::context::{get_mailbox_broadcast_rx, get_preview_cache};
 use crate::events::events::{ClientEvent, MailBoxType};
+use crate::interface::{missing, parse_query, Response};
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
 use anyhow::anyhow;
 use futures::stream::SplitSink;
@@ -85,7 +85,12 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
     Ok(())
 }
 
-async fn handle_client_event(mailbox: Uuid, mailbox_type: MailBoxType, user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
+async fn handle_client_event(
+    mailbox: Uuid,
+    mailbox_type: MailBoxType,
+    user_id: Option<Uuid>,
+    message: String,
+) -> Result<(), anyhow::Error> {
     let event: ClientEvent = serde_json::from_str(&*message)?;
     match event {
         ClientEvent::Preview { preview } => {
@@ -106,7 +111,11 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
     use tokio::stream::StreamExt as _;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
 
-    let EventQuery { mailbox, mailbox_type, after } = parse_query(req.uri())?;
+    let EventQuery {
+        mailbox,
+        mailbox_type,
+        after,
+    } = parse_query(req.uri())?;
     establish_web_socket(req, move |ws_stream| async move {
         let (mut outgoing, incoming) = ws_stream.split();
 

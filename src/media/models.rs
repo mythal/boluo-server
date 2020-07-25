@@ -18,7 +18,16 @@ pub struct MediaFile {
 
 impl MediaFile {
     pub async fn create<T: Querist>(self, db: &mut T, user_id: Uuid) -> Result<Media, DbError> {
-        Media::create(db, &*self.mime_type, user_id, &*self.filename, &*self.original_filename, self.hash, self.size as i32).await
+        Media::create(
+            db,
+            &*self.mime_type,
+            user_id,
+            &*self.filename,
+            &*self.original_filename,
+            self.hash,
+            self.size as i32,
+        )
+        .await
     }
 }
 

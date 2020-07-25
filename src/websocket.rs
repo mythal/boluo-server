@@ -1,5 +1,5 @@
-use crate::interface::{Request, Response};
 use crate::error::AppError;
+use crate::interface::{Request, Response};
 use crate::utils::sha1;
 use hyper::header::{HeaderMap, HeaderValue, CONNECTION, SEC_WEBSOCKET_KEY, UPGRADE};
 use hyper::upgrade::Upgraded;

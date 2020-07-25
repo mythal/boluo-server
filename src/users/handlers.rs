@@ -1,17 +1,17 @@
 use super::api::{Login, LoginReturn, Register};
 use super::models::User;
-use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::database;
+use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::session::{remove_session, revoke_session};
 
 use crate::channels::Channel;
 use crate::error::{AppError, ValidationFailed};
+use crate::media::{upload, upload_params};
 use crate::spaces::Space;
-use crate::users::api::{Edit, GetMe, QueryUser, CheckUsernameExists, CheckEmailExists};
-use crate::{interface, context};
+use crate::users::api::{CheckEmailExists, CheckUsernameExists, Edit, GetMe, QueryUser};
+use crate::{context, interface};
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
-use crate::media::{upload, upload_params};
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -168,16 +168,15 @@ pub async fn check_email_exists(req: Request<Body>) -> Result<bool, AppError> {
     let CheckEmailExists { email } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let user = User::get_by_email(&mut *db, &*email).await?;
-    return Ok(user.is_some())
+    return Ok(user.is_some());
 }
 
 pub async fn check_username_exists(req: Request<Body>) -> Result<bool, AppError> {
     let CheckUsernameExists { username } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let user = User::get_by_username(&mut *db, &*username).await?;
-    return Ok(user.is_some())
+    return Ok(user.is_some());
 }
-
 
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     match (path, req.method().clone()) {

@@ -85,7 +85,12 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     let id = token_verify(token)?;
 
     let key = make_key(&id);
-    let bytes: Vec<u8> = cache::conn().await.get(&*key).await.map_err(error_unexpected!())?.ok_or(Unauthenticated)?;
+    let bytes: Vec<u8> = cache::conn()
+        .await
+        .get(&*key)
+        .await
+        .map_err(error_unexpected!())?
+        .ok_or(Unauthenticated)?;
 
     let user_id = Uuid::from_slice(&*bytes).map_err(error_unexpected!())?;
     Ok(Session { id, user_id })

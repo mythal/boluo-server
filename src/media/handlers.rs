@@ -1,11 +1,12 @@
 use super::api::Upload;
 use super::models::Media;
-use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
 use crate::error::ValidationFailed;
+use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::media::api::MediaQuery;
+use crate::media::models::MediaFile;
 use crate::utils;
 use futures::StreamExt;
 use hyper::header::{self, HeaderValue};
@@ -13,7 +14,6 @@ use hyper::{Body, Request, Uri};
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::prelude::*;
-use crate::media::models::MediaFile;
 
 fn content_disposition(attachment: bool, filename: &str) -> HeaderValue {
     use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
@@ -91,7 +91,6 @@ async fn media_upload(req: Request<Body>) -> Result<Media, AppError> {
     let media_file = upload(req, params, 1024 * 1024 * 16).await?;
     let mut conn = database::get().await?;
     media_file.create(&mut *conn, session.user_id).await.map_err(Into::into)
-
 }
 
 async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(), anyhow::Error> {
@@ -148,15 +147,12 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
             content_disposition(download, &*media.original_filename),
         );
     if !media.mime_type.is_empty() {
-        response_builder = response_builder
-            .header(
-                header::CONTENT_TYPE,
-                HeaderValue::from_str(&*media.mime_type).map_err(error_unexpected!())?,
-            );
+        response_builder = response_builder.header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_str(&*media.mime_type).map_err(error_unexpected!())?,
+        );
     }
-    let response = response_builder
-        .body(body)
-        .map_err(error_unexpected!())?;
+    let response = response_builder.body(body).map_err(error_unexpected!())?;
     Ok(response)
 }
 

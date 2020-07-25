@@ -1,14 +1,14 @@
+use crate::cache;
+use crate::cache::make_key;
 use crate::channels::ChannelMember;
 use crate::database;
-use crate::cache;
 use crate::error::AppError;
+use crate::events::events::MailBoxType;
 use crate::events::Event;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
-use crate::cache::make_key;
-use crate::events::events::MailBoxType;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,7 +71,8 @@ impl PreviewPost {
             MailBoxType::Channel => {
                 ChannelMember::get(db, &user_id, &mailbox)
                     .await?
-                    .ok_or(AppError::NoPermission)?.is_master
+                    .ok_or(AppError::NoPermission)?
+                    .is_master
             }
         };
         Event::message_preview(Preview {

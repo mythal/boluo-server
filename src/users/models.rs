@@ -43,7 +43,6 @@ impl User {
         let nickname = merge_space(nickname);
         let email = email.to_ascii_lowercase();
 
-
         EMAIL.run(&email)?;
         DISPLAY_NAME.run(&nickname)?;
         NAME.run(&username)?;

@@ -1,13 +1,13 @@
 use super::api::{Edit, NewMessage};
 use super::Message;
 use crate::channels::{Channel, ChannelMember};
-use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::csrf::authenticate;
 use crate::error::AppError;
 use crate::events::Event;
+use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::messages::api::ByChannel;
 use crate::spaces::SpaceMember;
-use crate::{interface, database};
+use crate::{database, interface};
 use hyper::{Body, Request};
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {

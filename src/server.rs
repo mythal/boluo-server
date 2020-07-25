@@ -14,13 +14,13 @@ mod utils;
 mod error;
 mod cache;
 mod channels;
-mod interface;
 mod context;
 mod cors;
 mod csrf;
 mod database;
 mod date_format;
 mod events;
+mod interface;
 mod logger;
 mod media;
 mod messages;
@@ -31,9 +31,9 @@ mod users;
 mod validators;
 mod websocket;
 
-use crate::interface::{err_response, missing, ok_response, Response};
 use crate::cors::allow_origin;
 use crate::error::AppError;
+use crate::interface::{err_response, missing, ok_response, Response};
 
 async fn router(req: Request<Body>) -> Result<Response, AppError> {
     let path = req.uri().path().to_string();
