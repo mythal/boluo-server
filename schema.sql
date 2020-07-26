@@ -14,6 +14,7 @@ CREATE TABLE media
     "hash"              text      NOT NULL,
     "size"              integer   NOT NULL,
     "description"       text      NOT NULL DEFAULT '',
+    "source"            text      NOT NULL DEFAULT '',
     "created"           timestamp NOT NULL DEFAULT now()
 );
 

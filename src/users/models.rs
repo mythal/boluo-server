@@ -148,7 +148,7 @@ async fn user_test() -> Result<(), crate::error::AppError> {
     let user = User::login(db, username, password).await.unwrap().unwrap();
     assert_eq!(user.nickname, nickname);
 
-    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0).await?;
+    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0, "").await?;
     let new_nickname = "动感超人";
     let bio = "千片万片无数片";
     let user_altered = User::edit(

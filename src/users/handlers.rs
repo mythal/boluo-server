@@ -158,7 +158,7 @@ pub async fn edit_avatar(req: Request<Body>) -> Result<User, AppError> {
     }
     let media = upload(req, params, 1 * 1024 * 1024).await?;
     let mut db = database::get().await?;
-    let media = media.create(&mut *db, session.user_id).await?;
+    let media = media.create(&mut *db, session.user_id, "avatar").await?;
     User::edit(&mut *db, &session.user_id, None, None, Some(media.id))
         .await
         .map_err(Into::into)

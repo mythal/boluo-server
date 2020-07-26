@@ -17,7 +17,7 @@ pub struct MediaFile {
 }
 
 impl MediaFile {
-    pub async fn create<T: Querist>(self, db: &mut T, user_id: Uuid) -> Result<Media, DbError> {
+    pub async fn create<T: Querist>(self, db: &mut T, user_id: Uuid, source: &str) -> Result<Media, DbError> {
         Media::create(
             db,
             &*self.mime_type,
@@ -26,6 +26,7 @@ impl MediaFile {
             &*self.original_filename,
             self.hash,
             self.size as i32,
+            source,
         )
         .await
     }
@@ -43,6 +44,7 @@ pub struct Media {
     pub hash: String,
     pub size: i32,
     pub description: String,
+    pub source: String,
     #[serde(with = "crate::date_format")]
     pub created: NaiveDateTime,
 }
@@ -74,11 +76,12 @@ impl Media {
         original_filename: &str,
         hash: String,
         size: i32,
+        source: &str,
     ) -> Result<Media, DbError> {
         let row = db
             .query_exactly_one(
                 include_str!("sql/create.sql"),
-                &[&mime_type, &uploader_id, &filename, &original_filename, &hash, &size],
+                &[&mime_type, &uploader_id, &filename, &original_filename, &hash, &size, &source],
             )
             .await?;
         Ok(row.get(0))

@@ -90,7 +90,7 @@ async fn media_upload(req: Request<Body>) -> Result<Media, AppError> {
     let params = upload_params(req.uri())?;
     let media_file = upload(req, params, 1024 * 1024 * 16).await?;
     let mut conn = database::get().await?;
-    media_file.create(&mut *conn, session.user_id).await.map_err(Into::into)
+    media_file.create(&mut *conn, session.user_id, "").await.map_err(Into::into)
 }
 
 async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(), anyhow::Error> {
