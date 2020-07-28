@@ -22,13 +22,13 @@ pub struct EventQuery {
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-#[serde(rename_all = "UPPERCASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MailBoxType {
     Channel,
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "UPPERCASE", tag = "type")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE", tag = "type")]
 pub enum ClientEvent {
     #[serde(rename_all = "camelCase")]
     Preview { preview: PreviewPost },
@@ -38,7 +38,7 @@ pub enum ClientEvent {
 
 #[derive(Serialize, Debug)]
 #[serde(tag = "type")]
-#[serde(rename_all = "UPPERCASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EventBody {
     #[serde(rename_all = "camelCase")]
     NewMessage {
