@@ -7,8 +7,10 @@ use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::messages::api::ByChannel;
 use crate::spaces::SpaceMember;
-use crate::{database, interface};
+use crate::{database, interface, cache};
 use hyper::{Body, Request};
+use chrono::NaiveDateTime;
+use crate::events::preview::PreviewPost;
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
@@ -28,6 +30,21 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
+    let order_date: Option<i64> = match (order_date, message_id) {
+        (None, Some(id)) => {
+            let mut cache = cache::conn().await;
+            let key = PreviewPost::start_key(id);
+            if let Some(bytes) = cache.get(&key).await? {
+                serde_json::from_slice::<NaiveDateTime>(&*bytes)
+                    .ok()
+                    .map(|date| date.timestamp_millis())
+            } else {
+                None
+            }
+        },
+        _ => None
+    };
+
     let message = Message::create(
         db,
         message_id.as_ref(),

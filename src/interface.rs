@@ -101,7 +101,10 @@ where
 {
     let body = hyper::body::to_bytes(req.into_body())
         .await
-        .map_err(|_| AppError::BadRequest(format!("Failed to read the request body")))?;
+        .map_err(|e| {
+            log::debug!("{}", e);
+            AppError::BadRequest(format!("Failed to read the request body"))
+        })?;
     serde_json::from_slice(&*body).map_err(|_| AppError::BadRequest(format!("Failed to parse the request body")))
 }
 #[derive(Deserialize, Debug, Eq, PartialEq)]

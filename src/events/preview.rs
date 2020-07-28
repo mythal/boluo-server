@@ -43,6 +43,10 @@ pub struct PreviewPost {
 }
 
 impl PreviewPost {
+    pub fn start_key(id: Uuid) -> Vec<u8> {
+        make_key(b"preview", &id, b"start")
+    }
+
     pub async fn broadcast(self, mailbox: Uuid, mailbox_type: MailBoxType, user_id: Uuid) -> Result<(), AppError> {
         let PreviewPost {
             id,
@@ -55,7 +59,7 @@ impl PreviewPost {
         } = self;
         let start = {
             let mut cache = cache::conn().await;
-            let key = make_key(b"preview", &id, b"start");
+            let key = PreviewPost::start_key(id);
             if let Some(bytes) = cache.get(&key).await? {
                 serde_json::from_slice(&*bytes).map_err(error_unexpected!())?
             } else {
