@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::api::SpaceWithMember;
-use crate::utils::{inner_map, merge_space};
+use crate::utils::{inner_map, merge_blank};
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -37,7 +37,7 @@ impl Space {
         default_dice_type: Option<&str>,
     ) -> Result<Space, ModelError> {
         use crate::validators::{DESCRIPTION, DICE, DISPLAY_NAME};
-        let name = merge_space(&*name);
+        let name = merge_blank(&*name);
         DISPLAY_NAME.run(&name)?;
         if let Some(default_dice_type) = default_dice_type {
             DICE.run(default_dice_type)?;

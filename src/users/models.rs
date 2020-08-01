@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::utils::{inner_map, merge_space};
+use crate::utils::{inner_map, merge_blank};
 
 #[derive(Debug, Serialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ impl User {
     ) -> Result<User, ModelError> {
         use crate::validators::{DISPLAY_NAME, EMAIL, NAME, PASSWORD};
         let username = username.trim();
-        let nickname = merge_space(nickname);
+        let nickname = merge_blank(nickname);
         let email = email.to_ascii_lowercase();
 
         EMAIL.run(&email)?;
@@ -115,7 +115,7 @@ impl User {
         avatar: Option<Uuid>,
     ) -> Result<User, ModelError> {
         use crate::validators::{BIO, DISPLAY_NAME};
-        let nickname = nickname.map(|s| merge_space(&*s));
+        let nickname = nickname.map(|s| merge_blank(&*s));
         let bio = bio.as_ref().map(|s| s.trim());
         if let Some(nickname) = &nickname {
             DISPLAY_NAME.run(nickname)?;
@@ -148,7 +148,17 @@ async fn user_test() -> Result<(), crate::error::AppError> {
     let user = User::login(db, username, password).await.unwrap().unwrap();
     assert_eq!(user.nickname, nickname);
 
-    let avatar = Media::create(db, "text/plain", user.id, "avatar.jpg", "avatar.jpg", "".to_string(), 0, "").await?;
+    let avatar = Media::create(
+        db,
+        "text/plain",
+        user.id,
+        "avatar.jpg",
+        "avatar.jpg",
+        "".to_string(),
+        0,
+        "",
+    )
+    .await?;
     let new_nickname = "动感超人";
     let bio = "千片万片无数片";
     let user_altered = User::edit(

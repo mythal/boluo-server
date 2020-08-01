@@ -3,14 +3,14 @@ use super::Message;
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::error::AppError;
+use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::messages::api::ByChannel;
 use crate::spaces::SpaceMember;
-use crate::{database, interface, cache};
-use hyper::{Body, Request};
+use crate::{cache, database, interface};
 use chrono::NaiveDateTime;
-use crate::events::preview::PreviewPost;
+use hyper::{Body, Request};
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let session = authenticate(&req).await?;
@@ -41,8 +41,8 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
             } else {
                 None
             }
-        },
-        _ => None
+        }
+        _ => None,
     };
 
     let message = Message::create(

@@ -1,4 +1,4 @@
-SELECT msg.hide
+SELECT msg
 FROM messages msg
 WHERE msg.channel_id = $1
   AND msg.deleted = false

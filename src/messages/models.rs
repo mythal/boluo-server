@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError, ValidationFailed};
-use crate::utils::{inner_map, merge_space};
+use crate::utils::merge_blank;
 use crate::validators::CHARACTER_NAME;
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
@@ -42,8 +42,18 @@ pub struct Message {
 
 impl Message {
     pub async fn get<T: Querist>(db: &mut T, id: &Uuid, user_id: Option<&Uuid>) -> Result<Option<Message>, DbError> {
-        let result = db.query_one(include_str!("sql/get.sql"), &[id, &user_id]).await;
-        inner_map(result, |row| row.get(0))
+        let result = db
+            .query_one(include_str!("sql/get.sql"), &[id, &user_id])
+            .await?
+            .map(|row| {
+                let mut message: Message = row.get(0);
+                let should_hide = row.get(1);
+                if should_hide {
+                    message.hide();
+                }
+                return message;
+            });
+        Ok(result)
     }
 
     pub async fn get_by_channel<T: Querist>(
@@ -63,7 +73,9 @@ impl Message {
                 &[channel_id, &before, &limit],
             )
             .await?;
-        Ok(rows.into_iter().map(|row| row.get(0)).collect())
+        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
+        messages.iter_mut().for_each(Message::hide);
+        Ok(messages)
     }
 
     pub async fn create<T: Querist>(
@@ -83,7 +95,7 @@ impl Message {
         order_date: Option<i64>,
     ) -> Result<Message, ModelError> {
         use postgres_types::Type;
-        let mut name = merge_space(&*name);
+        let mut name = merge_blank(&*name);
         if name.is_empty() {
             name = default_name.trim().to_string();
         }
@@ -125,7 +137,18 @@ impl Message {
                 ],
             )
             .await?;
-        Ok(row.get(0))
+        let mut message: Message = row.get(0);
+        message.hide();
+        Ok(message)
+    }
+
+    pub fn hide(&mut self) {
+        if self.whisper_to_users.is_none() {
+            return;
+        }
+        self.seed = vec![0; 4];
+        self.text = String::new();
+        self.entities = JsonValue::Array(Vec::new());
     }
 
     pub async fn edit<T: Querist>(
@@ -139,17 +162,22 @@ impl Message {
         folded: Option<bool>,
     ) -> Result<Option<Message>, ModelError> {
         let entities = entities.map(JsonValue::Array);
-        let name = name.map(merge_space);
+        let name = name.map(merge_blank);
         if let Some(ref name) = name {
             CHARACTER_NAME.run(name)?;
         }
-        let result = db
+        let result: Option<Message> = db
             .query_one(
                 include_str!("sql/edit.sql"),
                 &[id, &name, &text, &entities, &in_game, &is_action, &folded],
             )
-            .await?;
-        Ok(result.map(|row| row.get(0)))
+            .await?
+            .map(|row| {
+                let mut message: Message = row.get(0);
+                message.hide();
+                message
+            });
+        Ok(result)
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {

@@ -7,4 +7,4 @@ SET name      = COALESCE($2, name),
     folded    = COALESCE($7, folded),
     modified  = now()
 WHERE id = $1
-RETURNING messages.hide;
+RETURNING messages;

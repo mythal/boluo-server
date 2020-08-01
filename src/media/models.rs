@@ -81,7 +81,15 @@ impl Media {
         let row = db
             .query_exactly_one(
                 include_str!("sql/create.sql"),
-                &[&mime_type, &uploader_id, &filename, &original_filename, &hash, &size, &source],
+                &[
+                    &mime_type,
+                    &uploader_id,
+                    &filename,
+                    &original_filename,
+                    &hash,
+                    &size,
+                    &source,
+                ],
             )
             .await?;
         Ok(row.get(0))

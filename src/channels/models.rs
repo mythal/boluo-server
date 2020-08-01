@@ -8,7 +8,7 @@ use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::{Space, SpaceMember};
 use crate::users::User;
-use crate::utils::{inner_map, merge_space};
+use crate::utils::{inner_map, merge_blank};
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize, FromSql)]
@@ -37,7 +37,7 @@ impl Channel {
     ) -> Result<Channel, ModelError> {
         use crate::validators;
 
-        let name = merge_space(name);
+        let name = merge_blank(name);
         validators::DISPLAY_NAME.run(&name)?;
         if let Some(default_dice_type) = default_dice_type {
             validators::DICE.run(default_dice_type)?;
