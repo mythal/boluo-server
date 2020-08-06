@@ -1,6 +1,6 @@
 use super::api::{Create, Edit, SpaceWithRelated};
 use super::{Space, SpaceMember};
-use crate::channels::Channel;
+use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
@@ -57,7 +57,8 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let default_dice_type = default_dice_type.as_ref().map(|s| s.as_str());
     let space = Space::create(db, name, &session.user_id, description, password, default_dice_type).await?;
     let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
-    Channel::create(db, &space.id, &*first_channel_name, true, default_dice_type).await?;
+    let channel = Channel::create(db, &space.id, &*first_channel_name, true, default_dice_type).await?;
+    ChannelMember::add_user(db, &session.user_id, &channel.id, "", true).await?;
     trans.commit().await?;
     log::info!("a space ({}) was just created", space.id);
     Ok(SpaceWithMember { space, member })

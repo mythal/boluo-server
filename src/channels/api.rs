@@ -22,6 +22,17 @@ pub struct Edit {
     pub name: Option<String>,
     pub topic: Option<String>,
     pub default_dice_type: Option<String>,
+    #[serde(default)]
+    pub grant_masters: Vec<Uuid>,
+    #[serde(default)]
+    pub remove_masters: Vec<Uuid>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckChannelName {
+    pub space_id: Uuid,
+    pub name: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -39,6 +50,7 @@ pub struct ChannelWithRelated {
     pub members: Vec<Member>,
     pub space: Space,
     pub color_list: HashMap<Uuid, String>,
+    pub heartbeat_map: HashMap<Uuid, i64>,
 }
 
 #[derive(Serialize, Debug)]

@@ -27,6 +27,13 @@ pub fn get_broadcast_table() -> &'static BroadcastTable {
     BROADCAST_TABLE.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
+type HeartbeatMap = Mutex<HashMap<Uuid, HashMap<Uuid, i64>>>;
+static HEARTBEAT_MAP: OnceCell<HeartbeatMap> = OnceCell::new();
+
+pub fn get_heartbeat_map() -> &'static HeartbeatMap {
+    HEARTBEAT_MAP.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<SyncEvent> {
     let broadcast_table = get_broadcast_table();
     let table = broadcast_table.read().await;

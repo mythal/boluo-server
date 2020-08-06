@@ -11,7 +11,7 @@ use crate::users::User;
 use crate::utils::{inner_map, merge_blank};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize, FromSql)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "channels")]
 pub struct Channel {
@@ -55,6 +55,13 @@ impl Channel {
 
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<Channel>, DbError> {
         let result = db.query_one(include_str!("sql/fetch_channel.sql"), &[&id]).await;
+        inner_map(result, |row| row.get(0))
+    }
+
+    pub async fn get_by_name<T: Querist>(db: &mut T, space_id: Uuid, name: &str) -> Result<Option<Channel>, DbError> {
+        let result = db
+            .query_one(include_str!("sql/get_channel_by_name.sql"), &[&space_id, &name])
+            .await;
         inner_map(result, |row| row.get(0))
     }
 
@@ -334,7 +341,9 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     let new_name = "深水城水很深";
     let channel_edited = Channel::edit(db, &channel.id, Some(new_name), None, None).await?;
     assert_eq!(channel_edited.name, new_name);
-    let (channel, space) = Channel::get_with_space(db, &channel.id).await?.unwrap();
+    let (_, space) = Channel::get_with_space(db, &channel.id).await?.unwrap();
+    let channel = Channel::get_by_name(db, space.id, new_name).await?.unwrap();
+    assert!(Channel::get_by_name(db, space.id, "Madoka").await?.is_none());
 
     // members
     SpaceMember::add_admin(db, &user.id, &space.id).await?;

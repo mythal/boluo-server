@@ -1,16 +1,18 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::channels::api::{ChannelWithMember, ChannelWithRelated, EditMember, JoinChannel};
+use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel};
 use crate::channels::models::Member;
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
 use crate::error::AppError;
+use crate::events::context::get_heartbeat_map;
 use crate::events::Event;
 use crate::interface::{self, missing, ok_response, parse_body, parse_query, IdQuery, Response};
 use crate::spaces::{Space, SpaceMember};
 use hyper::{Body, Request};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
@@ -42,11 +44,19 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
         .ok_or(AppError::NotFound("channels"))?;
     let members = Member::get_by_channel(db, channel.id).await?;
     let color_list = ChannelMember::get_color_list(db, &channel.id).await?;
+    let heartbeat_map = {
+        let map = get_heartbeat_map().lock().await;
+        match map.get(&query.id) {
+            Some(map) => map.clone(),
+            _ => HashMap::new(),
+        }
+    };
     let with_related = ChannelWithRelated {
         channel,
         space,
         members,
         color_list,
+        heartbeat_map,
     };
     Ok(with_related)
 }
@@ -85,13 +95,15 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     Ok(joined)
 }
 
-async fn edit(req: Request<Body>) -> Result<bool, AppError> {
+async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     let session = authenticate(&req).await?;
     let Edit {
         channel_id,
         name,
         topic,
         default_dice_type,
+        grant_masters,
+        remove_masters,
     } = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
@@ -112,9 +124,19 @@ async fn edit(req: Request<Body>) -> Result<bool, AppError> {
         default_dice_type.as_ref().map(String::as_str),
     )
     .await?;
+    let push_members = !(grant_masters.is_empty() && remove_masters.is_empty());
+    for user_id in grant_masters {
+        ChannelMember::set_master(db, &user_id, &channel_id, true).await.ok();
+    }
+    for user_id in remove_masters {
+        ChannelMember::set_master(db, &user_id, &channel_id, false).await.ok();
+    }
+    if push_members {
+        Event::push_members(channel_id);
+    }
     trans.commit().await?;
-    Event::channel_edited(channel);
-    Ok(true)
+    Event::channel_edited(channel.clone());
+    Ok(channel)
 }
 
 async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
@@ -135,12 +157,12 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
 
     let character_name = character_name.as_ref().map(String::as_str);
     let text_color = text_color.as_ref().map(String::as_str);
-    let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color).await?;
+    let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color)
+        .await?
+        .ok_or(AppError::NotFound("channel member"));
     trans.commit().await?;
     Event::push_members(channel_id);
-    channel_member.ok_or(unexpected!(
-        "database returns no result when the user editing channel member."
-    ))
+    channel_member
 }
 
 async fn members(req: Request<Body>) -> Result<Vec<ChannelMember>, AppError> {
@@ -214,6 +236,12 @@ async fn my_channels(req: Request<Body>) -> Result<Vec<ChannelWithMember>, AppEr
     Channel::get_by_user(db, session.user_id).await.map_err(Into::into)
 }
 
+pub async fn check_channel_name_exists(req: Request<Body>) -> Result<bool, AppError> {
+    let CheckChannelName { space_id, name } = parse_query(req.uri())?;
+    let mut db = database::get().await?;
+    let channel = Channel::get_by_name(&mut *db, space_id, &*name).await?;
+    return Ok(channel.is_some());
+}
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
@@ -229,6 +257,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/join", Method::POST) => join(req).await.map(ok_response),
         ("/leave", Method::POST) => leave(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
+        ("/check_name", Method::GET) => check_channel_name_exists(req).await.map(ok_response),
         _ => missing(),
     }
 }

@@ -111,7 +111,7 @@ async fn main() {
     let make_svc = make_service_fn(|_: &AddrStream| async { Ok::<_, hyper::Error>(service_fn(handler)) });
 
     let server = Server::bind(&addr).serve(make_svc);
-    tokio::spawn(events::tasks::periodical_cleaner());
+    events::tasks::start();
     // Run this server for... forever!
     if let Err(e) = server.await {
         log::error!("server error: {}", e);

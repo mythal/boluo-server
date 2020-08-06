@@ -55,6 +55,10 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
             }
             Err(e) => Err(anyhow!("failed to get events from cache: {}", e))?,
         }
+        let initialized = Event::initialized(mailbox, MailBoxType::Channel);
+        tx.send(WsMessage::Text(serde_json::to_string(&initialized).unwrap()))
+            .await
+            .ok();
         loop {
             let message = match mailbox_rx.recv().await {
                 Ok(event) => WsMessage::Text(event.encoded),
@@ -99,7 +103,7 @@ async fn handle_client_event(
         }
         ClientEvent::Heartbeat => {
             if let Some(user_id) = user_id {
-                Event::heartbeat(mailbox, mailbox_type, user_id);
+                Event::heartbeat(mailbox, user_id).await;
             }
         }
     }

@@ -2,7 +2,7 @@ use crate::channels::models::Member;
 use crate::channels::Channel;
 use crate::error::CacheError;
 use crate::events::context;
-use crate::events::context::SyncEvent;
+use crate::events::context::{get_heartbeat_map, SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
 use crate::messages::Message;
 use crate::utils::timestamp;
@@ -70,6 +70,10 @@ pub enum EventBody {
     Heartbeat {
         user_id: Uuid,
     },
+    #[serde(rename_all = "camelCase")]
+    HeartbeatMap {
+        heartbeat_map: HashMap<Uuid, i64>,
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -82,6 +86,25 @@ pub struct Event {
 }
 
 impl Event {
+    pub fn initialized(mailbox: Uuid, mailbox_type: MailBoxType) -> Event {
+        Event {
+            mailbox,
+            mailbox_type,
+            timestamp: timestamp(),
+            body: EventBody::Initialized,
+        }
+    }
+
+    pub async fn push_heartbeat_map(channel_id: Uuid, heartbeat_map: HashMap<Uuid, i64>) {
+        let event = SyncEvent::new(Event {
+            mailbox: channel_id,
+            mailbox_type: MailBoxType::Channel,
+            timestamp: timestamp(),
+            body: EventBody::HeartbeatMap { heartbeat_map },
+        });
+        Event::send(channel_id, event).await;
+    }
+
     pub fn new_message(message: Message) {
         let channel_id = message.channel_id;
         let message = Box::new(message);
@@ -111,19 +134,18 @@ impl Event {
         spawn(Event::fire_preview(preview));
     }
 
-    pub fn heartbeat(mailbox: Uuid, mailbox_type: MailBoxType, user_id: Uuid) {
-        spawn(async move {
-            Event::send(
-                mailbox,
-                SyncEvent::new(Event {
-                    mailbox,
-                    mailbox_type,
-                    body: EventBody::Heartbeat { user_id },
-                    timestamp: timestamp(),
-                }),
-            )
-            .await;
-        });
+    pub async fn heartbeat(mailbox: Uuid, user_id: Uuid) {
+        let now = timestamp();
+        let map = get_heartbeat_map();
+        let mut map = map.lock().await;
+        if let Some(heartbeat_map) = map.get_mut(&mailbox) {
+            heartbeat_map.insert(user_id, now);
+        } else {
+            let mut heartbeat_map = HashMap::new();
+            heartbeat_map.remove(&user_id);
+            heartbeat_map.insert(user_id, now);
+            map.insert(mailbox, heartbeat_map);
+        }
     }
 
     pub fn push_members(channel_id: Uuid) {
