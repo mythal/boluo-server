@@ -75,8 +75,8 @@ pub fn log_error(e: &AppError, method: &str, uri: &Uri, elapsed: u128) {
 }
 
 async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
-    use std::time::SystemTime;
-    let start = SystemTime::now();
+    use std::time::Instant;
+    let start = Instant::now();
     let method = req.method().clone();
     let method = method.as_str();
     let uri = req.uri().clone();
@@ -87,7 +87,7 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     if debug() {
         response = response.map(allow_origin);
     }
-    let elapsed = SystemTime::now().duration_since(start).unwrap().as_millis();
+    let elapsed = start.elapsed().as_millis();
     match response {
         Ok(response) => {
             log::debug!("{:>6} {} {}ms", method, uri, elapsed);
