@@ -79,7 +79,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     let mut db = database::get().await?;
     let mut trans = db.transaction().await?;
     let db = &mut trans;
-    let message = Message::get(db, &message_id, Some(&session.user_id))
+    let mut message = Message::get(db, &message_id, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("messages"))?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
@@ -88,11 +88,13 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     if message.sender_id != session.user_id {
         return Err(AppError::NoPermission);
     }
-    let text = text.as_ref().map(String::as_str);
-    let name = name.as_ref().map(String::as_str);
-    let message = Message::edit(db, name, &message_id, text, entities, in_game, is_action, None)
-        .await?
-        .ok_or_else(|| unexpected!("The message had been delete."))?;
+    if name.is_some() || text.is_some() || entities.is_some() || in_game.is_some() || is_action.is_some() {
+        let text = text.as_ref().map(String::as_str);
+        let name = name.as_ref().map(String::as_str);
+        message = Message::edit(db, name, &message_id, text, entities, in_game, is_action, None)
+            .await?
+            .ok_or_else(|| unexpected!("The message had been delete."))?;
+    }
     trans.commit().await?;
     Event::message_edited(message.clone());
     Ok(message)
@@ -175,6 +177,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/query", Method::GET) => query(req).await.map(ok_response),
         ("/by_channel", Method::GET) => by_channel(req).await.map(ok_response),
         ("/send", Method::POST) => send(req).await.map(ok_response),
+        ("/edit", Method::PATCH) => edit(req).await.map(ok_response),
         ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         _ => missing(),

@@ -6,7 +6,7 @@ use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::utils::{inner_map, merge_blank};
 
-#[derive(Debug, Serialize, FromSql)]
+#[derive(Debug, Serialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "users")]
 pub struct User {

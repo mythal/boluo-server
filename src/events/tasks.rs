@@ -1,39 +1,36 @@
-use crate::cache;
-use crate::events::context::{get_broadcast_table, get_heartbeat_map};
+use crate::events::context::{get_broadcast_table, get_event_map, get_heartbeat_map};
 use crate::events::Event;
 use crate::utils::timestamp;
 use futures::StreamExt;
 use std::collections::HashMap;
+use std::mem::swap;
 use std::time::Duration;
 use tokio::time::interval;
 use uuid::Uuid;
 
 pub fn start() {
-    tokio::spawn(redis_clean());
+    tokio::spawn(events_clean());
     tokio::spawn(push_heartbeat());
     tokio::spawn(heartbeat_clean());
     tokio::spawn(broadcast_clean());
 }
 
-async fn redis_clean() {
+async fn events_clean() {
     interval(Duration::from_secs(60 * 60 * 2))
         .for_each(|_| async {
-            use redis::AsyncCommands;
-
-            let mut cache = cache::conn().await;
-            let keys: Vec<Vec<u8>> = if let Ok(keys) = cache.inner.keys(b"mailbox:*").await {
-                keys
-            } else {
-                log::warn!("Failed to get redis keys.");
-                return;
-            };
             let before = timestamp() - 24 * 60 * 60 * 1000;
-            for key in keys.into_iter() {
-                if let Err(e) = cache.clear_before(&*key, before).await {
-                    log::warn!("Failed to clear old events: {}", e);
+            let mut old_map = HashMap::new();
+            let mut event_map = get_event_map().write().await;
+            for (_, events) in event_map.iter_mut() {
+                while let Some(event) = events.pop_front() {
+                    if event.event.timestamp > before {
+                        events.push_front(event);
+                        break;
+                    }
                 }
             }
-            log::info!("Redis clean finished");
+            swap(&mut old_map, &mut *event_map);
+            *event_map = old_map.into_iter().filter(|(_, events)| !events.is_empty()).collect();
         })
         .await;
 }

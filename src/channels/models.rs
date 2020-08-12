@@ -124,7 +124,7 @@ impl Channel {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, FromSql)]
+#[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "channel_members")]
 pub struct ChannelMember {
@@ -266,7 +266,7 @@ impl ChannelMember {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Member {
     pub channel: ChannelMember,

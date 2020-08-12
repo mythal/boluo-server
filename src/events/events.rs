@@ -2,13 +2,14 @@ use crate::channels::models::Member;
 use crate::channels::Channel;
 use crate::error::CacheError;
 use crate::events::context;
-use crate::events::context::{get_heartbeat_map, SyncEvent};
+use crate::events::context::{get_event_map, get_heartbeat_map, SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
 use crate::messages::Message;
 use crate::utils::timestamp;
 use crate::{cache, database};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 use tokio::spawn;
 use uuid::Uuid;
 
@@ -36,7 +37,7 @@ pub enum ClientEvent {
     Heartbeat,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EventBody {
@@ -76,7 +77,7 @@ pub enum EventBody {
     },
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Event {
     pub mailbox: Uuid,
@@ -102,7 +103,7 @@ impl Event {
             timestamp: timestamp(),
             body: EventBody::HeartbeatMap { heartbeat_map },
         });
-        Event::send(channel_id, event).await;
+        Event::send(channel_id, Arc::new(event)).await;
     }
 
     pub fn new_message(message: Message) {
@@ -129,9 +130,10 @@ impl Event {
         Event::fire(EventBody::ChannelDeleted, channel_id, MailBoxType::Channel)
     }
 
-    pub fn message_preview(preview: Preview) {
-        let preview = Box::new(preview);
-        spawn(Event::fire_preview(preview));
+    pub fn message_preview(preview: Box<Preview>) {
+        let mailbox = preview.mailbox;
+        let mailbox_type = preview.mailbox_type;
+        Event::fire(EventBody::MessagePreview { preview }, mailbox, mailbox_type);
     }
 
     pub async fn heartbeat(mailbox: Uuid, user_id: Uuid) {
@@ -166,19 +168,19 @@ impl Event {
     }
 
     pub async fn get_from_cache(mailbox: &Uuid, after: i64) -> Result<Vec<String>, CacheError> {
-        let bytes_array = cache::conn()
-            .await
-            .get_after(&*Self::cache_key(mailbox), after + 1)
-            .await?;
-        let events = bytes_array
-            .into_iter()
-            .map(|bytes| String::from_utf8(bytes).ok())
-            .filter_map(|s| s)
-            .collect();
-        Ok(events)
+        if let Some(events) = get_event_map().read().await.get(mailbox) {
+            let events = events
+                .iter()
+                .skip_while(|event| event.event.timestamp < after)
+                .map(|event| event.encoded.clone())
+                .collect();
+            Ok(events)
+        } else {
+            Ok(vec![])
+        }
     }
 
-    async fn send(mailbox: Uuid, event: SyncEvent) {
+    async fn send(mailbox: Uuid, event: Arc<SyncEvent>) {
         let broadcast_table = context::get_broadcast_table();
         let table = broadcast_table.read().await;
         if let Some(tx) = table.get(&mailbox) {
@@ -197,52 +199,48 @@ impl Event {
             timestamp: timestamp(),
         });
 
-        Event::send(channel_id, event).await;
+        Event::send(channel_id, Arc::new(event)).await;
         Ok(())
     }
 
-    async fn fire_preview(preview: Box<Preview>) {
-        let mailbox = preview.mailbox;
-        let mailbox_type = preview.mailbox_type;
-        let sender_id = preview.sender_id;
-        let event = SyncEvent::new(Event {
-            mailbox,
-            mailbox_type,
-            body: EventBody::MessagePreview { preview },
-            timestamp: timestamp(),
-        });
-
-        let cache = context::get_preview_cache();
-        let mut mailbox_map = cache.lock().await;
-        if let Some(user_map) = mailbox_map.get_mut(&mailbox) {
-            user_map.insert(sender_id, event.clone());
-        } else {
-            let mut user_map = HashMap::new();
-            user_map.insert(sender_id, event.clone());
-            mailbox_map.insert(mailbox, user_map);
-        }
-        drop(mailbox_map);
-
-        Event::send(mailbox, event).await;
-    }
-
     async fn async_fire(body: EventBody, mailbox: Uuid, mailbox_type: MailBoxType) {
-        let event = SyncEvent::new(Event {
+        let preview_id = match &body {
+            EventBody::MessagePreview { preview } => Some((preview.id, preview.sender_id)),
+            _ => None,
+        };
+        let event = Arc::new(SyncEvent::new(Event {
             mailbox,
             body,
             mailbox_type,
             timestamp: timestamp(),
-        });
-
-        let key = Self::cache_key(&mailbox);
-
-        // client fetch event cache by time
-        if let Err(e) = cache::conn()
-            .await
-            .set_with_timestamp(&*key, event.encoded.as_bytes())
-            .await
-        {
-            log::warn!("Failed to cache event: {}", e);
+        }));
+        let mut event_map = get_event_map().write().await;
+        if let Some(events) = event_map.get_mut(&mailbox) {
+            if let Some((preview_id, sender_id)) = preview_id {
+                if let Some((i, _)) = events
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .take(32)
+                    .find(|(_, e)| match &e.event.body {
+                        EventBody::MessagePreview { preview } => {
+                            preview.id == preview_id && preview.sender_id == sender_id
+                        }
+                        _ => false,
+                    })
+                {
+                    let index = events.len() - 1 - i;
+                    events[index] = event.clone();
+                } else {
+                    events.push_back(event.clone());
+                }
+            } else {
+                events.push_back(event.clone());
+            }
+        } else {
+            let mut events = VecDeque::new();
+            events.push_back(event.clone());
+            event_map.insert(mailbox, events);
         }
 
         Event::send(mailbox, event).await;

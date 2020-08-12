@@ -129,7 +129,7 @@ impl Space {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, FromSql)]
+#[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "space_members")]
 pub struct SpaceMember {

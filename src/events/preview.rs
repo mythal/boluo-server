@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Preview {
     pub id: Uuid,
@@ -28,6 +28,8 @@ pub struct Preview {
     pub entities: Vec<JsonValue>,
     #[serde(with = "crate::date_format")]
     pub start: NaiveDateTime,
+    #[serde(with = "crate::date_format::option")]
+    pub edit_for: Option<NaiveDateTime>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -40,6 +42,9 @@ pub struct PreviewPost {
     pub is_action: bool,
     pub text: Option<String>,
     pub entities: Vec<JsonValue>,
+    #[serde(default)]
+    #[serde(with = "crate::date_format::option")]
+    pub edit_for: Option<NaiveDateTime>,
 }
 
 impl PreviewPost {
@@ -56,6 +61,7 @@ impl PreviewPost {
             is_action,
             text,
             entities,
+            edit_for,
         } = self;
         let start = {
             let mut cache = cache::conn().await;
@@ -79,7 +85,7 @@ impl PreviewPost {
                     .is_master
             }
         };
-        Event::message_preview(Preview {
+        Event::message_preview(Box::new(Preview {
             id,
             sender_id: user_id,
             mailbox,
@@ -94,7 +100,8 @@ impl PreviewPost {
             entities,
             start,
             is_master,
-        });
+            edit_for,
+        }));
         Ok(())
     }
 }

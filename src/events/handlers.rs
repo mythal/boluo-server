@@ -2,7 +2,7 @@ use super::events::EventQuery;
 use super::Event;
 use crate::csrf::authenticate;
 use crate::error::AppError;
-use crate::events::context::{get_mailbox_broadcast_rx, get_preview_cache};
+use crate::events::context::get_mailbox_broadcast_rx;
 use crate::events::events::{ClientEvent, MailBoxType};
 use crate::interface::{missing, parse_query, Response};
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
@@ -39,17 +39,9 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
         let mut tx = tx.clone();
         let mut mailbox_rx = get_mailbox_broadcast_rx(&mailbox).await;
         let cached_events = Event::get_from_cache(&mailbox, after).await;
-        let channel_preview_list: Vec<String> = {
-            let preview_cache = get_preview_cache();
-            let channel_map = preview_cache.lock().await;
-            channel_map
-                .get(&mailbox)
-                .map(|user_map| user_map.values().map(|event| event.encoded.clone()).collect())
-                .unwrap_or(Vec::new())
-        };
         match cached_events {
             Ok(events) => {
-                for e in events.into_iter().chain(channel_preview_list.into_iter()) {
+                for e in events.into_iter() {
                     tx.send(WsMessage::Text(e)).await.ok();
                 }
             }
@@ -61,7 +53,7 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
             .ok();
         loop {
             let message = match mailbox_rx.recv().await {
-                Ok(event) => WsMessage::Text(event.encoded),
+                Ok(event) => WsMessage::Text(event.encoded.clone()),
                 Err(RecvError::Lagged(lagged)) => {
                     log::warn!("lagged {} at {}", lagged, mailbox);
                     continue;

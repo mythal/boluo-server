@@ -1,25 +1,24 @@
 use crate::events::Event;
 use once_cell::sync::OnceCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct SyncEvent {
-    pub event: Arc<Event>,
+    pub event: Event,
     pub encoded: String,
 }
 
 impl SyncEvent {
     pub fn new(event: Event) -> SyncEvent {
         let encoded = serde_json::to_string(&event).unwrap();
-        let event = Arc::new(event);
         SyncEvent { encoded, event }
     }
 }
 
-type BroadcastTable = RwLock<HashMap<Uuid, broadcast::Sender<SyncEvent>>>;
+type BroadcastTable = RwLock<HashMap<Uuid, broadcast::Sender<Arc<SyncEvent>>>>;
 
 static BROADCAST_TABLE: OnceCell<BroadcastTable> = OnceCell::new();
 
@@ -34,7 +33,7 @@ pub fn get_heartbeat_map() -> &'static HeartbeatMap {
     HEARTBEAT_MAP.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<SyncEvent> {
+pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<Arc<SyncEvent>> {
     let broadcast_table = get_broadcast_table();
     let table = broadcast_table.read().await;
     if let Some(sender) = table.get(id) {
@@ -49,10 +48,10 @@ pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<SyncEven
     }
 }
 
-pub type PreviewCache = Mutex<HashMap<Uuid, HashMap<Uuid, SyncEvent>>>;
+pub type EventMap = RwLock<HashMap<Uuid, VecDeque<Arc<SyncEvent>>>>;
 
-static PREVIEW_CACHE: OnceCell<PreviewCache> = OnceCell::new();
+static EVENT_MAP: OnceCell<EventMap> = OnceCell::new();
 
-pub fn get_preview_cache() -> &'static PreviewCache {
-    PREVIEW_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+pub fn get_event_map() -> &'static EventMap {
+    EVENT_MAP.get_or_init(|| RwLock::new(HashMap::new()))
 }

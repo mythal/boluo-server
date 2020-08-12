@@ -1,5 +1,4 @@
 use crate::error::CacheError;
-use crate::utils::timestamp;
 pub use redis::aio::ConnectionManager;
 pub use redis::AsyncCommands;
 use uuid::Uuid;
@@ -28,28 +27,6 @@ impl Connection {
 
     pub async fn remove(&mut self, key: &[u8]) -> Result<(), CacheError> {
         self.inner.del(key).await
-    }
-
-    pub async fn set_with_timestamp(&mut self, key: &[u8], value: &[u8]) -> Result<(), CacheError> {
-        self.inner.zadd(key, value, timestamp()).await
-    }
-
-    pub async fn get_after(&mut self, key: &[u8], start: i64) -> Result<Vec<Vec<u8>>, CacheError> {
-        self.inner.zrangebyscore(key, start, "+inf").await
-    }
-
-    pub async fn clear_before(&mut self, key: &[u8], end: i64) -> Result<(), CacheError> {
-        self.inner.zrembyscore(key, "-inf", end).await
-    }
-
-    pub async fn get_min_time(&mut self, key: &[u8]) -> Result<i64, CacheError> {
-        let (_, timestamp): (Vec<u8>, String) = self.inner.zrange_withscores(key, 0, 0).await?;
-        Ok(timestamp.parse().expect("Unable to parse timestamp in the redis."))
-    }
-
-    pub async fn get_max_time(&mut self, key: &[u8]) -> Result<i64, CacheError> {
-        let (_, timestamp): (Vec<u8>, String) = self.inner.zrevrange_withscores(key, 0, 0).await?;
-        Ok(timestamp.parse().expect("Unable to parse timestamp in the redis."))
     }
 }
 
