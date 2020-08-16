@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
-use crate::messages::api::ByChannel;
+use crate::messages::api::{ByChannel, Move};
 use crate::spaces::SpaceMember;
 use crate::{cache, database, interface};
 use chrono::NaiveDateTime;
@@ -91,10 +91,38 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     if name.is_some() || text.is_some() || entities.is_some() || in_game.is_some() || is_action.is_some() {
         let text = text.as_ref().map(String::as_str);
         let name = name.as_ref().map(String::as_str);
-        message = Message::edit(db, name, &message_id, text, entities, in_game, is_action, None)
+        message = Message::edit(db, name, &message_id, text, entities, in_game, is_action, None, None, None)
             .await?
             .ok_or_else(|| unexpected!("The message had been delete."))?;
     }
+    trans.commit().await?;
+    Event::message_edited(message.clone());
+    Ok(message)
+}
+
+async fn move_message(req: Request<Body>) -> Result<Message, AppError> {
+    let session = authenticate(&req).await?;
+    let Move {
+        message_id,
+        order_offset,
+        order_date,
+    } = interface::parse_body(req).await?;
+
+    let mut db = database::get().await?;
+    let mut trans = db.transaction().await?;
+    let db = &mut trans;
+    let message = Message::get(db, &message_id, Some(&session.user_id))
+        .await?
+        .ok_or(AppError::NotFound("messages"))?;
+    let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
+        .await?
+        .ok_or(AppError::NoPermission)?;
+    if !channel_member.is_master && message.sender_id != session.user_id {
+        return Err(AppError::NoPermission);
+    }
+    let message = Message::edit(db, None, &message_id, None, None, None, None, None, Some(order_date), Some(order_offset))
+        .await?
+        .ok_or_else(|| unexpected!("The message had been delete."))?;
     trans.commit().await?;
     Event::message_edited(message.clone());
     Ok(message)
@@ -144,7 +172,7 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
         return Err(AppError::NoPermission);
     }
     let folded = Some(!message.folded);
-    let message = Message::edit(db, None, &message.id, None, None, None, None, folded)
+    let message = Message::edit(db, None, &message.id, None, None, None, None, folded, None, None)
         .await?
         .ok_or_else(|| unexpected!("message not found"))?;
     Event::message_edited(message.clone());
@@ -178,6 +206,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/by_channel", Method::GET) => by_channel(req).await.map(ok_response),
         ("/send", Method::POST) => send(req).await.map(ok_response),
         ("/edit", Method::PATCH) => edit(req).await.map(ok_response),
+        ("/move", Method::PATCH) => move_message(req).await.map(ok_response),
         ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         _ => missing(),

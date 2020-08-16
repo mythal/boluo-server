@@ -204,8 +204,8 @@ impl Event {
     }
 
     async fn async_fire(body: EventBody, mailbox: Uuid, mailbox_type: MailBoxType) {
-        let preview_id = match &body {
-            EventBody::MessagePreview { preview } => Some((preview.id, preview.sender_id)),
+        let preview_info = match &body {
+            EventBody::MessagePreview { preview } => Some((preview.id, preview.sender_id, preview.edit_for)),
             _ => None,
         };
         let event = Arc::new(SyncEvent::new(Event {
@@ -216,15 +216,17 @@ impl Event {
         }));
         let mut event_map = get_event_map().write().await;
         if let Some(events) = event_map.get_mut(&mailbox) {
-            if let Some((preview_id, sender_id)) = preview_id {
+            if let Some((preview_id, sender_id, edit_for)) = preview_info {
                 if let Some((i, _)) = events
                     .iter()
                     .rev()
                     .enumerate()
-                    .take(32)
+                    .take(16)
                     .find(|(_, e)| match &e.event.body {
                         EventBody::MessagePreview { preview } => {
-                            preview.id == preview_id && preview.sender_id == sender_id
+                            preview.sender_id == sender_id &&
+                            (preview.id == preview_id || edit_for.is_none()) &&
+                            preview.edit_for == edit_for
                         }
                         _ => false,
                     })
