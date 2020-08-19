@@ -1,3 +1,4 @@
+use crate::context::debug;
 use crate::events::context::{get_broadcast_table, get_event_map, get_heartbeat_map};
 use crate::events::Event;
 use crate::utils::timestamp;
@@ -36,7 +37,12 @@ async fn events_clean() {
 }
 
 async fn push_heartbeat() {
-    interval(Duration::from_secs(6))
+    let duration = if debug() {
+        Duration::from_secs(60)
+    } else {
+        Duration::from_secs(6)
+    };
+    interval(duration)
         .for_each(|_| async {
             let map = get_heartbeat_map().lock().await;
             for (channel_id, heartbeat_map) in map.iter() {

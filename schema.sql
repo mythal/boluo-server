@@ -123,8 +123,9 @@ CREATE TABLE messages
     "order_offset"      integer   NOT NULL DEFAULT 0
 );
 
+ALTER TABLE messages ADD CONSTRAINT order_index_unique UNIQUE (channel_id, order_date, order_offset) DEFERRABLE INITIALLY IMMEDIATE;
+CREATE INDEX "order_index" ON messages (order_date DESC, order_offset DESC);
 CREATE INDEX "message_tags" ON messages USING GIN (tags);
-CREATE INDEX "order_index" ON messages (order_date DESC, order_offset ASC);
 CREATE INDEX "message_channel" ON messages USING btree (channel_id);
 
 CREATE TABLE restrained_members

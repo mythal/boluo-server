@@ -151,6 +151,67 @@ impl Message {
         self.entities = JsonValue::Array(Vec::new());
     }
 
+    pub async fn move_earlier<T: Querist>(
+        db: &mut T,
+        message_id: Uuid,
+        target: &Message,
+    ) -> Result<Vec<Message>, ModelError> {
+        db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
+        let rows = db
+            .query(
+                include_str!("sql/make_room_earlier.sql"),
+                &[&target.channel_id, &target.order_date, &target.order_offset],
+            )
+            .await?;
+        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
+        let message = Message::set_order(db, &message_id, &target.order_date, target.order_offset - 1).await?;
+        if let Some((i, _)) = messages.iter().enumerate().find(|(_, item)| item.id == message.id) {
+            messages[i] = message;
+        } else {
+            messages.push(message);
+        }
+        Ok(messages)
+    }
+    pub async fn move_later<T: Querist>(
+        db: &mut T,
+        message_id: Uuid,
+        target: &Message,
+    ) -> Result<Vec<Message>, ModelError> {
+        db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
+
+        let rows = db
+            .query(
+                include_str!("sql/make_room_later.sql"),
+                &[&target.channel_id, &target.order_date, &target.order_offset],
+            )
+            .await?;
+        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
+        let message = Message::set_order(db, &message_id, &target.order_date, target.order_offset + 1).await?;
+        if let Some((i, _)) = messages.iter().enumerate().find(|(_, item)| item.id == message.id) {
+            messages[i] = message;
+        } else {
+            messages.push(message);
+        }
+        Ok(messages)
+    }
+    async fn set_order<T: Querist>(
+        db: &mut T,
+        id: &Uuid,
+        order_date: &NaiveDateTime,
+        order_offset: i32,
+    ) -> Result<Message, ModelError> {
+        let message = db
+            .query_exactly_one(include_str!("sql/set_order.sql"), &[&id, &order_date, &order_offset])
+            .await?
+            .get(0);
+        Ok(message)
+    }
+    pub async fn swap<T: Querist>(db: &mut T, a: &Message, b: &Message) -> Result<Vec<Message>, ModelError> {
+        db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
+        let m = Message::set_order(db, &a.id, &b.order_date, b.order_offset).await?;
+        let n = Message::set_order(db, &b.id, &a.order_date, a.order_offset).await?;
+        Ok(vec![m, n])
+    }
     pub async fn edit<T: Querist>(
         db: &mut T,
         name: Option<&str>,
@@ -171,7 +232,17 @@ impl Message {
         let result: Option<Message> = db
             .query_one(
                 include_str!("sql/edit.sql"),
-                &[id, &name, &text, &entities, &in_game, &is_action, &folded, &order_date, &order_offset],
+                &[
+                    id,
+                    &name,
+                    &text,
+                    &entities,
+                    &in_game,
+                    &is_action,
+                    &folded,
+                    &order_date,
+                    &order_offset,
+                ],
             )
             .await?
             .map(|row| {
@@ -194,6 +265,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     use crate::spaces::Space;
     use crate::spaces::SpaceMember;
     use crate::users::User;
+    use crate::utils::timestamp;
 
     let mut client = Client::new().await?;
     let mut trans = client.transaction().await?;
@@ -227,7 +299,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         Some(vec![]),
         Some(Uuid::nil()),
-        None,
+        Some(timestamp()),
     )
     .await?;
     assert_eq!(message.text, "");
@@ -236,9 +308,20 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     assert_eq!(message.text, text);
 
     let new_text = "cocona";
-    let edited = Message::edit(db, None, &message.id, Some(new_text), Some(vec![]), None, None, None, None, None)
-        .await?
-        .unwrap();
+    let edited = Message::edit(
+        db,
+        None,
+        &message.id,
+        Some(new_text),
+        Some(vec![]),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await?
+    .unwrap();
     assert_eq!(edited.text, "");
 
     let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
@@ -249,6 +332,41 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].id, message.id);
+
+    let message_2 = Message::create(
+        db,
+        None,
+        &channel.id,
+        &user.id,
+        "orange",
+        &*user.nickname,
+        "腰不舒服！",
+        vec![],
+        true,
+        false,
+        true,
+        None,
+        Some(Uuid::nil()),
+        Some(timestamp()),
+    )
+    .await?;
+    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
+
+    assert_eq!(messages.len(), 2);
+    let move_result = Message::move_earlier(db, message_2.id, &message).await?;
+    assert_eq!(move_result.len(), 1);
+    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
+    assert_eq!(messages[0].id, message.id);
+    assert_eq!(messages[1].id, message_2.id);
+    assert_eq!(messages[0].order_date, messages[1].order_date);
+    assert!(messages[0].order_offset > messages[1].order_offset);
+    Message::move_earlier(db, message.id, &messages[1]).await?;
+    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
+    assert_eq!(messages[0].id, message_2.id);
+    assert_eq!(messages[1].id, message.id);
+    assert_eq!(messages[0].order_date, messages[1].order_date);
+    assert!(messages[0].order_offset > messages[1].order_offset);
+
     Message::delete(db, &message.id).await?;
     assert!(Message::get(db, &message.id, Some(&user.id)).await?.is_none());
     Ok(())

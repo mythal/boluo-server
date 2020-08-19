@@ -50,6 +50,10 @@ pub enum EventBody {
         message_id: Uuid,
     },
     #[serde(rename_all = "camelCase")]
+    MessagesMoved {
+        messages: Vec<Message>,
+    },
+    #[serde(rename_all = "camelCase")]
     MessageEdited {
         message: Box<Message>,
     },
@@ -124,6 +128,13 @@ impl Event {
         let channel_id = message.channel_id;
         let message = Box::new(message);
         Event::fire(EventBody::MessageEdited { message }, channel_id, MailBoxType::Channel)
+    }
+    pub fn messages_removed(messages: Vec<Message>) {
+        if messages.len() == 0 {
+            return;
+        }
+        let channel_id = messages[0].channel_id;
+        Event::fire(EventBody::MessagesMoved { messages }, channel_id, MailBoxType::Channel)
     }
 
     pub fn channel_deleted(channel_id: Uuid) {
@@ -224,9 +235,9 @@ impl Event {
                     .take(16)
                     .find(|(_, e)| match &e.event.body {
                         EventBody::MessagePreview { preview } => {
-                            preview.sender_id == sender_id &&
-                            (preview.id == preview_id || edit_for.is_none()) &&
-                            preview.edit_for == edit_for
+                            preview.sender_id == sender_id
+                                && (preview.id == preview_id || edit_for.is_none())
+                                && preview.edit_for == edit_for
                         }
                         _ => false,
                     })
