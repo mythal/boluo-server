@@ -1,5 +1,5 @@
 use crate::context::debug;
-use crate::events::context::{get_broadcast_table, get_event_map, get_heartbeat_map};
+use crate::events::context::{get_broadcast_table, get_heartbeat_map};
 use crate::events::Event;
 use crate::utils::timestamp;
 use futures::StreamExt;
@@ -19,19 +19,31 @@ pub fn start() {
 async fn events_clean() {
     interval(Duration::from_secs(60 * 60 * 2))
         .for_each(|_| async {
+            let mut next_map = HashMap::new();
             let before = timestamp() - 24 * 60 * 60 * 1000;
-            let mut old_map = HashMap::new();
-            let mut event_map = get_event_map().write().await;
-            for (_, events) in event_map.iter_mut() {
-                while let Some(event) = events.pop_front() {
-                    if event.event.timestamp > before {
-                        events.push_front(event);
-                        break;
+            let cache = super::context::get_cache().channels.read().await;
+            for (id, channel) in cache.iter() {
+                let mut empty = false;
+                {
+                    let mut channel = channel.lock().await;
+                    while let Some(event) = channel.events.pop_front() {
+                        if event.event.timestamp > before {
+                            channel.events.push_front(event);
+                            break;
+                        }
+                    }
+                    channel.start_at = before;
+                    if channel.events.len() == 0 {
+                        empty = true;
                     }
                 }
+                if !empty {
+                    next_map.insert(*id, channel.clone());
+                }
             }
-            swap(&mut old_map, &mut *event_map);
-            *event_map = old_map.into_iter().filter(|(_, events)| !events.is_empty()).collect();
+            drop(cache);
+            let mut cache = super::context::get_cache().channels.write().await;
+            swap(&mut next_map, &mut *cache);
         })
         .await;
 }

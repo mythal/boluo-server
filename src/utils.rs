@@ -61,8 +61,8 @@ pub fn verify(message: &str, signature: &str) -> Option<()> {
 }
 
 pub fn timestamp() -> i64 {
-    use chrono::Local;
-    Local::now().timestamp_millis()
+    use chrono::Utc;
+    Utc::now().timestamp_millis()
 }
 
 pub fn inner_map<T, E, U, F: Fn(T) -> U>(x: Result<Option<T>, E>, mapper: F) -> Result<Option<U>, E> {

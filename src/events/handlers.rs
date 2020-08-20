@@ -39,18 +39,10 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
         let mut tx = tx.clone();
         let mut mailbox_rx = get_mailbox_broadcast_rx(&mailbox).await;
         let cached_events = Event::get_from_cache(&mailbox, after).await;
-        match cached_events {
-            Ok(events) => {
-                for e in events.into_iter() {
-                    tx.send(WsMessage::Text(e)).await.ok();
-                }
-            }
-            Err(e) => Err(anyhow!("failed to get events from cache: {}", e))?,
+        for e in cached_events.into_iter() {
+            tx.send(WsMessage::Text(e)).await.ok();
         }
-        let initialized = Event::initialized(mailbox, MailBoxType::Channel);
-        tx.send(WsMessage::Text(serde_json::to_string(&initialized).unwrap()))
-            .await
-            .ok();
+
         loop {
             let message = match mailbox_rx.recv().await {
                 Ok(event) => WsMessage::Text(event.encoded.clone()),
@@ -76,7 +68,6 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
         _ = ping => {},
         r = push => { r? },
     }
-    Event::get_from_cache(&mailbox, after).await?;
 
     Ok(())
 }

@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use uuid::Uuid;
 
+use crate::utils::timestamp;
+
 #[derive(Clone, Debug)]
 pub struct SyncEvent {
     pub event: Event,
@@ -46,6 +48,51 @@ pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<Arc<Sync
         table.insert(id.clone(), tx);
         rx
     }
+}
+
+pub struct ChannelCache {
+    pub start_at: i64,
+    pub events: VecDeque<Arc<SyncEvent>>,
+}
+
+pub struct Cache {
+    pub channels: RwLock<HashMap<Uuid, Arc<Mutex<ChannelCache>>>>,
+}
+
+impl Cache {
+    pub fn new() -> Cache {
+        Cache {
+            channels: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn try_channel(&self, channel_id: &Uuid) -> Option<Arc<Mutex<ChannelCache>>> {
+        let map = self.channels.read().await;
+        map.get(&channel_id).cloned()
+    }
+
+    pub async fn channel(&self, channel_id: &Uuid) -> Arc<Mutex<ChannelCache>> {
+        let map = self.channels.read().await;
+        if let Some(cache) = map.get(&channel_id) {
+            cache.clone()
+        } else {
+            drop(map);
+            let cache = ChannelCache {
+                start_at: timestamp(),
+                events: VecDeque::new(),
+            };
+            let cache = Arc::new(Mutex::new(cache));
+            let mut map = self.channels.write().await;
+            map.insert(*channel_id, cache.clone());
+            cache
+        }
+    }
+}
+
+static CACHE: OnceCell<Cache> = OnceCell::new();
+
+pub fn get_cache() -> &'static Cache {
+    CACHE.get_or_init(Cache::new)
 }
 
 pub type EventMap = RwLock<HashMap<Uuid, VecDeque<Arc<SyncEvent>>>>;

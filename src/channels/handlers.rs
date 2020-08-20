@@ -51,12 +51,16 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
             _ => HashMap::new(),
         }
     };
+
+    let encoded_events = Event::get_from_cache(&query.id, 0).await;
+
     let with_related = ChannelWithRelated {
         channel,
         space,
         members,
         color_list,
         heartbeat_map,
+        encoded_events,
     };
     Ok(with_related)
 }

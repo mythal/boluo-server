@@ -1,14 +1,14 @@
 use crate::channels::models::Member;
 use crate::channels::Channel;
-use crate::error::CacheError;
+
 use crate::events::context;
-use crate::events::context::{get_event_map, get_heartbeat_map, SyncEvent};
+use crate::events::context::{get_heartbeat_map, SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
 use crate::messages::Message;
 use crate::utils::timestamp;
 use crate::{cache, database};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::spawn;
 use uuid::Uuid;
@@ -178,16 +178,19 @@ impl Event {
         cache::make_key(b"mailbox", mailbox, b"events")
     }
 
-    pub async fn get_from_cache(mailbox: &Uuid, after: i64) -> Result<Vec<String>, CacheError> {
-        if let Some(events) = get_event_map().read().await.get(mailbox) {
-            let events = events
+    pub async fn get_from_cache(mailbox: &Uuid, after: i64) -> Vec<String> {
+        let cache = super::context::get_cache().try_channel(mailbox).await;
+        if let Some(cache) = cache {
+            let cache = cache.lock().await;
+            let events = cache
+                .events
                 .iter()
                 .skip_while(|event| event.event.timestamp < after)
                 .map(|event| event.encoded.clone())
                 .collect();
-            Ok(events)
+            events
         } else {
-            Ok(vec![])
+            vec![]
         }
     }
 
@@ -225,35 +228,32 @@ impl Event {
             mailbox_type,
             timestamp: timestamp(),
         }));
-        let mut event_map = get_event_map().write().await;
-        if let Some(events) = event_map.get_mut(&mailbox) {
-            if let Some((preview_id, sender_id, edit_for)) = preview_info {
-                if let Some((i, _)) = events
-                    .iter()
-                    .rev()
-                    .enumerate()
-                    .take(16)
-                    .find(|(_, e)| match &e.event.body {
-                        EventBody::MessagePreview { preview } => {
-                            preview.sender_id == sender_id
-                                && (preview.id == preview_id || edit_for.is_none())
-                                && preview.edit_for == edit_for
-                        }
-                        _ => false,
-                    })
-                {
-                    let index = events.len() - 1 - i;
-                    events[index] = event.clone();
-                } else {
-                    events.push_back(event.clone());
-                }
+        let cache = super::context::get_cache().channel(&mailbox).await;
+        let mut cache = cache.lock().await;
+
+        let events = &mut cache.events;
+        if let Some((preview_id, sender_id, edit_for)) = preview_info {
+            if let Some((i, _)) = events
+                .iter()
+                .rev()
+                .enumerate()
+                .take(16)
+                .find(|(_, e)| match &e.event.body {
+                    EventBody::MessagePreview { preview } => {
+                        preview.sender_id == sender_id
+                            && (preview.id == preview_id || edit_for.is_none())
+                            && preview.edit_for == edit_for
+                    }
+                    _ => false,
+                })
+            {
+                let index = events.len() - 1 - i;
+                events[index] = event.clone();
             } else {
                 events.push_back(event.clone());
             }
         } else {
-            let mut events = VecDeque::new();
             events.push_back(event.clone());
-            event_map.insert(mailbox, events);
         }
 
         Event::send(mailbox, event).await;
