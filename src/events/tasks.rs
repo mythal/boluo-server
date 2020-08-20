@@ -33,7 +33,7 @@ async fn events_clean() {
                         }
                     }
                     channel.start_at = before;
-                    if channel.events.len() == 0 {
+                    if channel.events.is_empty() {
                         empty = true;
                     }
                 }
@@ -77,7 +77,7 @@ async fn heartbeat_clean() {
                     .into_iter()
                     .filter(|(_, time)| now - *time < hour)
                     .collect();
-                if heartbeat_map.len() > 0 {
+                if !heartbeat_map.is_empty() {
                     map_ref.insert(channel_id, heartbeat_map);
                 }
             }

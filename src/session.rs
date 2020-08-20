@@ -18,7 +18,7 @@ pub fn token(session: &Uuid) -> String {
 
 pub fn token_verify(token: &str) -> Result<Uuid, AppError> {
     let mut iter = token.split('.');
-    let parse_failed = || BadRequest(format!("Failed to parse token"));
+    let parse_failed = || BadRequest("Failed to parse token".to_string());
     let session = iter.next().ok_or_else(parse_failed)?;
     let signature = iter.next().ok_or_else(parse_failed)?;
     utils::verify(session, signature).ok_or(Unauthenticated)?;

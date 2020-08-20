@@ -51,7 +51,7 @@ impl Message {
                 if should_hide {
                     message.hide();
                 }
-                return message;
+                message
             });
         Ok(result)
     }
@@ -64,7 +64,7 @@ impl Message {
     ) -> Result<Vec<Message>, ModelError> {
         use postgres_types::Type;
         if limit > 256 || limit < 1 {
-            Err(ValidationFailed("illegal limit range"))?;
+            return Err(ValidationFailed("illegal limit range").into());
         }
         let rows = db
             .query_typed(
@@ -101,7 +101,7 @@ impl Message {
         }
         CHARACTER_NAME.run(&name)?;
         if text.is_empty() {
-            Err(ValidationFailed("Text is empty."))?;
+            return Err(ValidationFailed("Text is empty.").into());
         }
         let entities = JsonValue::Array(entities);
         let row = db

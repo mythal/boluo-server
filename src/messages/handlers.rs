@@ -89,8 +89,8 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
         return Err(AppError::NoPermission);
     }
     if name.is_some() || text.is_some() || entities.is_some() || in_game.is_some() || is_action.is_some() {
-        let text = text.as_ref().map(String::as_str);
-        let name = name.as_ref().map(String::as_str);
+        let text = text.as_deref();
+        let name = name.as_deref();
         message = Message::edit(
             db,
             name,

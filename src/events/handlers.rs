@@ -52,7 +52,7 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
                 }
                 Err(RecvError::Closed) => return Err(anyhow!("broadcast ({}) is closed.", mailbox)),
             };
-            if let Err(_) = tx.send(message).await {
+            if tx.send(message).await.is_err() {
                 break;
             }
         }

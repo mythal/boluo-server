@@ -48,8 +48,8 @@ impl RedisFactory {
 pub async fn conn() -> Connection {
     use once_cell::sync::OnceCell;
     static FACTORY: OnceCell<Connection> = OnceCell::new();
-    if let Some(connecion) = FACTORY.get() {
-        connecion.clone()
+    if let Some(connection) = FACTORY.get() {
+        connection.clone()
     } else {
         use std::env::var;
         let url = var("REDIS_URL").expect("Failed to load Redis URL");
@@ -59,7 +59,7 @@ pub async fn conn() -> Connection {
             .await
             .expect("Unable to get tokio connection manager");
         let connection = Connection::new(connection_manager);
-        if let Err(_) = FACTORY.set(connection.clone()) {
+        if FACTORY.set(connection.clone()).is_err() {
             panic!("Unable to set redis `FACTORY`.")
         }
         connection

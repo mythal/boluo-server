@@ -45,7 +45,7 @@ pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<Arc<Sync
         let capacity = 256;
         let (tx, rx) = broadcast::channel(capacity);
         let mut table = broadcast_table.write().await;
-        table.insert(id.clone(), tx);
+        table.insert(*id, tx);
         rx
     }
 }

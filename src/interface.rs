@@ -101,9 +101,9 @@ where
 {
     let body = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
         log::debug!("{}", e);
-        AppError::BadRequest(format!("Failed to read the request body"))
+        AppError::BadRequest("Failed to read the request body".to_string())
     })?;
-    serde_json::from_slice(&*body).map_err(|_| AppError::BadRequest(format!("Failed to parse the request body")))
+    serde_json::from_slice(&*body).map_err(|_| AppError::BadRequest("Failed to parse the request body".to_string()))
 }
 #[derive(Deserialize, Debug, Eq, PartialEq)]
 pub struct IdQuery {

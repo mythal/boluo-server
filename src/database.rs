@@ -164,7 +164,7 @@ impl Client {
                     if self.client.is_closed() {
                         self.mark_broken();
                     }
-                    return Err(e);
+                    Err(e)
                 }
             }
         }

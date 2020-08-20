@@ -12,21 +12,21 @@ pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppErr
     let upgrade = headers
         .get(UPGRADE)
         .and_then(|v| v.to_str().ok())
-        .ok_or(AppError::BadRequest(String::new()))?;
+        .ok_or_else(|| AppError::BadRequest(String::new()))?;
     if upgrade.trim() != "websocket" {
         return Err(AppError::BadRequest(String::new()));
     }
     let connection = headers
         .get(CONNECTION)
         .and_then(|v| v.to_str().ok())
-        .ok_or(AppError::BadRequest(String::new()))?;
+        .ok_or_else(|| AppError::BadRequest(String::new()))?;
     if connection.find("Upgrade").is_none() {
         return Err(AppError::BadRequest(String::new()));
     }
     let mut key = headers
         .get(SEC_WEBSOCKET_KEY)
         .and_then(|key| key.to_str().ok())
-        .ok_or(AppError::BadRequest("Failed to read ws key from headers".to_string()))?
+        .ok_or_else(|| AppError::BadRequest("Failed to read ws key from headers".to_string()))?
         .to_string();
     key.push_str("258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
     let accept = base64::encode(sha1(key.as_bytes()).as_ref());

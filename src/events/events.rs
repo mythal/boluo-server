@@ -130,7 +130,7 @@ impl Event {
         Event::fire(EventBody::MessageEdited { message }, channel_id, MailBoxType::Channel)
     }
     pub fn messages_removed(messages: Vec<Message>) {
-        if messages.len() == 0 {
+        if messages.is_empty() {
             return;
         }
         let channel_id = messages[0].channel_id;
@@ -182,13 +182,12 @@ impl Event {
         let cache = super::context::get_cache().try_channel(mailbox).await;
         if let Some(cache) = cache {
             let cache = cache.lock().await;
-            let events = cache
+            cache
                 .events
                 .iter()
                 .skip_while(|event| event.event.timestamp < after)
                 .map(|event| event.encoded.clone())
-                .collect();
-            events
+                .collect()
         } else {
             vec![]
         }

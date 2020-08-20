@@ -146,7 +146,7 @@ pub fn is_image(mime: &Option<String>) -> bool {
             return true;
         }
     }
-    return false;
+    false
 }
 
 pub async fn edit_avatar(req: Request<Body>) -> Result<User, AppError> {
@@ -154,9 +154,9 @@ pub async fn edit_avatar(req: Request<Body>) -> Result<User, AppError> {
     let session = authenticate(&req).await?;
     let params = upload_params(req.uri())?;
     if !is_image(&params.mime_type) {
-        Err(ValidationFailed("Incorrect File Format"))?;
+        return Err(ValidationFailed("Incorrect File Format").into());
     }
-    let media = upload(req, params, 1 * 1024 * 1024).await?;
+    let media = upload(req, params, 1024 * 1024).await?;
     let mut db = database::get().await?;
     let media = media.create(&mut *db, session.user_id, "avatar").await?;
     User::edit(&mut *db, &session.user_id, None, None, Some(media.id))
@@ -168,14 +168,14 @@ pub async fn check_email_exists(req: Request<Body>) -> Result<bool, AppError> {
     let CheckEmailExists { email } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let user = User::get_by_email(&mut *db, &*email).await?;
-    return Ok(user.is_some());
+    Ok(user.is_some())
 }
 
 pub async fn check_username_exists(req: Request<Body>) -> Result<bool, AppError> {
     let CheckUsernameExists { username } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let user = User::get_by_username(&mut *db, &*username).await?;
-    return Ok(user.is_some());
+    Ok(user.is_some())
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {

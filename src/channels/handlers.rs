@@ -79,17 +79,10 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     let db = &mut trans;
     Space::get_by_id(db, &space_id)
         .await?
-        .ok_or_else(|| AppError::BadRequest(format!("The space not found")))?;
+        .ok_or_else(|| AppError::BadRequest("The space not found".to_string()))?;
     admin_only(db, &session.user_id, &space_id).await?;
 
-    let channel = Channel::create(
-        db,
-        &space_id,
-        &*name,
-        true,
-        default_dice_type.as_ref().map(String::as_str),
-    )
-    .await?;
+    let channel = Channel::create(db, &space_id, &*name, true, default_dice_type.as_deref()).await?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, true).await?;
     trans.commit().await?;
     let joined = ChannelWithMember {
@@ -123,9 +116,9 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     let channel = Channel::edit(
         db,
         &channel_id,
-        name.as_ref().map(String::as_str),
-        topic.as_ref().map(String::as_str),
-        default_dice_type.as_ref().map(String::as_str),
+        name.as_deref(),
+        topic.as_deref(),
+        default_dice_type.as_deref(),
     )
     .await?;
     let push_members = !(grant_masters.is_empty() && remove_masters.is_empty());
@@ -159,8 +152,8 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
         .await?
         .ok_or_else(|| AppError::NoPermission)?;
 
-    let character_name = character_name.as_ref().map(String::as_str);
-    let text_color = text_color.as_ref().map(String::as_str);
+    let character_name = character_name.as_deref();
+    let text_color = text_color.as_deref();
     let channel_member = ChannelMember::edit(db, session.user_id, channel_id, character_name, text_color)
         .await?
         .ok_or(AppError::NotFound("channel member"));
@@ -244,7 +237,7 @@ pub async fn check_channel_name_exists(req: Request<Body>) -> Result<bool, AppEr
     let CheckChannelName { space_id, name } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let channel = Channel::get_by_name(&mut *db, space_id, &*name).await?;
-    return Ok(channel.is_some());
+    Ok(channel.is_some())
 }
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;

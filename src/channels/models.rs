@@ -150,7 +150,7 @@ impl ChannelMember {
         use crate::validators;
 
         let character_name = character_name.trim();
-        if character_name.len() > 0 {
+        if !character_name.is_empty() {
             validators::CHARACTER_NAME.run(character_name)?;
         }
         db.query_exactly_one(
@@ -222,7 +222,7 @@ impl ChannelMember {
             validators::HEX_COLOR.run(text_color)?;
         }
         if let Some(character_name) = character_name {
-            if character_name.len() > 0 {
+            if !character_name.is_empty() {
                 validators::DISPLAY_NAME.run(character_name)?;
             }
         }

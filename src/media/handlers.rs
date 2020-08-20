@@ -31,7 +31,7 @@ fn filename_sanitizer(filename: String) -> String {
 pub fn upload_params(uri: &Uri) -> Result<Upload, AppError> {
     let Upload { filename, mime_type } = parse_query(uri)?;
     if filename.len() > 200 {
-        Err(ValidationFailed("File Name is too long"))?;
+        return Err(ValidationFailed("File Name is too long").into());
     }
     let filename = filename_sanitizer(filename);
     Ok(Upload { filename, mime_type })
@@ -52,9 +52,9 @@ pub async fn upload(req: Request<Body>, params: Upload, max_size: usize) -> Resu
         size += bytes.len();
         if size > max_size {
             tokio::fs::remove_file(&*path).await.ok();
-            return Err(AppError::BadRequest(format!(
-                "The maximum file size has been exceeded."
-            )));
+            return Err(AppError::BadRequest(
+                "The maximum file size has been exceeded.".to_string(),
+            ));
         }
         hasher.update(&bytes);
         file.write_all(&bytes).await?;
@@ -127,7 +127,7 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
                 .ok_or(AppError::NotFound("media"))?,
         );
     }
-    let media = media.ok_or_else(|| AppError::BadRequest(format!("Filename or media id must be specified.")))?;
+    let media = media.ok_or_else(|| AppError::BadRequest("Filename or media id must be specified.".to_string()))?;
     let path = Media::path(&*media.filename);
 
     let body = if method == hyper::Method::HEAD {

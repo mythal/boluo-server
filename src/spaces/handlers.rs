@@ -54,7 +54,7 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let default_dice_type = default_dice_type.as_ref().map(|s| s.as_str());
+    let default_dice_type = default_dice_type.as_deref();
     let space = Space::create(db, name, &session.user_id, description, password, default_dice_type).await?;
     let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
     let channel = Channel::create(db, &space.id, &*first_channel_name, true, default_dice_type).await?;
@@ -146,7 +146,7 @@ pub async fn check_space_name_exists(req: Request<Body>) -> Result<bool, AppErro
     let CheckSpaceNameExists { name } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let space = Space::get_by_name(&mut *db, &*name).await?;
-    return Ok(space.is_some());
+    Ok(space.is_some())
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {

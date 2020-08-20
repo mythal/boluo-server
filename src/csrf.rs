@@ -18,12 +18,12 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, AppError> {
         .headers()
         .get(HeaderName::from_static("csrf-token"))
         .and_then(|header_value| header_value.to_str().ok())
-        .ok_or_else(|| BadRequest(format!("Not found CSRF token in the headers.")))?;
+        .ok_or_else(|| BadRequest("Not found CSRF token in the headers.".to_string()))?;
 
     let (body, signature) = token
         .rfind('.')
         .map(|pos| token.split_at(pos))
-        .ok_or_else(|| BadRequest(format!("Malformed token.")))?;
+        .ok_or_else(|| BadRequest("Malformed token.".to_string()))?;
     // signature: .[...]
     let signature = &signature[1..];
 
@@ -33,7 +33,7 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, AppError> {
         .next()
         .and_then(|s| base64::decode(s).ok()) // decode.
         .and_then(|bytes: Vec<u8>| Uuid::from_slice(&*bytes).ok()) // convert bytes to UUID.
-        .ok_or_else(|| BadRequest(format!("Failed to parse CSRF token.")))?;
+        .ok_or_else(|| BadRequest("Failed to parse CSRF token.".to_string()))?;
 
     verify(body, &signature).ok_or_else(|| {
         log::warn!("Session {}: Failed to verify the signature of CSRF token", session_id);
@@ -48,7 +48,7 @@ pub async fn authenticate(req: &Request<Body>) -> Result<Session, AppError> {
     let timestamp: u64 = parts
         .next()
         .and_then(|s| s.parse().ok())
-        .ok_or_else(|| BadRequest(format!("Failed to parse timestamp")))?;
+        .ok_or_else(|| BadRequest("Failed to parse timestamp".to_string()))?;
 
     let now = now_unix_duration().as_secs();
     if timestamp < now {
