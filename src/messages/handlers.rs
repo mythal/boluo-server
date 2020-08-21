@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
-use crate::messages::api::{ByChannel, Move, MoveTo};
+use crate::messages::api::{ByChannel, MoveTo, MoveToMode, Swap};
 use crate::spaces::SpaceMember;
 use crate::{cache, database, interface};
 use chrono::NaiveDateTime;
@@ -100,8 +100,6 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
             in_game,
             is_action,
             None,
-            None,
-            None,
         )
         .await?
         .ok_or_else(|| unexpected!("The message had been delete."))?;
@@ -111,35 +109,41 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     Ok(message)
 }
 
-async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
+async fn swap(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
-    let MoveTo { message_id, order_date } = interface::parse_body(req).await?;
+    let Swap { a, b } = interface::parse_query(req.uri())?;
 
     let mut db = database::get().await?;
     let mut trans = db.transaction().await?;
     let db = &mut trans;
-    let message = Message::get(db, &message_id, Some(&session.user_id))
+    let a = Message::get(db, &a, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("message"))?;
-    let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
+    let b = Message::get(db, &b, Some(&session.user_id))
+        .await?
+        .ok_or(AppError::NotFound("message"))?;
+    let channel_member = ChannelMember::get(db, &session.user_id, &a.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if !channel_member.is_master && message.sender_id != session.user_id {
+    if !channel_member.is_master && a.sender_id != session.user_id {
         return Err(AppError::NoPermission);
     }
-    Event::messages_removed(vec![
-        Message::move_to(db, &message_id, &message.channel_id, &order_date).await?,
-    ]);
+    if a.channel_id != b.channel_id {
+        return Err(AppError::BadRequest(
+            "Cannot move message to a different channel".to_string(),
+        ));
+    }
+    Event::messages_moved(a.channel_id, Message::swap(db, &a, &b).await?, vec![]);
     trans.commit().await?;
     Ok(true)
 }
 
-async fn move_message(req: Request<Body>) -> Result<bool, AppError> {
-    use super::api::MoveMode::*;
+async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
-    let Move {
+    let MoveTo {
         message_id,
-        target_id,
+        order_date,
+        order_offset,
         mode,
     } = interface::parse_body(req).await?;
 
@@ -149,27 +153,22 @@ async fn move_message(req: Request<Body>) -> Result<bool, AppError> {
     let message = Message::get(db, &message_id, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("message"))?;
-    let target = Message::get(db, &target_id, Some(&session.user_id))
-        .await?
-        .ok_or(AppError::NotFound("target message"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
     if !channel_member.is_master && message.sender_id != session.user_id {
         return Err(AppError::NoPermission);
     }
-    if message.channel_id != target.channel_id {
-        return Err(AppError::BadRequest(
-            "Cannot move message to a different channel".to_string(),
-        ));
-    }
-    let messages = match mode {
-        Earlier => Message::move_earlier(db, message.id, &target).await?,
-        Later => Message::move_later(db, message.id, &target).await?,
-        Swap => Message::swap(db, &message, &target).await?,
+    let (messages, order_changes) = match mode {
+        MoveToMode::Top => {
+            Message::move_to_top(db, &message_id, &message.channel_id, &order_date, order_offset).await?
+        }
+        MoveToMode::Bottom => {
+            Message::move_to_bottom(db, &message_id, &message.channel_id, &order_date, order_offset).await?
+        }
     };
     trans.commit().await?;
-    Event::messages_removed(messages);
+    Event::messages_moved(message.channel_id, messages, order_changes);
     Ok(true)
 }
 
@@ -217,7 +216,7 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
         return Err(AppError::NoPermission);
     }
     let folded = Some(!message.folded);
-    let message = Message::edit(db, None, &message.id, None, None, None, None, folded, None, None)
+    let message = Message::edit(db, None, &message.id, None, None, None, None, folded)
         .await?
         .ok_or_else(|| unexpected!("message not found"))?;
     Event::message_edited(message.clone());
@@ -251,8 +250,8 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/by_channel", Method::GET) => by_channel(req).await.map(ok_response),
         ("/send", Method::POST) => send(req).await.map(ok_response),
         ("/edit", Method::PATCH) => edit(req).await.map(ok_response),
-        ("/move", Method::POST) => move_message(req).await.map(ok_response),
-        ("/move-to", Method::POST) => move_to(req).await.map(ok_response),
+        ("/swap", Method::POST) => swap(req).await.map(ok_response),
+        ("/move_to", Method::POST) => move_to(req).await.map(ok_response),
         ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         _ => missing(),

@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
-use crate::database::Querist;
+use crate::database::{Querist, Sql};
 use crate::error::{DbError, ModelError, ValidationFailed};
 use crate::utils::merge_blank;
 use crate::validators::CHARACTER_NAME;
+use tokio_postgres::Row;
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +39,25 @@ pub struct Message {
     #[serde(with = "crate::date_format")]
     pub order_date: NaiveDateTime,
     pub order_offset: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageOrder {
+    pub id: Uuid,
+    #[serde(with = "crate::date_format")]
+    pub order_date: NaiveDateTime,
+    pub order_offset: i32,
+}
+
+impl From<Row> for MessageOrder {
+    fn from(row: Row) -> MessageOrder {
+        MessageOrder {
+            id: row.get(0),
+            order_date: row.get(1),
+            order_offset: row.get(2),
+        }
+    }
 }
 
 impl Message {
@@ -150,60 +170,100 @@ impl Message {
         self.text = String::new();
         self.entities = JsonValue::Array(Vec::new());
     }
-
-    pub async fn move_earlier<T: Querist>(
+    async fn make_room<T: Querist, U: Into<Sql> + Send>(
         db: &mut T,
-        message_id: Uuid,
-        target: &Message,
-    ) -> Result<Vec<Message>, ModelError> {
+        source: U,
+        message_id: &Uuid,
+        channel_id: &Uuid,
+        order_date: &NaiveDateTime,
+        order_offset: i32,
+        offset_offset: i32,
+    ) -> Result<(Vec<Message>, Vec<MessageOrder>), ModelError> {
         db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
-        let rows = db
-            .query(
-                include_str!("sql/make_room_earlier.sql"),
-                &[&target.channel_id, &target.order_date, &target.order_offset],
-            )
-            .await?;
-        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
-        let message = Message::set_order(db, &message_id, &target.order_date, target.order_offset - 1).await?;
-        if let Some((i, _)) = messages.iter().enumerate().find(|(_, item)| item.id == message.id) {
-            messages[i] = message;
-        } else {
-            messages.push(message);
-        }
-        Ok(messages)
+        let rows = db.query(source, &[channel_id, order_date, &order_offset]).await?;
+        let order_list: Vec<MessageOrder> = rows.into_iter().map(Into::into).collect();
+        let message = Message::set_order(db, message_id, order_date, order_offset + offset_offset).await?;
+        Ok((vec![message], order_list))
     }
-    pub async fn move_later<T: Querist>(
-        db: &mut T,
-        message_id: Uuid,
-        target: &Message,
-    ) -> Result<Vec<Message>, ModelError> {
-        db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
-
-        let rows = db
-            .query(
-                include_str!("sql/make_room_later.sql"),
-                &[&target.channel_id, &target.order_date, &target.order_offset],
-            )
-            .await?;
-        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
-        let message = Message::set_order(db, &message_id, &target.order_date, target.order_offset + 1).await?;
-        if let Some((i, _)) = messages.iter().enumerate().find(|(_, item)| item.id == message.id) {
-            messages[i] = message;
-        } else {
-            messages.push(message);
-        }
-        Ok(messages)
-    }
-    pub async fn move_to<T: Querist>(
+    pub async fn move_to_top<T: Querist>(
         db: &mut T,
         id: &Uuid,
         channel_id: &Uuid,
         order_date: &NaiveDateTime,
-    ) -> Result<Message, ModelError> {
-        db.query_exactly_one(include_str!("sql/move_to_date.sql"), &[id, channel_id, order_date])
-            .await
-            .map(|row| row.get(0))
-            .map_err(Into::into)
+        order_offset: i32,
+    ) -> Result<(Vec<Message>, Vec<MessageOrder>), ModelError> {
+        let near_offset: Option<i32> = db
+            .query_one(
+                include_str!("sql/get_top_near_offset.sql"),
+                &[channel_id, order_date, &order_offset],
+            )
+            .await?
+            .map(|row| row.get(0));
+        if let Some(near_offset) = near_offset {
+            if order_offset - near_offset > 1 {
+                let offset = (order_offset - near_offset) >> 1;
+                Ok((
+                    vec![Message::set_order(db, id, order_date, order_offset - offset).await?],
+                    vec![],
+                ))
+            } else {
+                Message::make_room(
+                    db,
+                    include_str!("sql/make_room_top.sql"),
+                    id,
+                    channel_id,
+                    order_date,
+                    order_offset,
+                    -8,
+                )
+                .await
+            }
+        } else {
+            Ok((
+                vec![Message::set_order(db, id, order_date, order_offset - 32).await?],
+                vec![],
+            ))
+        }
+    }
+    pub async fn move_to_bottom<T: Querist>(
+        db: &mut T,
+        id: &Uuid,
+        channel_id: &Uuid,
+        order_date: &NaiveDateTime,
+        order_offset: i32,
+    ) -> Result<(Vec<Message>, Vec<MessageOrder>), ModelError> {
+        let near_offset: Option<i32> = db
+            .query_one(
+                include_str!("sql/get_bottom_near_offset.sql"),
+                &[channel_id, order_date, &order_offset],
+            )
+            .await?
+            .map(|row| row.get(0));
+        if let Some(near_offset) = near_offset {
+            if near_offset - order_offset > 1 {
+                let offset = (near_offset - order_offset) >> 1;
+                Ok((
+                    vec![Message::set_order(db, id, order_date, order_offset + offset).await?],
+                    vec![],
+                ))
+            } else {
+                Message::make_room(
+                    db,
+                    include_str!("sql/make_room_bottom.sql"),
+                    id,
+                    channel_id,
+                    order_date,
+                    order_offset,
+                    8,
+                )
+                .await
+            }
+        } else {
+            Ok((
+                vec![Message::set_order(db, id, order_date, order_offset + 32).await?],
+                vec![],
+            ))
+        }
     }
     pub async fn set_order<T: Querist>(
         db: &mut T,
@@ -211,11 +271,10 @@ impl Message {
         order_date: &NaiveDateTime,
         order_offset: i32,
     ) -> Result<Message, ModelError> {
-        let message = db
-            .query_exactly_one(include_str!("sql/set_order.sql"), &[&id, &order_date, &order_offset])
-            .await?
-            .get(0);
-        Ok(message)
+        db.query_exactly_one(include_str!("sql/set_order.sql"), &[&id, &order_date, &order_offset])
+            .await
+            .map(|row| row.get(0))
+            .map_err(Into::into)
     }
     pub async fn swap<T: Querist>(db: &mut T, a: &Message, b: &Message) -> Result<Vec<Message>, ModelError> {
         db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
@@ -232,8 +291,6 @@ impl Message {
         in_game: Option<bool>,
         is_action: Option<bool>,
         folded: Option<bool>,
-        order_date: Option<NaiveDateTime>,
-        order_offset: Option<i32>,
     ) -> Result<Option<Message>, ModelError> {
         let entities = entities.map(JsonValue::Array);
         let name = name.map(merge_blank);
@@ -251,8 +308,6 @@ impl Message {
                     &in_game,
                     &is_action,
                     &folded,
-                    &order_date,
-                    &order_offset,
                 ],
             )
             .await?
@@ -277,7 +332,6 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     use crate::spaces::SpaceMember;
     use crate::users::User;
     use crate::utils::timestamp;
-    use chrono::Utc;
 
     let mut client = Client::new().await?;
     let mut trans = client.transaction().await?;
@@ -329,8 +383,6 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         None,
         None,
         None,
-        None,
-        None,
     )
     .await?
     .unwrap();
@@ -339,13 +391,13 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, new_text);
     ChannelMember::set_master(db, &user.id, &channel.id, false).await?;
-    let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
-    assert_eq!(message.text, "");
+    let a = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
+    assert_eq!(a.text, "");
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].id, message.id);
+    assert_eq!(messages[0].id, a.id);
 
-    let message_2 = Message::create(
+    let b = Message::create(
         db,
         None,
         &channel.id,
@@ -365,32 +417,25 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
 
     assert_eq!(messages.len(), 2);
-    let move_result = Message::move_earlier(db, message_2.id, &message).await?;
-    assert_eq!(move_result.len(), 1);
+    Message::move_to_bottom(db, &b.id, &a.channel_id, &a.order_date, a.order_offset).await?;
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
-    assert_eq!(messages[0].id, message.id);
-    assert_eq!(messages[1].id, message_2.id);
+    // [b, a]
+    assert_eq!(messages[0].id, b.id);
+    assert_eq!(messages[1].id, a.id);
     assert_eq!(messages[0].order_date, messages[1].order_date);
-    assert!(messages[0].order_offset > messages[1].order_offset);
-    Message::move_earlier(db, message.id, &messages[1]).await?;
+    Message::move_to_top(
+        db,
+        &b.id,
+        &messages[1].channel_id,
+        &messages[1].order_date,
+        messages[1].order_offset,
+    )
+    .await?;
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
-    assert_eq!(messages[0].id, message_2.id);
-    assert_eq!(messages[1].id, message.id);
-    assert_eq!(messages[0].order_date, messages[1].order_date);
-    assert!(messages[0].order_offset > messages[1].order_offset);
-    let now = Utc::now().naive_local();
-    let message = Message::move_to(db, &messages[1].id, &messages[1].channel_id, &now)
-        .await
-        .unwrap();
-    assert_eq!(message.order_offset, 0);
-    assert_eq!(message.order_date, now);
-    let message = Message::move_to(db, &messages[1].id, &messages[1].channel_id, &messages[0].order_date)
-        .await
-        .unwrap();
-    assert!(message.order_offset > messages[0].order_offset);
-    assert_eq!(message.order_date, messages[0].order_date);
+    assert_eq!(messages[0].id, a.id);
+    assert_eq!(messages[1].id, b.id);
 
-    Message::delete(db, &message.id).await?;
-    assert!(Message::get(db, &message.id, Some(&user.id)).await?.is_none());
+    Message::delete(db, &a.id).await?;
+    assert!(Message::get(db, &a.id, Some(&user.id)).await?.is_none());
     Ok(())
 }
