@@ -194,7 +194,18 @@ impl Message {
         }
         Ok(messages)
     }
-    async fn set_order<T: Querist>(
+    pub async fn move_to<T: Querist>(
+        db: &mut T,
+        id: &Uuid,
+        channel_id: &Uuid,
+        order_date: &NaiveDateTime,
+    ) -> Result<Message, ModelError> {
+        db.query_exactly_one(include_str!("sql/move_to_date.sql"), &[id, channel_id, order_date])
+            .await
+            .map(|row| row.get(0))
+            .map_err(Into::into)
+    }
+    pub async fn set_order<T: Querist>(
         db: &mut T,
         id: &Uuid,
         order_date: &NaiveDateTime,
@@ -266,6 +277,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     use crate::spaces::SpaceMember;
     use crate::users::User;
     use crate::utils::timestamp;
+    use chrono::Utc;
 
     let mut client = Client::new().await?;
     let mut trans = client.transaction().await?;
@@ -366,6 +378,17 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     assert_eq!(messages[1].id, message.id);
     assert_eq!(messages[0].order_date, messages[1].order_date);
     assert!(messages[0].order_offset > messages[1].order_offset);
+    let now = Utc::now().naive_local();
+    let message = Message::move_to(db, &messages[1].id, &messages[1].channel_id, &now)
+        .await
+        .unwrap();
+    assert_eq!(message.order_offset, 0);
+    assert_eq!(message.order_date, now);
+    let message = Message::move_to(db, &messages[1].id, &messages[1].channel_id, &messages[0].order_date)
+        .await
+        .unwrap();
+    assert!(message.order_offset > messages[0].order_offset);
+    assert_eq!(message.order_date, messages[0].order_date);
 
     Message::delete(db, &message.id).await?;
     assert!(Message::get(db, &message.id, Some(&user.id)).await?.is_none());

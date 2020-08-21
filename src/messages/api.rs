@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
@@ -41,6 +42,14 @@ pub struct Move {
     pub message_id: Uuid,
     pub target_id: Uuid,
     pub mode: MoveMode,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveTo {
+    pub message_id: Uuid,
+    #[serde(with = "crate::date_format")]
+    pub order_date: NaiveDateTime,
 }
 
 #[derive(Deserialize, Debug)]

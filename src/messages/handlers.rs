@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
-use crate::messages::api::{ByChannel, Move};
+use crate::messages::api::{ByChannel, Move, MoveTo};
 use crate::spaces::SpaceMember;
 use crate::{cache, database, interface};
 use chrono::NaiveDateTime;
@@ -109,6 +109,29 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     trans.commit().await?;
     Event::message_edited(message.clone());
     Ok(message)
+}
+
+async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
+    let session = authenticate(&req).await?;
+    let MoveTo { message_id, order_date } = interface::parse_body(req).await?;
+
+    let mut db = database::get().await?;
+    let mut trans = db.transaction().await?;
+    let db = &mut trans;
+    let message = Message::get(db, &message_id, Some(&session.user_id))
+        .await?
+        .ok_or(AppError::NotFound("message"))?;
+    let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
+        .await?
+        .ok_or(AppError::NoPermission)?;
+    if !channel_member.is_master && message.sender_id != session.user_id {
+        return Err(AppError::NoPermission);
+    }
+    Event::messages_removed(vec![
+        Message::move_to(db, &message_id, &message.channel_id, &order_date).await?,
+    ]);
+    trans.commit().await?;
+    Ok(true)
 }
 
 async fn move_message(req: Request<Body>) -> Result<bool, AppError> {
@@ -229,6 +252,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/send", Method::POST) => send(req).await.map(ok_response),
         ("/edit", Method::PATCH) => edit(req).await.map(ok_response),
         ("/move", Method::POST) => move_message(req).await.map(ok_response),
+        ("/move-to", Method::POST) => move_to(req).await.map(ok_response),
         ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         _ => missing(),

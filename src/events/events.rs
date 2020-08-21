@@ -185,7 +185,7 @@ impl Event {
             cache
                 .events
                 .iter()
-                .skip_while(|event| event.event.timestamp < after)
+                .skip_while(|event| event.event.timestamp <= after)
                 .map(|event| event.encoded.clone())
                 .collect()
         } else {
