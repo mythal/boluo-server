@@ -197,6 +197,7 @@ impl Event {
                 .edition_map
                 .values()
                 .chain(cache.preview_map.values())
+                .filter(|event| event.event.timestamp > after)
                 .chain(events)
                 .map(|event| event.encoded.clone())
                 .collect()
