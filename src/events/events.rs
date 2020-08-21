@@ -189,10 +189,15 @@ impl Event {
         let cache = super::context::get_cache().try_channel(mailbox).await;
         if let Some(cache) = cache {
             let cache = cache.lock().await;
-            cache
+            let events = cache
                 .events
                 .iter()
-                .skip_while(|event| event.event.timestamp <= after)
+                .skip_while(|event| event.event.timestamp <= after);
+            cache
+                .edition_map
+                .values()
+                .chain(cache.preview_map.values())
+                .chain(events)
                 .map(|event| event.encoded.clone())
                 .collect()
         } else {
@@ -223,43 +228,43 @@ impl Event {
         Ok(())
     }
 
-    async fn async_fire(body: EventBody, mailbox: Uuid, mailbox_type: MailBoxType) {
-        let preview_info = match &body {
-            EventBody::MessagePreview { preview } => Some((preview.id, preview.sender_id, preview.edit_for)),
-            _ => None,
-        };
-        let event = Arc::new(SyncEvent::new(Event {
+    fn build(body: EventBody, mailbox: Uuid, mailbox_type: MailBoxType) -> Arc<SyncEvent> {
+        Arc::new(SyncEvent::new(Event {
             mailbox,
             body,
             mailbox_type,
             timestamp: timestamp(),
-        }));
+        }))
+    }
+
+    async fn async_fire(body: EventBody, mailbox: Uuid, mailbox_type: MailBoxType) {
         let cache = super::context::get_cache().channel(&mailbox).await;
         let mut cache = cache.lock().await;
 
-        let events = &mut cache.events;
-        if let Some((preview_id, sender_id, edit_for)) = preview_info {
-            if let Some((i, _)) = events
-                .iter()
-                .rev()
-                .enumerate()
-                .take(16)
-                .find(|(_, e)| match &e.event.body {
-                    EventBody::MessagePreview { preview } => {
-                        preview.sender_id == sender_id
-                            && (preview.id == preview_id || edit_for.is_none())
-                            && preview.edit_for == edit_for
-                    }
-                    _ => false,
-                })
-            {
-                let index = events.len() - 1 - i;
-                events[index] = event.clone();
-            } else {
-                events.push_back(event.clone());
-            }
-        } else {
-            events.push_back(event.clone());
+        enum Kind {
+            Preview(Uuid),
+            Edition(Uuid),
+            Other,
+        }
+
+        let kind = match &body {
+            EventBody::MessagePreview { preview } => {
+                if preview.edit_for.is_some() {
+                    Kind::Edition(preview.id)
+                } else {
+                    Kind::Preview(preview.sender_id)
+                }
+            },
+            _ => {
+                Kind::Other
+            },
+        };
+
+        let event = Event::build(body, mailbox, mailbox_type);
+        match kind {
+            Kind::Edition(id) => { cache.edition_map.insert(id, event.clone()); },
+            Kind::Preview(id) => { cache.preview_map.insert(id, event.clone()); },
+            Kind::Other => { cache.events.push_back(event.clone()); },
         }
 
         Event::send(mailbox, event).await;

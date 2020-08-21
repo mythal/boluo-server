@@ -32,8 +32,14 @@ async fn events_clean() {
                             break;
                         }
                     }
+                    let mut preview_map = HashMap::new();
+                    let mut edition_map = HashMap::new();
+                    swap(&mut preview_map, &mut channel.preview_map);
+                    swap(&mut edition_map, &mut channel.edition_map);
+                    channel.preview_map = preview_map.into_iter().filter(|(_, preview)| preview.event.timestamp > before).collect();
+                    channel.edition_map = edition_map.into_iter().filter(|(_, edition)| edition.event.timestamp > before).collect();
                     channel.start_at = before;
-                    if channel.events.is_empty() {
+                    if channel.events.is_empty() && channel.edition_map.is_empty() && channel.preview_map.is_empty() {
                         empty = true;
                     }
                 }

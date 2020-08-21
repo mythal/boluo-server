@@ -53,6 +53,8 @@ pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<Arc<Sync
 pub struct ChannelCache {
     pub start_at: i64,
     pub events: VecDeque<Arc<SyncEvent>>,
+    pub preview_map: HashMap<Uuid, Arc<SyncEvent>>,
+    pub edition_map: HashMap<Uuid, Arc<SyncEvent>>,
 }
 
 pub struct Cache {
@@ -80,6 +82,8 @@ impl Cache {
             let cache = ChannelCache {
                 start_at: timestamp(),
                 events: VecDeque::new(),
+                preview_map: HashMap::new(),
+                edition_map: HashMap::new(),
             };
             let cache = Arc::new(Mutex::new(cache));
             let mut map = self.channels.write().await;
@@ -93,12 +97,4 @@ static CACHE: OnceCell<Cache> = OnceCell::new();
 
 pub fn get_cache() -> &'static Cache {
     CACHE.get_or_init(Cache::new)
-}
-
-pub type EventMap = RwLock<HashMap<Uuid, VecDeque<Arc<SyncEvent>>>>;
-
-static EVENT_MAP: OnceCell<EventMap> = OnceCell::new();
-
-pub fn get_event_map() -> &'static EventMap {
-    EVENT_MAP.get_or_init(|| RwLock::new(HashMap::new()))
 }
