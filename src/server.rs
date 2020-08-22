@@ -57,14 +57,14 @@ async fn router(req: Request<Body>) -> Result<Response, AppError> {
     missing()
 }
 
-pub fn log_error(e: &AppError, method: &str, uri: &Uri, elapsed: u128) {
+pub fn log_error(e: &AppError, method: &str, uri: &Uri, start: std::time::Instant) {
     use std::error::Error;
     use AppError::*;
     match e {
-        NotFound(_) | Conflict(_) => log::debug!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
-        Validation(_) | BadRequest(_) | MethodNotAllowed => log::info!("{:>6} {} {}ms - {}", method, uri, elapsed, e),
+        NotFound(_) | Conflict(_) => log::debug!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e),
+        Validation(_) | BadRequest(_) | MethodNotAllowed => log::info!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e),
         e => {
-            log::error!("{:>6} {} {}ms - {}", method, uri, elapsed, e);
+            log::error!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e);
             let mut maybe_source = Error::source(e);
             while let Some(source) = maybe_source {
                 log::error!("- {:?}", source);
@@ -87,14 +87,13 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     if debug() {
         response = response.map(allow_origin);
     }
-    let elapsed = start.elapsed().as_millis();
     match response {
         Ok(response) => {
-            log::debug!("{:>6} {} {}ms", method, uri, elapsed);
+            log::debug!("{:>6} {} {:?}", method, uri, start.elapsed());
             Ok(response)
         }
         Err(e) => {
-            log_error(&e, method, &uri, elapsed);
+            log_error(&e, method, &uri, start);
             Ok(err_response(e))
         }
     }
