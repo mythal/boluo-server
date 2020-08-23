@@ -193,7 +193,7 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if !space_member.is_admin {
+    if !space_member.is_admin && message.sender_id != session.user_id {
         return Err(AppError::NoPermission);
     }
     Message::delete(db, &id).await?;
@@ -209,10 +209,10 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let message = Message::get(db, &id, None)
         .await?
         .ok_or(AppError::NotFound("messages"))?;
-    let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
+    let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if message.sender_id != session.user_id && !space_member.is_admin {
+    if message.sender_id != session.user_id && !channel_member.is_master {
         return Err(AppError::NoPermission);
     }
     let folded = Some(!message.folded);
