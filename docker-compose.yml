@@ -5,6 +5,8 @@ services:
     image: mythalnet/boluo
     command: cargo run --release
     restart: always
+    volumes:
+      - ./media:/boluo/media
     ports:
       - 127.0.0.1:${PORT:-3000}:3000
     depends_on:
