@@ -39,6 +39,8 @@ blake3 = "0.3"
 mime = "0.3"
 bytes = "0.5"
 tokio-tungstenite = "*"
+clap = "3.0.0-beta.1"
+postgres = "0.17"
 
 [dependencies.serde]
 version = "1.0"
