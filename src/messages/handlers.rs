@@ -212,7 +212,7 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if message.sender_id != session.user_id && !channel_member.is_master {
+    if message.sender_id != session.user_id || !channel_member.is_master {
         return Err(AppError::NoPermission);
     }
     let folded = Some(!message.folded);
