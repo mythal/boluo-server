@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::env;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, Ipv4Addr, IpAddr};
 
 use crate::context::debug;
 use hyper::server::conn::AddrStream;
@@ -105,7 +105,8 @@ async fn main() {
     let port: u16 = env::var("PORT").unwrap().parse().unwrap();
     logger::setup_logger(debug()).unwrap();
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let addr: Ipv4Addr = env::var("HOST").unwrap_or("127.0.0.1".to_string()).parse().unwrap();
+    let addr = SocketAddr::new(IpAddr::V4(addr), port);
 
     let make_svc = make_service_fn(|_: &AddrStream| async { Ok::<_, hyper::Error>(service_fn(handler)) });
 
