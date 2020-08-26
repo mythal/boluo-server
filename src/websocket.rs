@@ -9,7 +9,7 @@ pub use tokio_tungstenite::tungstenite::{Error as WsError, Message as WsMessage}
 use tokio_tungstenite::WebSocketStream;
 
 pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppError> {
-    log::debug!("Checking Websocket request header: {:?}", headers);
+    log::trace!("Checking Websocket request header: {:?}", headers);
     let upgrade = headers
         .get(UPGRADE)
         .and_then(|v| v.to_str().ok())
