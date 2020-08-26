@@ -145,6 +145,7 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
     let mut response_builder = hyper::Response::builder()
         .header(header::ACCEPT_RANGES, HeaderValue::from_static("none"))
         .header(header::CONTENT_LENGTH, HeaderValue::from(media.size))
+        .header(header::CACHE_CONTROL, HeaderValue::from_static("max-age=31536000")) // for year
         .header(
             header::CONTENT_DISPOSITION,
             content_disposition(download, &*media.original_filename),
