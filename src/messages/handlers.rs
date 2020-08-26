@@ -75,6 +75,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
         entities,
         in_game,
         is_action,
+        media_id,
     } = interface::parse_body(req).await?;
     let mut db = database::get().await?;
     let mut trans = db.transaction().await?;
@@ -100,6 +101,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
             in_game,
             is_action,
             None,
+            media_id,
         )
         .await?
         .ok_or_else(|| unexpected!("The message had been delete."))?;
@@ -216,7 +218,7 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
         return Err(AppError::NoPermission);
     }
     let folded = Some(!message.folded);
-    let message = Message::edit(db, None, &message.id, None, None, None, None, folded)
+    let message = Message::edit(db, None, &message.id, None, None, None, None, folded, None)
         .await?
         .ok_or_else(|| unexpected!("message not found"))?;
     Event::message_edited(message.clone());

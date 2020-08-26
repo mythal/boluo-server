@@ -291,6 +291,7 @@ impl Message {
         in_game: Option<bool>,
         is_action: Option<bool>,
         folded: Option<bool>,
+        media_id: Option<Uuid>,
     ) -> Result<Option<Message>, ModelError> {
         let entities = entities.map(JsonValue::Array);
         let name = name.map(merge_blank);
@@ -300,15 +301,7 @@ impl Message {
         let result: Option<Message> = db
             .query_one(
                 include_str!("sql/edit.sql"),
-                &[
-                    id,
-                    &name,
-                    &text,
-                    &entities,
-                    &in_game,
-                    &is_action,
-                    &folded,
-                ],
+                &[id, &name, &text, &entities, &in_game, &is_action, &folded, &media_id],
             )
             .await?
             .map(|row| {
@@ -380,6 +373,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         &message.id,
         Some(new_text),
         Some(vec![]),
+        None,
         None,
         None,
         None,

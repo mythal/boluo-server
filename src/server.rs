@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::env;
-use std::net::{SocketAddr, Ipv4Addr, IpAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::context::debug;
 use hyper::server::conn::AddrStream;
@@ -62,7 +62,9 @@ pub fn log_error(e: &AppError, method: &str, uri: &Uri, start: std::time::Instan
     use AppError::*;
     match e {
         NotFound(_) | Conflict(_) => log::debug!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e),
-        Validation(_) | BadRequest(_) | MethodNotAllowed => log::info!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e),
+        Validation(_) | BadRequest(_) | MethodNotAllowed => {
+            log::info!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e)
+        }
         e => {
             log::error!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e);
             let mut maybe_source = Error::source(e);

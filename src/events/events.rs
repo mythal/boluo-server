@@ -189,10 +189,7 @@ impl Event {
         let cache = super::context::get_cache().try_channel(mailbox).await;
         if let Some(cache) = cache {
             let cache = cache.lock().await;
-            let events = cache
-                .events
-                .iter()
-                .skip_while(|event| event.event.timestamp <= after);
+            let events = cache.events.iter().skip_while(|event| event.event.timestamp <= after);
             cache
                 .edition_map
                 .values()
@@ -255,17 +252,21 @@ impl Event {
                 } else {
                     Kind::Preview(preview.sender_id)
                 }
-            },
-            _ => {
-                Kind::Other
-            },
+            }
+            _ => Kind::Other,
         };
 
         let event = Event::build(body, mailbox, mailbox_type);
         match kind {
-            Kind::Edition(id) => { cache.edition_map.insert(id, event.clone()); },
-            Kind::Preview(id) => { cache.preview_map.insert(id, event.clone()); },
-            Kind::Other => { cache.events.push_back(event.clone()); },
+            Kind::Edition(id) => {
+                cache.edition_map.insert(id, event.clone());
+            }
+            Kind::Preview(id) => {
+                cache.preview_map.insert(id, event.clone());
+            }
+            Kind::Other => {
+                cache.events.push_back(event.clone());
+            }
         }
 
         Event::send(mailbox, event).await;

@@ -26,6 +26,7 @@ pub struct Edit {
     pub entities: Option<Vec<JsonValue>>,
     pub in_game: Option<bool>,
     pub is_action: Option<bool>,
+    pub media_id: Option<Uuid>,
 }
 
 #[derive(Deserialize, Debug)]
