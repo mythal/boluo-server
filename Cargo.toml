@@ -60,7 +60,8 @@ features = ["full"]
 
 [dependencies.redis]
 version = "0.16.0"
-features = ["connection-manager"]
+default-features = false
+features = ["connection-manager", "tokio-comp"]
 
 [dependencies.fern]
 version = "0.6"
