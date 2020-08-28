@@ -128,10 +128,10 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     for user_id in remove_masters {
         ChannelMember::set_master(db, &user_id, &channel_id, false).await.ok();
     }
+    trans.commit().await?;
     if push_members {
         Event::push_members(channel_id);
     }
-    trans.commit().await?;
     Event::channel_edited(channel.clone());
     Ok(channel)
 }
