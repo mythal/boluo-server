@@ -23,6 +23,7 @@ pub struct Preview {
     pub in_game: bool,
     pub is_action: bool,
     pub is_master: bool,
+    pub clear: bool,
     pub text: Option<String>,
     pub whisper_to_users: Option<Vec<Uuid>>,
     pub entities: Vec<JsonValue>,
@@ -41,6 +42,8 @@ pub struct PreviewPost {
     pub in_game: bool,
     pub is_action: bool,
     pub text: Option<String>,
+    #[serde(default)]
+    pub clear: bool,
     pub entities: Vec<JsonValue>,
     #[serde(default)]
     #[serde(with = "crate::date_format::option")]
@@ -62,6 +65,7 @@ impl PreviewPost {
             text,
             entities,
             edit_for,
+            clear,
         } = self;
         let start = {
             let mut cache = cache::conn().await;
@@ -101,6 +105,7 @@ impl PreviewPost {
             start,
             is_master,
             edit_for,
+            clear,
         }));
         Ok(())
     }
