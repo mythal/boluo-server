@@ -5,10 +5,11 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::spaces::api::SpaceWithMember;
+use crate::spaces::api::{SpaceWithMember, SpaceWithRelated};
 use crate::utils::{inner_map, merge_blank};
+use crate::channels::Channel;
 
-#[derive(Debug, Serialize, Deserialize, FromSql)]
+#[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "spaces")]
 pub struct Space {
@@ -126,6 +127,21 @@ impl Space {
                 member: row.get(1),
             })
             .collect())
+    }
+
+    pub async fn get_related<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Option<SpaceWithRelated>, DbError> {
+        let space = Space::get_by_id(db, &space_id).await?;
+        let members = SpaceMember::get_by_space(db, &space_id).await?;
+        let channels = Channel::get_by_space(db, &space_id).await?;
+        if let Some(space) = space {
+            Ok(Some(SpaceWithRelated {
+                space,
+                members,
+                channels,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
 

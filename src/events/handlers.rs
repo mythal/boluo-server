@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
-async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
+async fn push_events(mailbox: Uuid, mailbox_type: MailBoxType, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
     use tokio::sync::broadcast::RecvError;
     use tokio::time::interval;
@@ -38,6 +38,7 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender, after: i64) -> Result
     let push = async {
         let mut tx = tx.clone();
         let mut mailbox_rx = get_mailbox_broadcast_rx(&mailbox).await;
+
         let cached_events = Event::get_from_cache(&mailbox, after).await;
         for e in cached_events.into_iter() {
             tx.send(WsMessage::Text(e)).await.ok();
@@ -107,7 +108,7 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
         let (mut outgoing, incoming) = ws_stream.split();
 
         let server_push_events = async move {
-            if let Err(e) = push_events(mailbox, &mut outgoing, after).await {
+            if let Err(e) = push_events(mailbox, mailbox_type, &mut outgoing, after).await {
                 log::warn!("Failed to push events: {}", e);
             }
             outgoing.close().await.ok();

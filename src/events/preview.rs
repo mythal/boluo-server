@@ -87,7 +87,8 @@ impl PreviewPost {
                     .await?
                     .ok_or(AppError::NoPermission)?
                     .is_master
-            }
+            },
+            _ => false,
         };
         Event::message_preview(Box::new(Preview {
             id,

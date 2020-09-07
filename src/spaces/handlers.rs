@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
 use crate::spaces::api::{CheckSpaceNameExists, SpaceWithMember};
 use hyper::{Body, Request};
+use crate::events::Event;
 
 async fn list(_req: Request<Body>) -> Result<Vec<Space>, AppError> {
     let mut conn = database::get().await?;
@@ -24,14 +25,10 @@ async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppE
     let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("spaces"))?;
-    let members = SpaceMember::get_by_space(db, &id).await?;
-    let channels = Channel::get_by_space(db, &id).await?;
-    Ok(SpaceWithRelated {
-        space,
-        members,
-        channels,
-    })
+    Space::get_related(db, &id)
+        .await
+        .map_err(Into::into)
+        .and_then(|space_with_related| space_with_related.ok_or_else(|| AppError::NotFound("space")))
 }
 
 async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError> {
@@ -86,7 +83,12 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let space = Space::edit(db, space_id, name, description, default_dice_type)
         .await?
         .ok_or_else(|| unexpected!("No such space found."))?;
+    let space_with_related = Space::get_related(db, &space_id).await;
     trans.commit().await?;
+
+    if let Ok(Some(space_with_related)) = space_with_related {
+        Event::space_updated(space_with_related);
+    }
     Ok(space)
 }
 
@@ -104,6 +106,15 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     } else {
         SpaceMember::add_user(db, user_id, &id).await?
     };
+    let space_id = space.id;
+    tokio::spawn(async move {
+        let db = database::get().await;
+        if let Ok(mut db) = db {
+            if let Ok(Some(space_with_related)) = Space::get_related(&mut *db, &space_id).await {
+                Event::space_updated(space_with_related)
+            }
+        }
+    });
     Ok(SpaceWithMember { space, member })
 }
 

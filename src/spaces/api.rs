@@ -20,7 +20,7 @@ pub struct Edit {
     pub default_dice_type: Option<String>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceWithRelated {
     pub space: super::Space,

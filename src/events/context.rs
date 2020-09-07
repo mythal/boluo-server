@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::utils::timestamp;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SyncEvent {
     pub event: Event,
     pub encoded: String,
@@ -50,7 +50,7 @@ pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<Arc<Sync
     }
 }
 
-pub struct ChannelCache {
+pub struct MailBoxCache {
     pub start_at: i64,
     pub events: VecDeque<Arc<SyncEvent>>,
     pub preview_map: HashMap<Uuid, Arc<SyncEvent>>,
@@ -58,36 +58,36 @@ pub struct ChannelCache {
 }
 
 pub struct Cache {
-    pub channels: RwLock<HashMap<Uuid, Arc<Mutex<ChannelCache>>>>,
+    pub mailboxes: RwLock<HashMap<Uuid, Arc<Mutex<MailBoxCache>>>>,
 }
 
 impl Cache {
     pub fn new() -> Cache {
         Cache {
-            channels: RwLock::new(HashMap::new()),
+            mailboxes: RwLock::new(HashMap::new()),
         }
     }
 
-    pub async fn try_channel(&self, channel_id: &Uuid) -> Option<Arc<Mutex<ChannelCache>>> {
-        let map = self.channels.read().await;
-        map.get(&channel_id).cloned()
+    pub async fn try_mailbox(&self, mailbox_id: &Uuid) -> Option<Arc<Mutex<MailBoxCache>>> {
+        let map = self.mailboxes.read().await;
+        map.get(&mailbox_id).cloned()
     }
 
-    pub async fn channel(&self, channel_id: &Uuid) -> Arc<Mutex<ChannelCache>> {
-        let map = self.channels.read().await;
-        if let Some(cache) = map.get(&channel_id) {
+    pub async fn mailbox(&self, mailbox_id: &Uuid) -> Arc<Mutex<MailBoxCache>> {
+        let map = self.mailboxes.read().await;
+        if let Some(cache) = map.get(&mailbox_id) {
             cache.clone()
         } else {
             drop(map);
-            let cache = ChannelCache {
+            let cache = MailBoxCache {
                 start_at: timestamp(),
                 events: VecDeque::new(),
                 preview_map: HashMap::new(),
                 edition_map: HashMap::new(),
             };
             let cache = Arc::new(Mutex::new(cache));
-            let mut map = self.channels.write().await;
-            map.insert(*channel_id, cache.clone());
+            let mut map = self.mailboxes.write().await;
+            map.insert(*mailbox_id, cache.clone());
             cache
         }
     }

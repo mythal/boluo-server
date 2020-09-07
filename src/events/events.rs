@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::spawn;
 use uuid::Uuid;
+use crate::spaces::api::SpaceWithRelated;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -22,10 +23,11 @@ pub struct EventQuery {
     pub after: i64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MailBoxType {
     Channel,
+    Space,
 }
 
 #[derive(Deserialize, Debug)]
@@ -37,7 +39,7 @@ pub enum ClientEvent {
     Heartbeat,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug)]
 #[serde(tag = "type")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EventBody {
@@ -80,9 +82,13 @@ pub enum EventBody {
     HeartbeatMap {
         heartbeat_map: HashMap<Uuid, i64>,
     },
+    #[serde(rename_all = "camelCase")]
+    SpaceUpdated {
+        space_with_related: SpaceWithRelated,
+    },
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Event {
     pub mailbox: Uuid,
@@ -186,7 +192,7 @@ impl Event {
     }
 
     pub async fn get_from_cache(mailbox: &Uuid, after: i64) -> Vec<String> {
-        let cache = super::context::get_cache().try_channel(mailbox).await;
+        let cache = super::context::get_cache().try_mailbox(mailbox).await;
         if let Some(cache) = cache {
             let cache = cache.lock().await;
             let events = cache.events.iter().skip_while(|event| event.event.timestamp <= after);
@@ -201,6 +207,11 @@ impl Event {
         } else {
             vec![]
         }
+    }
+
+    pub fn space_updated(space_with_related: SpaceWithRelated) {
+        let mailbox = space_with_related.space.id;
+        Event::fire(EventBody::SpaceUpdated { space_with_related }, mailbox, MailBoxType::Space);
     }
 
     async fn send(mailbox: Uuid, event: Arc<SyncEvent>) {
@@ -236,9 +247,22 @@ impl Event {
     }
 
     async fn async_fire(body: EventBody, mailbox: Uuid, mailbox_type: MailBoxType) {
-        let cache = super::context::get_cache().channel(&mailbox).await;
+
+        let cache = super::context::get_cache().mailbox(&mailbox).await;
         let mut cache = cache.lock().await;
 
+        if mailbox_type == MailBoxType::Space {
+            match body {
+                body @ EventBody::SpaceUpdated { .. }  => {
+                    let event = Event::build(body, mailbox, mailbox_type);
+                    cache.events.clear();
+                    cache.events.push_front(event.clone());
+                    Event::send(mailbox, event).await;
+                }
+                _ => {}
+            }
+            return
+        }
         enum Kind {
             Preview(Uuid),
             Edition(Uuid),

@@ -21,40 +21,40 @@ async fn events_clean() {
         .for_each(|_| async {
             let mut next_map = HashMap::new();
             let before = timestamp() - 24 * 60 * 60 * 1000;
-            let cache = super::context::get_cache().channels.read().await;
-            for (id, channel) in cache.iter() {
+            let cache = super::context::get_cache().mailboxes.read().await;
+            for (id, mailbox) in cache.iter() {
                 let mut empty = false;
                 {
-                    let mut channel = channel.lock().await;
-                    while let Some(event) = channel.events.pop_front() {
+                    let mut mailbox = mailbox.lock().await;
+                    while let Some(event) = mailbox.events.pop_front() {
                         if event.event.timestamp > before {
-                            channel.events.push_front(event);
+                            mailbox.events.push_front(event);
                             break;
                         }
                     }
                     let mut preview_map = HashMap::new();
                     let mut edition_map = HashMap::new();
-                    swap(&mut preview_map, &mut channel.preview_map);
-                    swap(&mut edition_map, &mut channel.edition_map);
-                    channel.preview_map = preview_map
+                    swap(&mut preview_map, &mut mailbox.preview_map);
+                    swap(&mut edition_map, &mut mailbox.edition_map);
+                    mailbox.preview_map = preview_map
                         .into_iter()
                         .filter(|(_, preview)| preview.event.timestamp > before)
                         .collect();
-                    channel.edition_map = edition_map
+                    mailbox.edition_map = edition_map
                         .into_iter()
                         .filter(|(_, edition)| edition.event.timestamp > before)
                         .collect();
-                    channel.start_at = before;
-                    if channel.events.is_empty() && channel.edition_map.is_empty() && channel.preview_map.is_empty() {
+                    mailbox.start_at = before;
+                    if mailbox.events.is_empty() && mailbox.edition_map.is_empty() && mailbox.preview_map.is_empty() {
                         empty = true;
                     }
                 }
                 if !empty {
-                    next_map.insert(*id, channel.clone());
+                    next_map.insert(*id, mailbox.clone());
                 }
             }
             drop(cache);
-            let mut cache = super::context::get_cache().channels.write().await;
+            let mut cache = super::context::get_cache().mailboxes.write().await;
             swap(&mut next_map, &mut *cache);
         })
         .await;

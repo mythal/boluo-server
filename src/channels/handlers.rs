@@ -84,7 +84,11 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
 
     let channel = Channel::create(db, &space_id, &*name, true, default_dice_type.as_deref()).await?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, true).await?;
+    let space_with_related = Space::get_related(db, &space_id).await;
     trans.commit().await?;
+    if let Ok(Some(space_with_related)) = space_with_related {
+        Event::space_updated(space_with_related);
+    }
     let joined = ChannelWithMember {
         channel,
         member: channel_member,
@@ -128,7 +132,11 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     for user_id in remove_masters {
         ChannelMember::set_master(db, &user_id, &channel_id, false).await.ok();
     }
+    let space_with_related = Space::get_related(db, &channel.space_id).await;
     trans.commit().await?;
+    if let Ok(Some(space_with_related)) = space_with_related {
+        Event::space_updated(space_with_related);
+    }
     if push_members {
         Event::push_members(channel_id);
     }
