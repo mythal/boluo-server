@@ -83,12 +83,9 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let space = Space::edit(db, space_id, name, description, default_dice_type)
         .await?
         .ok_or_else(|| unexpected!("No such space found."))?;
-    let space_with_related = Space::get_related(db, &space_id).await;
     trans.commit().await?;
 
-    if let Ok(Some(space_with_related)) = space_with_related {
-        Event::space_updated(space_with_related);
-    }
+    Event::space_updated(space_id);
     Ok(space)
 }
 
@@ -106,15 +103,7 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     } else {
         SpaceMember::add_user(db, user_id, &id).await?
     };
-    let space_id = space.id;
-    tokio::spawn(async move {
-        let db = database::get().await;
-        if let Ok(mut db) = db {
-            if let Ok(Some(space_with_related)) = Space::get_related(&mut *db, &space_id).await {
-                Event::space_updated(space_with_related)
-            }
-        }
-    });
+    Event::space_updated(space.id);
     Ok(SpaceWithMember { space, member })
 }
 

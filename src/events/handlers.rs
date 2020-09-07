@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
-async fn push_events(mailbox: Uuid, mailbox_type: MailBoxType, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
+async fn push_events(mailbox: Uuid, _mailbox_type: MailBoxType, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
     use tokio::sync::broadcast::RecvError;
     use tokio::time::interval;

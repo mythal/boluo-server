@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::spawn;
 use uuid::Uuid;
 use crate::spaces::api::SpaceWithRelated;
+use crate::spaces::Space;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -209,9 +210,15 @@ impl Event {
         }
     }
 
-    pub fn space_updated(space_with_related: SpaceWithRelated) {
-        let mailbox = space_with_related.space.id;
-        Event::fire(EventBody::SpaceUpdated { space_with_related }, mailbox, MailBoxType::Space);
+    pub fn space_updated(space_id: Uuid) {
+        tokio::spawn(async move {
+            let db = database::get().await;
+            if let Ok(mut db) = db {
+                if let Ok(Some(space_with_related)) = Space::get_related(&mut *db, &space_id).await {
+                    Event::async_fire(EventBody::SpaceUpdated { space_with_related }, space_id, MailBoxType::Space).await;
+                }
+            }
+        });
     }
 
     async fn send(mailbox: Uuid, event: Arc<SyncEvent>) {
