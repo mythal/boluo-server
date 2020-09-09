@@ -7,7 +7,7 @@ pub use tokio_postgres::Error as DbError;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("An unexpected database error occurred")]
+    #[error("An unexpected database error occurred: {0}")]
     Database(DbError),
     #[error("An unexpected cache database error occurred")]
     Cache(#[from] CacheError),
