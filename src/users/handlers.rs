@@ -9,6 +9,7 @@ use crate::error::{AppError, ValidationFailed};
 use crate::media::{upload, upload_params};
 use crate::spaces::Space;
 use crate::users::api::{CheckEmailExists, CheckUsernameExists, Edit, GetMe, QueryUser};
+use crate::users::models::UserExt;
 use crate::{context, interface};
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
@@ -50,8 +51,10 @@ pub async fn get_me(req: Request<Body>) -> Result<Option<GetMe>, AppError> {
         if let Some(user) = user {
             let my_spaces = Space::get_by_user(db, user.id).await?;
             let my_channels = Channel::get_by_user(db, user.id).await?;
+            let settings = UserExt::get_settings(db, user.id).await?;
             Ok(Some(GetMe {
                 user,
+                settings,
                 my_channels,
                 my_spaces,
             }))
@@ -94,8 +97,10 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let token = if form.with_token { Some(token) } else { None };
     let my_spaces = Space::get_by_user(db, user.id).await?;
     let my_channels = Channel::get_by_user(db, user.id).await?;
+    let settings = UserExt::get_settings(db, user.id).await?;
     let me = GetMe {
         user,
+        settings,
         my_spaces,
         my_channels,
     };
@@ -149,6 +154,16 @@ pub fn is_image(mime: &Option<String>) -> bool {
     false
 }
 
+pub async fn update_settings(req: Request<Body>) -> Result<serde_json::Value, AppError> {
+    use crate::csrf::authenticate;
+    let session = authenticate(&req).await?;
+    let settings: serde_json::Value = parse_body(req).await?;
+    let mut db = database::get().await?;
+    UserExt::update_settings(&mut *db, session.user_id, settings)
+        .await
+        .map_err(Into::into)
+}
+
 pub async fn edit_avatar(req: Request<Body>) -> Result<User, AppError> {
     use crate::csrf::authenticate;
     let session = authenticate(&req).await?;
@@ -187,6 +202,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/get_me", Method::GET) => get_me(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
         ("/edit_avatar", Method::POST) => edit_avatar(req).await.map(ok_response),
+        ("/update_settings", Method::POST) => update_settings(req).await.map(ok_response),
         ("/check_username", Method::GET) => check_username_exists(req).await.map(ok_response),
         ("/check_email", Method::GET) => check_email_exists(req).await.map(ok_response),
         _ => missing(),

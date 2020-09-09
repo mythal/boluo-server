@@ -130,6 +130,34 @@ impl User {
     }
 }
 
+#[derive(Debug, Serialize, FromSql, Clone)]
+#[serde(rename_all = "camelCase")]
+#[postgres(name = "users_extension")]
+pub struct UserExt {
+    pub user_id: Uuid,
+    pub settings: serde_json::Value,
+}
+
+impl UserExt {
+    pub async fn get_settings<T: Querist>(db: &mut T, user_id: Uuid) -> Result<serde_json::Value, DbError> {
+        let user_ext = db
+            .query_one(include_str!("sql/get_settings.sql"), &[&user_id])
+            .await?
+            .map(|row| row.get(0));
+        Ok(user_ext.unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())))
+    }
+
+    pub async fn update_settings<T: Querist>(
+        db: &mut T,
+        user_id: Uuid,
+        settings: serde_json::Value,
+    ) -> Result<serde_json::Value, DbError> {
+        db.query_exactly_one(include_str!("sql/set_settings.sql"), &[&user_id, &settings])
+            .await
+            .map(|row| row.get(0))
+    }
+}
+
 #[tokio::test]
 async fn user_test() -> Result<(), crate::error::AppError> {
     use crate::database::Client;
@@ -172,6 +200,18 @@ async fn user_test() -> Result<(), crate::error::AppError> {
     assert_eq!(user_altered.nickname, new_nickname);
     assert_eq!(user_altered.bio, bio);
     assert_eq!(user_altered.avatar_id, Some(avatar.id));
+    let settings = UserExt::update_settings(db, user.id, serde_json::json!({"madoka": "homura"})).await?;
+    assert_eq!(
+        *settings.get("madoka").unwrap(),
+        serde_json::Value::String("homura".to_string())
+    );
+    UserExt::update_settings(db, user.id, serde_json::json!({"homura": "madoka"})).await?;
+    let settings = UserExt::get_settings(db, user.id).await?;
+    assert_eq!(
+        *settings.get("homura").unwrap(),
+        serde_json::Value::String("madoka".to_string())
+    );
+
     User::deactivated(db, &new_user.id).await.unwrap();
 
     let all_users = User::all(db).await.unwrap();

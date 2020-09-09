@@ -35,6 +35,13 @@ CREATE TABLE users
 ALTER TABLE media
     ADD CONSTRAINT "media_uploader" FOREIGN KEY (uploader_id) REFERENCES users (id) ON DELETE RESTRICT;
 
+CREATE TABLE users_extension
+(
+    "user_id"   uuid    NOT NULL PRIMARY KEY
+        CONSTRAINT "extension_user" REFERENCES users (id) ON DELETE CASCADE,
+    "settings"  jsonb   NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE spaces
 (
     "id"                uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,

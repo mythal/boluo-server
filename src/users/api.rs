@@ -26,6 +26,7 @@ pub struct CheckUsernameExists {
 #[serde(rename_all = "camelCase")]
 pub struct GetMe {
     pub user: User,
+    pub settings: serde_json::Value,
     pub my_channels: Vec<ChannelWithMember>,
     pub my_spaces: Vec<SpaceWithMember>,
 }
