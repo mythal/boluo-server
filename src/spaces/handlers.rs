@@ -117,6 +117,7 @@ async fn leave(req: Request<Body>) -> Result<bool, AppError> {
 
     SpaceMember::remove_user(db, &session.user_id, &id).await?;
     trans.commit().await?;
+    Event::space_updated(id);
     Ok(true)
 }
 
