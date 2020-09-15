@@ -18,6 +18,7 @@ pub struct Edit {
     pub name: Option<String>,
     pub description: Option<String>,
     pub default_dice_type: Option<String>,
+    pub explorable: Option<bool>,
 }
 
 #[derive(Serialize, Debug, Clone)]

@@ -68,6 +68,7 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
         name,
         description,
         default_dice_type,
+        explorable,
     }: Edit = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
@@ -80,7 +81,7 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     if !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
-    let space = Space::edit(db, space_id, name, description, default_dice_type)
+    let space = Space::edit(db, space_id, name, description, default_dice_type, explorable)
         .await?
         .ok_or_else(|| unexpected!("No such space found."))?;
     trans.commit().await?;
