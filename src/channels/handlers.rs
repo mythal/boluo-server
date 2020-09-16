@@ -14,6 +14,7 @@ use crate::spaces::{Space, SpaceMember};
 use hyper::{Body, Request};
 use std::collections::HashMap;
 use uuid::Uuid;
+use crate::messages::Message;
 
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
     let member = SpaceMember::get(db, user_id, space_id)
@@ -228,6 +229,28 @@ async fn by_space(req: Request<Body>) -> Result<Vec<Channel>, AppError> {
     Channel::get_by_space(db, &id).await.map_err(Into::into)
 }
 
+async fn export(req: Request<Body>) -> Result<Vec<Message>, AppError> {
+    let IdQuery { id } = parse_query(req.uri())?;
+    let session = authenticate(&req).await?;
+    let mut conn = database::get().await?;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
+
+    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound("channel"))?;
+
+    let space_member = SpaceMember::get(db, &session.user_id, &channel.space_id).await?;
+    if space_member.is_none() {
+        return Err(AppError::NoPermission);
+    }
+    let space_member = space_member.unwrap();
+    let channel_member = ChannelMember::get(db, &session.user_id, &id).await?;
+    if channel_member.is_none() && !space_member.is_admin {
+        return Err(AppError::NoPermission);
+    }
+    Message::export(db, &channel.id).await.map_err(Into::into)
+
+}
+
 async fn my_channels(req: Request<Body>) -> Result<Vec<ChannelWithMember>, AppError> {
     let session = authenticate(&req).await?;
 
@@ -258,6 +281,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/leave", Method::POST) => leave(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         ("/check_name", Method::GET) => check_channel_name_exists(req).await.map(ok_response),
+        ("/export", Method::GET) => export(req).await.map(ok_response),
         _ => missing(),
     }
 }

@@ -98,6 +98,13 @@ impl Message {
         Ok(messages)
     }
 
+    pub async fn export<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Vec<Message>, DbError> {
+        let rows = db.query(include_str!("./sql/export.sql"), &[channel_id]).await?;
+        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
+        messages.iter_mut().for_each(Message::hide);
+        Ok(messages)
+    }
+
     pub async fn create<T: Querist>(
         db: &mut T,
         message_id: Option<&Uuid>,
