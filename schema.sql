@@ -55,7 +55,8 @@ CREATE TABLE spaces
     "deleted"           boolean   NOT NULL DEFAULT false,
     "password"          text      NOT NULL DEFAULT '',   -- plain text
     "language"          text      NOT NULL DEFAULT '',   -- ISO 639-1
-    "default_dice_type" text      NOT NULL DEFAULT 'd20' -- d20, d100, FATE ...
+    "default_dice_type" text      NOT NULL DEFAULT 'd20', -- d20, d100, FATE ...
+    "explorable"        boolean   NOT NULL DEFAULT false
 );
 
 CREATE TABLE space_members
