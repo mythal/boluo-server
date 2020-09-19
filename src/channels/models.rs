@@ -223,7 +223,7 @@ impl ChannelMember {
         }
         if let Some(character_name) = character_name {
             if !character_name.is_empty() {
-                validators::DISPLAY_NAME.run(character_name)?;
+                validators::CHARACTER_NAME.run(character_name)?;
             }
         }
         let row = db
