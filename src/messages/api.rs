@@ -15,6 +15,7 @@ pub struct NewMessage {
     pub is_action: bool,
     pub order_date: Option<i64>,
     pub media_id: Option<Uuid>,
+    pub whisper_to_users: Option<Vec<Uuid>>,
 }
 
 #[derive(Deserialize, Debug)]

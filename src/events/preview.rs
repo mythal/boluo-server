@@ -90,6 +90,7 @@ impl PreviewPost {
             },
             _ => false,
         };
+        let whisper_to_users = None;
         Event::message_preview(Box::new(Preview {
             id,
             sender_id: user_id,
@@ -101,7 +102,7 @@ impl PreviewPost {
             in_game,
             is_action,
             text,
-            whisper_to_users: None,
+            whisper_to_users,
             entities,
             start,
             is_master,
