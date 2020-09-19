@@ -67,8 +67,8 @@ impl Message {
             .await?
             .map(|row| {
                 let mut message: Message = row.get(0);
-                let should_hide = row.get(1);
-                if should_hide {
+                let should_hide: Option<bool> = row.get(1);
+                if should_hide.unwrap_or(true) {
                     message.hide();
                 }
                 message

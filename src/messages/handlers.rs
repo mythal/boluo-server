@@ -190,7 +190,7 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let message = Message::get(db, &id, None)
+    let message = Message::get(db, &id, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("messages"))?;
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
@@ -209,7 +209,7 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let message = Message::get(db, &id, None)
+    let message = Message::get(db, &id, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("messages"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
