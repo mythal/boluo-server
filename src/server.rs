@@ -91,7 +91,7 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     }
     match response {
         Ok(response) => {
-            log::debug!("{:>6} {} {:?}", method, uri, start.elapsed());
+            log::info!("{:>6} {} {:?}", method, uri, start.elapsed());
             Ok(response)
         }
         Err(e) => {

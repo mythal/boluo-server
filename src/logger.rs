@@ -23,7 +23,6 @@ pub fn setup_logger(debug: bool) -> Result<(), fern::InitError> {
         .level(LevelFilter::Info)
         .level_for("server", level)
         .chain(std::io::stdout())
-        .chain(fern::log_file("server.log")?)
         .apply()?;
     Ok(())
 }
