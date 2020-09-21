@@ -1,7 +1,5 @@
 FROM rustlang/rust:nightly
 RUN cargo --version
-
-RUN mkdir /boluo
-WORKDIR /boluo
 ADD . /boluo
-RUN cargo build --release
+RUN cd /boluo && cargo build --release && cp /boluo/target/release/server /bin && cp /boluo/target/release/manage /bin && rm -rf /boluo
+WORKDIR /
