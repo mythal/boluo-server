@@ -5,7 +5,7 @@ use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
 use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
-use crate::spaces::api::{CheckSpaceNameExists, SpaceWithMember};
+use crate::spaces::api::{CheckSpaceNameExists, SpaceWithMember, SearchParams};
 use hyper::{Body, Request};
 use crate::events::Event;
 
@@ -35,7 +35,14 @@ async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError>
     let session = authenticate(&req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    Space::get_by_user(db, session.user_id).await.map_err(Into::into)
+    Space::get_by_user(db, &session.user_id).await.map_err(Into::into)
+}
+
+async fn search(req: Request<Body>) -> Result<Vec<Space>, AppError> {
+    let SearchParams { name } = parse_query(req.uri()).unwrap();
+    let mut conn = database::get().await?;
+    let db = &mut *conn;
+    Space::search(db, name).await.map_err(Into::into)
 }
 
 async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
@@ -159,6 +166,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/query", Method::GET) => query(req).await.map(ok_response),
         ("/query_with_related", Method::GET) => query_with_related(req).await.map(ok_response),
         ("/my", Method::GET) => my_spaces(req).await.map(ok_response),
+        ("/search", Method::GET) => search(req).await.map(ok_response),
         ("/create", Method::POST) => create(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
         ("/join", Method::POST) => join(req).await.map(ok_response),

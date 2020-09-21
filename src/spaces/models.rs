@@ -118,9 +118,29 @@ impl Space {
         Ok(result.map(|row| row.get(0)))
     }
 
-    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<SpaceWithMember>, DbError> {
+    pub async fn search<T: Querist>(db: &mut T, search: String) -> Result<Vec<Space>, DbError> {
+        // https://www.postgresql.org/docs/9.3/functions-matching.html
+        let patterns: Vec<String> = search
+            .trim()
+            .split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
+            .map(|s| {
+                let mut pattern = String::from("%");
+                pattern.push_str(s);
+                pattern.push('%');
+                pattern
+            }).collect();
+        let rows: Vec<Space> = db
+            .query(include_str!("sql/search.sql"), &[&patterns])
+            .await?
+            .into_iter()
+            .map(|row| row.get(0))
+            .collect();
+        Ok(rows)
+    }
+
+    pub async fn get_by_user<T: Querist>(db: &mut T, user_id: &Uuid) -> Result<Vec<SpaceWithMember>, DbError> {
         let rows = db
-            .query(include_str!("sql/get_spaces_by_user.sql"), &[&user_id])
+            .query(include_str!("sql/get_spaces_by_user.sql"), &[user_id])
             .await?;
         Ok(rows
             .into_iter()
@@ -128,6 +148,16 @@ impl Space {
                 space: row.get(0),
                 member: row.get(1),
             })
+            .collect())
+    }
+
+    pub async fn user_owned<T: Querist>(db: &mut T, user_id: &Uuid) -> Result<Vec<Space>, DbError> {
+        let rows = db
+            .query(include_str!("sql/user_owned_spaces.sql"), &[user_id])
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get(0))
             .collect())
     }
 
@@ -261,6 +291,8 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert!(Space::is_public(db, &space.id).await?.unwrap());
     let spaces = Space::all(db).await?;
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
+    let spaces = Space::user_owned(db, &user.id).await?;
+    assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
     let new_name = "Mythal";
     let description = "some description".to_string();
     let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None, None)
@@ -272,6 +304,8 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     // let result = Space::edit(db, _space_2.id, Some(new_name.to_string())).await;
     // assert!(if let Err(ModelError::Conflict(_)) = result { true } else { false });
     // members
+    let search_result = Space::search(db, "学园".to_string()).await?;
+    assert_eq!(search_result.len(), 1);
     SpaceMember::add_admin(db, &user.id, &space.id).await?;
     SpaceMember::get(db, &user.id, &space.id).await.unwrap();
     SpaceMember::set_admin(db, &user.id, &space.id, true).await?;
@@ -280,7 +314,7 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert_eq!(member.user_id, user.id);
     assert_eq!(member.space_id, space.id);
 
-    let joined = Space::get_by_user(db, user.id).await?;
+    let joined = Space::get_by_user(db, &user.id).await?;
     assert_eq!(joined.len(), 1);
     assert_eq!(joined[0].member.space_id, space.id);
 

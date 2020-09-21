@@ -13,6 +13,12 @@ pub struct Create {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct SearchParams {
+    pub name: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Edit {
     pub space_id: Uuid,
     pub name: Option<String>,
@@ -28,6 +34,7 @@ pub struct SpaceWithRelated {
     pub members: Vec<super::SpaceMember>,
     pub channels: Vec<crate::channels::Channel>,
 }
+
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]

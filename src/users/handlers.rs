@@ -49,7 +49,7 @@ pub async fn get_me(req: Request<Body>) -> Result<Option<GetMe>, AppError> {
         let db = &mut *conn;
         let user = User::get_by_id(db, &session.user_id).await?;
         if let Some(user) = user {
-            let my_spaces = Space::get_by_user(db, user.id).await?;
+            let my_spaces = Space::get_by_user(db, &user.id).await?;
             let my_channels = Channel::get_by_user(db, user.id).await?;
             let settings = UserExt::get_settings(db, user.id).await?;
             Ok(Some(GetMe {
@@ -95,7 +95,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
         .to_string();
 
     let token = if form.with_token { Some(token) } else { None };
-    let my_spaces = Space::get_by_user(db, user.id).await?;
+    let my_spaces = Space::get_by_user(db, &user.id).await?;
     let my_channels = Channel::get_by_user(db, user.id).await?;
     let settings = UserExt::get_settings(db, user.id).await?;
     let me = GetMe {
