@@ -14,19 +14,22 @@ use crate::channels::Channel;
 #[postgres(name = "spaces")]
 pub struct Space {
     pub id: Uuid,
-    pub name: String,
-    pub description: String,
+    pub owner_id: Uuid,
+    #[serde(skip)]
+    pub invite_token: Uuid,
     pub created: NaiveDateTime,
     pub modified: NaiveDateTime,
-    pub owner_id: Uuid,
-    pub is_public: bool,
-    #[serde(skip)]
-    pub deleted: bool,
+    pub name: String,
+    pub description: String,
     #[serde(skip)]
     pub password: String,
     pub language: String,
     pub default_dice_type: String,
+    pub is_public: bool,
+    #[serde(skip)]
+    pub deleted: bool,
     pub explorable: bool,
+    pub allow_spectator: bool,
 }
 
 impl Space {

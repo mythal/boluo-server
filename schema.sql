@@ -37,9 +37,9 @@ ALTER TABLE media
 
 CREATE TABLE users_extension
 (
-    "user_id"   uuid    NOT NULL PRIMARY KEY
+    "user_id"  uuid  NOT NULL PRIMARY KEY
         CONSTRAINT "extension_user" REFERENCES users (id) ON DELETE CASCADE,
-    "settings"  jsonb   NOT NULL DEFAULT '{}'
+    "settings" jsonb NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE spaces
@@ -53,10 +53,12 @@ CREATE TABLE spaces
         CONSTRAINT "space_owner" REFERENCES users (id) ON DELETE RESTRICT,
     "is_public"         boolean   NOT NULL DEFAULT true,
     "deleted"           boolean   NOT NULL DEFAULT false,
-    "password"          text      NOT NULL DEFAULT '',   -- plain text
-    "language"          text      NOT NULL DEFAULT '',   -- ISO 639-1
+    "password"          text      NOT NULL DEFAULT '',    -- plain text
+    "language"          text      NOT NULL DEFAULT '',    -- ISO 639-1
     "default_dice_type" text      NOT NULL DEFAULT 'd20', -- d20, d100, FATE ...
-    "explorable"        boolean   NOT NULL DEFAULT false
+    "invite_token"      uuid      NOT NULL DEFAULT gen_random_uuid(),
+    "explorable"        boolean   NOT NULL DEFAULT false,
+    "allow_spectator"   boolean   NOT NULL DEFAULT true
 );
 
 CREATE TABLE space_members
@@ -72,15 +74,16 @@ CREATE TABLE space_members
 
 CREATE TABLE channels
 (
-    "id"                uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
-    "name"              text      NOT NULL,
-    "topic"             text      NOT NULL DEFAULT '',
-    "space_id"          uuid      NOT NULL
+    "id"                   uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
+    "name"                 text      NOT NULL,
+    "topic"                text      NOT NULL DEFAULT '',
+    "space_id"             uuid      NOT NULL
         CONSTRAINT "channel_space" REFERENCES spaces (id) ON DELETE CASCADE,
-    "created"           timestamp NOT NULL DEFAULT now(),
-    "is_public"         boolean   NOT NULL DEFAULT true,
-    "deleted"           boolean   NOT NULL DEFAULT false,
-    "default_dice_type" text      NOT NULL DEFAULT 'd20',
+    "created"              timestamp NOT NULL DEFAULT now(),
+    "is_public"            boolean   NOT NULL DEFAULT true,
+    "deleted"              boolean   NOT NULL DEFAULT false,
+    "default_dice_type"    text      NOT NULL DEFAULT 'd20',
+    "default_roll_command" text      NOT NULL DEFAULT 'd',
     CONSTRAINT "unique_channel_name_in_space" UNIQUE (space_id, name)
 );
 
@@ -131,7 +134,8 @@ CREATE TABLE messages
     "order_offset"      integer   NOT NULL DEFAULT 0
 );
 
-ALTER TABLE messages ADD CONSTRAINT order_index_unique UNIQUE (channel_id, order_date, order_offset) DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE messages
+    ADD CONSTRAINT order_index_unique UNIQUE (channel_id, order_date, order_offset) DEFERRABLE INITIALLY IMMEDIATE;
 CREATE INDEX "order_index" ON messages (order_date DESC, order_offset DESC);
 CREATE INDEX "message_tags" ON messages USING GIN (tags);
 CREATE INDEX "message_channel" ON messages USING btree (channel_id);
