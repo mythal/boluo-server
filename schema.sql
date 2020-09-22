@@ -45,7 +45,7 @@ CREATE TABLE users_extension
 CREATE TABLE spaces
 (
     "id"                uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
-    "name"              text      NOT NULL UNIQUE,
+    "name"              text      NOT NULL,
     "description"       text      NOT NULL DEFAULT '',
     "created"           timestamp NOT NULL DEFAULT now(),
     "modified"          timestamp NOT NULL DEFAULT now(),

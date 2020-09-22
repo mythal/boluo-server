@@ -5,7 +5,7 @@ use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
 use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
-use crate::spaces::api::{CheckSpaceNameExists, SpaceWithMember, SearchParams};
+use crate::spaces::api::{SpaceWithMember, SearchParams};
 use hyper::{Body, Request};
 use crate::events::Event;
 
@@ -39,10 +39,10 @@ async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError>
 }
 
 async fn search(req: Request<Body>) -> Result<Vec<Space>, AppError> {
-    let SearchParams { name } = parse_query(req.uri()).unwrap();
+    let SearchParams { search } = parse_query(req.uri()).unwrap();
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    Space::search(db, name).await.map_err(Into::into)
+    Space::search(db, search).await.map_err(Into::into)
 }
 
 async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
@@ -151,13 +151,6 @@ async fn delete(req: Request<Body>) -> Result<Space, AppError> {
     Err(AppError::NoPermission)
 }
 
-pub async fn check_space_name_exists(req: Request<Body>) -> Result<bool, AppError> {
-    let CheckSpaceNameExists { name } = parse_query(req.uri())?;
-    let mut db = database::get().await?;
-    let space = Space::get_by_name(&mut *db, &*name).await?;
-    Ok(space.is_some())
-}
-
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
@@ -173,7 +166,6 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/leave", Method::POST) => leave(req).await.map(ok_response),
         ("/members", Method::GET) => members(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
-        ("/check_name", Method::GET) => check_space_name_exists(req).await.map(ok_response),
         _ => missing(),
     }
 }

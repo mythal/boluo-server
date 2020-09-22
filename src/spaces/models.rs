@@ -83,10 +83,6 @@ impl Space {
         Space::get(db, Some(id), None).await
     }
 
-    pub async fn get_by_name<T: Querist>(db: &mut T, name: &str) -> Result<Option<Space>, DbError> {
-        Space::get(db, None, Some(name)).await
-    }
-
     pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<bool>, DbError> {
         let row = db.query_one(include_str!("sql/is_public.sql"), &[id]).await?;
         Ok(row.map(|row| row.get(0)))
@@ -289,7 +285,6 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     Space::edit(db, space.id, None, None, None, Some(true))
         .await?
         .unwrap();
-    let space = Space::get_by_name(db, &space.name).await?.unwrap();
     let space = Space::get_by_id(db, &space.id).await?.unwrap();
     assert!(Space::is_public(db, &space.id).await?.unwrap());
     let spaces = Space::all(db).await?;

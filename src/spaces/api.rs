@@ -14,7 +14,7 @@ pub struct Create {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchParams {
-    pub name: String,
+    pub search: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -43,8 +43,3 @@ pub struct SpaceWithMember {
     pub member: super::SpaceMember,
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckSpaceNameExists {
-    pub name: String,
-}
