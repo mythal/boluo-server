@@ -22,6 +22,7 @@ pub struct Edit {
     pub name: Option<String>,
     pub topic: Option<String>,
     pub default_dice_type: Option<String>,
+    pub default_roll_command: Option<String>,
     #[serde(default)]
     pub grant_masters: Vec<Uuid>,
     #[serde(default)]

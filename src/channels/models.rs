@@ -88,6 +88,7 @@ impl Channel {
         name: Option<&str>,
         topic: Option<&str>,
         default_dice_type: Option<&str>,
+        default_roll_command: Option<&str>,
     ) -> Result<Channel, ModelError> {
         use crate::validators;
 
@@ -104,7 +105,7 @@ impl Channel {
         let row = db
             .query_exactly_one(
                 include_str!("sql/edit_channel.sql"),
-                &[id, &name, &topic, &default_dice_type],
+                &[id, &name, &topic, &default_dice_type, &default_roll_command],
             )
             .await?;
         Ok(row.get(0))
@@ -340,7 +341,7 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     assert_eq!(channels[0].id, channel.id);
 
     let new_name = "深水城水很深";
-    let channel_edited = Channel::edit(db, &channel.id, Some(new_name), None, None).await?;
+    let channel_edited = Channel::edit(db, &channel.id, Some(new_name), None, None, None).await?;
     assert_eq!(channel_edited.name, new_name);
     let (_, space) = Channel::get_with_space(db, &channel.id).await?.unwrap();
     let channel = Channel::get_by_name(db, space.id, new_name).await?.unwrap();

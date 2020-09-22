@@ -101,6 +101,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
         name,
         topic,
         default_dice_type,
+        default_roll_command,
         grant_masters,
         remove_masters,
     } = interface::parse_body(req).await?;
@@ -121,6 +122,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
         name.as_deref(),
         topic.as_deref(),
         default_dice_type.as_deref(),
+        default_roll_command.as_deref(),
     )
     .await?;
     let push_members = !(grant_masters.is_empty() && remove_masters.is_empty());
