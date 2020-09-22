@@ -10,9 +10,10 @@ use crate::media::{upload, upload_params};
 use crate::spaces::Space;
 use crate::users::api::{CheckEmailExists, CheckUsernameExists, Edit, GetMe, QueryUser};
 use crate::users::models::UserExt;
-use crate::{context, interface};
+use crate::interface;
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
+use crate::context::debug;
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -72,7 +73,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     use crate::session;
     use cookie::{CookieBuilder, SameSite};
     use hyper::header::{HeaderValue, SET_COOKIE};
-
+    let is_developer = req.headers().contains_key("development");
     let form: Login = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
@@ -87,7 +88,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)
-        .secure(!context::debug())
+        .secure(!is_developer && !debug())
         .http_only(true)
         .path("/api/")
         .max_age(time::Duration::days(256))
