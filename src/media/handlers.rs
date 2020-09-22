@@ -16,9 +16,9 @@ use tokio::fs::File;
 use tokio::prelude::*;
 
 fn content_disposition(attachment: bool, filename: &str) -> HeaderValue {
-    use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+    use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
     let kind = if attachment { "attachment" } else { "inline" };
-    const SET: &AsciiSet = &CONTROLS.add(b'"').add(b' ');
+    const SET: &AsciiSet = &NON_ALPHANUMERIC;
     let filename = utf8_percent_encode(filename, SET).to_string();
     HeaderValue::from_str(&*format!("{}; filename*=utf-8''{}", kind, filename)).unwrap()
 }
