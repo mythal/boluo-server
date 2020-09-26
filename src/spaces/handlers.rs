@@ -5,7 +5,7 @@ use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
 use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
-use crate::spaces::api::{SpaceWithMember, SearchParams, Kick};
+use crate::spaces::api::{SpaceWithMember, SearchParams, Kick, Join};
 use hyper::{Body, Request};
 use crate::events::Event;
 use crate::spaces::models::SpaceMemberWithUser;
@@ -35,6 +35,21 @@ pub async fn space_related(id: &Uuid) -> Result<SpaceWithRelated, AppError> {
 async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     space_related(&id).await
+}
+
+async fn token(req: Request<Body>) -> Result<Uuid, AppError> {
+    let session = authenticate(&req).await?;
+    let IdQuery { id } = parse_query(req.uri())?;
+    let mut conn = database::get().await?;
+    let db = &mut *conn;
+    let is_admin = SpaceMember::get(db, &session.user_id, &id)
+        .await?
+        .map(|space_member| space_member.is_admin)
+        .unwrap_or(false);
+    if !is_admin {
+        return Err(AppError::NoPermission);
+    }
+    Space::get_token(db, &id).await.map_err(Into::into)
 }
 
 async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError> {
@@ -120,19 +135,22 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
 
 async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let session = authenticate(&req).await?;
-    let IdQuery { id } = parse_query(req.uri())?;
+    let Join { space_id, token } = parse_query(req.uri())?;
 
     let mut db = database::get().await?;
     let db = &mut *db;
 
-    let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("spaces"))?;
+    let space = Space::get_by_id(db, &space_id).await?.ok_or(AppError::NotFound("spaces"))?;
+    if !space.is_public && token != Some(space.invite_token) && space.owner_id != session.user_id {
+        return Err(AppError::NoPermission);
+    }
     let user_id = &session.user_id;
     let member = if &space.owner_id == user_id {
-        SpaceMember::add_admin(db, user_id, &id).await?
+        SpaceMember::add_admin(db, user_id, &space_id).await?
     } else {
-        SpaceMember::add_user(db, user_id, &id).await?
+        SpaceMember::add_user(db, user_id, &space_id).await?
     };
-    Event::space_updated(space.id);
+    Event::space_updated(space_id);
     Ok(SpaceWithMember { space, member })
 }
 
@@ -212,6 +230,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/list", Method::GET) => list(req).await.map(ok_response),
         ("/query", Method::GET) => query(req).await.map(ok_response),
         ("/query_with_related", Method::GET) => query_with_related(req).await.map(ok_response),
+        ("/token", Method::GET) => token(req).await.map(ok_response),
         ("/my", Method::GET) => my_spaces(req).await.map(ok_response),
         ("/search", Method::GET) => search(req).await.map(ok_response),
         ("/create", Method::POST) => create(req).await.map(ok_response),

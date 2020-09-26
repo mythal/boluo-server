@@ -11,6 +11,12 @@ pub struct Create {
     pub first_channel_name: String,
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Join {
+    pub space_id: Uuid,
+    pub token: Option<Uuid>,
+}
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
