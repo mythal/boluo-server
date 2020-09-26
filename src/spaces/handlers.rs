@@ -5,7 +5,7 @@ use crate::csrf::authenticate;
 use crate::database;
 use crate::error::AppError;
 use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
-use crate::spaces::api::{SpaceWithMember, SearchParams};
+use crate::spaces::api::{SpaceWithMember, SearchParams, Kick};
 use hyper::{Body, Request};
 use crate::events::Event;
 use crate::spaces::models::SpaceMemberWithUser;
@@ -135,6 +135,33 @@ async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     Ok(true)
 }
 
+async fn kick(req: Request<Body>) -> Result<bool, AppError> {
+    let session = authenticate(&req).await?;
+    let Kick { space_id, user_id } = parse_query(req.uri())?;
+
+    let mut conn = database::get().await?;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
+    let not_found = || AppError::NotFound("space member");
+    let my_member = SpaceMember::get(db, &session.user_id, &space_id)
+        .await?
+        .ok_or_else(not_found)?;
+    let kick_member = SpaceMember::get(db, &user_id, &space_id)
+        .await?
+        .ok_or_else(not_found)?;
+    if kick_member.is_admin {
+        return Err(AppError::BadRequest("Can't kick admin".to_string()));
+    }
+    if my_member.is_admin {
+        SpaceMember::remove_user(db, &user_id, &space_id).await?;
+        trans.commit().await?;
+        Event::space_updated(space_id);
+        Ok(true)
+    } else {
+        Err(AppError::NoPermission)
+    }
+}
+
 async fn members(req: Request<Body>) -> Result<Vec<SpaceMemberWithUser>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await?;
@@ -170,6 +197,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
         ("/join", Method::POST) => join(req).await.map(ok_response),
         ("/leave", Method::POST) => leave(req).await.map(ok_response),
+        ("/kick", Method::POST) => kick(req).await.map(ok_response),
         ("/members", Method::GET) => members(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         _ => missing(),

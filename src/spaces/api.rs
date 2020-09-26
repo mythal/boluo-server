@@ -11,6 +11,14 @@ pub struct Create {
     pub first_channel_name: String,
 }
 
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Kick {
+    pub space_id: Uuid,
+    pub user_id: Uuid,
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchParams {
