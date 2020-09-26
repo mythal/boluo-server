@@ -199,11 +199,10 @@ impl SpaceMember {
         inner_map(result, |row| row.get(0))
     }
 
-    pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), DbError> {
+    pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<Vec<Uuid>, DbError> {
         db.execute(include_str!("sql/remove_user_from_space.sql"), &[user_id, space_id])
             .await?;
-        ChannelMember::remove_user_by_space(db, user_id, space_id).await?;
-        Ok(())
+        ChannelMember::remove_user_by_space(db, user_id, space_id).await
     }
 
     pub async fn add_admin<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<SpaceMember, DbError> {

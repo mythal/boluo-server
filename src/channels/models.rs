@@ -210,9 +210,12 @@ impl ChannelMember {
             .await
     }
 
-    pub async fn remove_user_by_space<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<u64, DbError> {
-        db.execute(include_str!("sql/remove_user_by_space.sql"), &[user_id, space_id])
-            .await
+    pub async fn remove_user_by_space<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<Vec<Uuid>, DbError> {
+        let channels = db.query(include_str!("sql/remove_user_by_space.sql"), &[user_id, space_id])
+            .await?
+            .into_iter()
+            .map(|row| row.get(0));
+        Ok(channels.collect())
     }
 
     pub async fn edit<T: Querist>(

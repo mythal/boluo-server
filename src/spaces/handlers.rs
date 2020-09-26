@@ -107,7 +107,7 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
             SpaceMember::set_admin(db, &space_id, user_id, true).await?;
         }
         for user_id in remove_admins.iter() {
-            if user_id != space.owner_id {
+            if user_id != &space.owner_id {
                 SpaceMember::set_admin(db, &space_id, user_id, false).await?;
             }
         }
@@ -144,9 +144,12 @@ async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
-    SpaceMember::remove_user(db, &session.user_id, &id).await?;
+    let channels = SpaceMember::remove_user(db, &session.user_id, &id).await?;
     trans.commit().await?;
     Event::space_updated(id);
+    for channel_id in channels {
+        Event::push_members(channel_id);
+    }
     Ok(true)
 }
 
@@ -168,9 +171,12 @@ async fn kick(req: Request<Body>) -> Result<bool, AppError> {
         return Err(AppError::BadRequest("Can't kick admin".to_string()));
     }
     if my_member.is_admin {
-        SpaceMember::remove_user(db, &user_id, &space_id).await?;
+        let channels = SpaceMember::remove_user(db, &user_id, &space_id).await?;
         trans.commit().await?;
         Event::space_updated(space_id);
+        for channel_id in channels {
+            Event::push_members(channel_id);
+        }
         Ok(true)
     } else {
         Err(AppError::NoPermission)
