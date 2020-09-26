@@ -84,6 +84,8 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
         explorable,
         is_public,
         allow_spectator,
+        grant_admins,
+        remove_admins,
     }: Edit = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
@@ -99,6 +101,17 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let space = Space::edit(db, space_id, name, description, default_dice_type, explorable, is_public, allow_spectator)
         .await?
         .ok_or_else(|| unexpected!("No such space found."))?;
+
+    if space.owner_id == session.user_id {
+        for user_id in grant_admins.iter() {
+            SpaceMember::set_admin(db, &space_id, user_id, true).await?;
+        }
+        for user_id in remove_admins.iter() {
+            if user_id != space.owner_id {
+                SpaceMember::set_admin(db, &space_id, user_id, false).await?;
+            }
+        }
+    }
     trans.commit().await?;
 
     Event::space_updated(space_id);

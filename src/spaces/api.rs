@@ -35,6 +35,10 @@ pub struct Edit {
     pub explorable: Option<bool>,
     pub is_public: Option<bool>,
     pub allow_spectator: Option<bool>,
+    #[serde(default)]
+    pub grant_admins: Vec<Uuid>,
+    #[serde(default)]
+    pub remove_admins: Vec<Uuid>,
 }
 
 #[derive(Serialize, Debug, Clone)]
