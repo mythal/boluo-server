@@ -210,6 +210,11 @@ impl ChannelMember {
             .await
     }
 
+    pub async fn remove_user_by_space<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<u64, DbError> {
+        db.execute(include_str!("sql/remove_user_by_space.sql"), &[user_id, space_id])
+            .await
+    }
+
     pub async fn edit<T: Querist>(
         db: &mut T,
         user_id: Uuid,
