@@ -95,6 +95,8 @@ impl Space {
         description: Option<String>,
         default_dice_type: Option<String>,
         explorable: Option<bool>,
+        is_public: Option<bool>,
+        allow_spectator: Option<bool>,
     ) -> Result<Option<Space>, ModelError> {
         use crate::validators;
         let name = name.as_ref().map(|s| s.trim());
@@ -111,7 +113,7 @@ impl Space {
         let result = db
             .query_one(
                 include_str!("sql/edit.sql"),
-                &[&space_id, &name, &description, &default_dice_type, &explorable],
+                &[&space_id, &name, &description, &default_dice_type, &explorable, &is_public, &allow_spectator],
             )
             .await?;
         Ok(result.map(|row| row.get(0)))
@@ -279,7 +281,7 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     let space_name = "Pure Illusion";
     let user = User::register(db, email, username, nickname, password).await.unwrap();
     let space = Space::create(db, space_name.to_string(), &user.id, String::new(), None, None).await?;
-    Space::edit(db, space.id, None, None, None, Some(true))
+    Space::edit(db, space.id, None, None, None, Some(true), None, None)
         .await?
         .unwrap();
     let space = Space::get_by_id(db, &space.id).await?.unwrap();
@@ -290,7 +292,7 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
     let new_name = "Mythal";
     let description = "some description".to_string();
-    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None, None)
+    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None, None, None, None)
         .await?
         .unwrap();
     assert_eq!(space_edited.name, new_name);

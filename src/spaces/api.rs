@@ -33,6 +33,8 @@ pub struct Edit {
     pub description: Option<String>,
     pub default_dice_type: Option<String>,
     pub explorable: Option<bool>,
+    pub is_public: Option<bool>,
+    pub allow_spectator: Option<bool>,
 }
 
 #[derive(Serialize, Debug, Clone)]
