@@ -150,3 +150,22 @@ impl From<DbError> for ModelError {
         ModelError::Database(e)
     }
 }
+
+pub fn log_error(e: &AppError, source: &str) {
+    use crate::error::AppError::*;
+    match e {
+        NotFound(_) | Conflict(_) => log::debug!("{} - {}", source, e),
+        Validation(_) | BadRequest(_) | MethodNotAllowed => {
+            log::info!("{} - {}", source, e)
+        }
+        e => {
+            log::error!("{} - {}", source, e);
+            let mut maybe_source = Error::source(e);
+            while let Some(source) = maybe_source {
+                log::error!("- {:?}", source);
+                maybe_source = Error::source(source);
+            }
+        }
+    }
+}
+

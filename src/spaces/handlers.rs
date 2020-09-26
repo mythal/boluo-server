@@ -8,6 +8,8 @@ use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Respons
 use crate::spaces::api::{SpaceWithMember, SearchParams};
 use hyper::{Body, Request};
 use crate::events::Event;
+use crate::spaces::models::SpaceMemberWithUser;
+use uuid::Uuid;
 
 async fn list(_req: Request<Body>) -> Result<Vec<Space>, AppError> {
     let mut conn = database::get().await?;
@@ -21,14 +23,18 @@ async fn query(req: Request<Body>) -> Result<Space, AppError> {
     Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("space"))
 }
 
-async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppError> {
-    let IdQuery { id } = parse_query(req.uri())?;
+pub async fn space_related(id: &Uuid) -> Result<SpaceWithRelated, AppError> {
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    Space::get_related(db, &id)
-        .await
-        .map_err(Into::into)
-        .and_then(|space_with_related| space_with_related.ok_or_else(|| AppError::NotFound("space")))
+    let space = Space::get_by_id(db, id).await?.ok_or_else(|| AppError::NotFound("space"))?;
+    let members = SpaceMemberWithUser::get_by_space(db, id).await?;
+    let channels = Channel::get_by_space(db, id).await?;
+    Ok(SpaceWithRelated { space, members, channels })
+}
+
+async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppError> {
+    let IdQuery { id } = parse_query(req.uri())?;
+    space_related(&id).await
 }
 
 async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError> {
@@ -129,11 +135,11 @@ async fn leave(req: Request<Body>) -> Result<bool, AppError> {
     Ok(true)
 }
 
-async fn members(req: Request<Body>) -> Result<Vec<SpaceMember>, AppError> {
+async fn members(req: Request<Body>) -> Result<Vec<SpaceMemberWithUser>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let db = &mut *db;
-    SpaceMember::get_by_space(&mut *db, &id).await.map_err(Into::into)
+    SpaceMemberWithUser::get_by_space(&mut *db, &id).await.map_err(Into::into)
 }
 
 async fn delete(req: Request<Body>) -> Result<Space, AppError> {

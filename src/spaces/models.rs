@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::spaces::api::{SpaceWithMember, SpaceWithRelated};
+use crate::spaces::api::SpaceWithMember;
 use crate::utils::{inner_map, merge_blank};
-use crate::channels::Channel;
+use crate::users::User;
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -159,21 +159,6 @@ impl Space {
             .map(|row| row.get(0))
             .collect())
     }
-
-    pub async fn get_related<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Option<SpaceWithRelated>, DbError> {
-        let space = Space::get_by_id(db, &space_id).await?;
-        let members = SpaceMember::get_by_space(db, &space_id).await?;
-        let channels = Channel::get_by_space(db, &space_id).await?;
-        if let Some(space) = space {
-            Ok(Some(SpaceWithRelated {
-                space,
-                members,
-                channels,
-            }))
-        } else {
-            Ok(None)
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
@@ -246,11 +231,23 @@ impl SpaceMember {
         Ok(rows.into_iter().next().map(|row| row.get(0)))
     }
 
-    pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMember>, DbError> {
-        let rows = db
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceMemberWithUser {
+    pub space: SpaceMember,
+    pub user: User,
+}
+
+impl SpaceMemberWithUser {
+    pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMemberWithUser>, DbError> {
+        let members = db
             .query(include_str!("sql/get_members_by_spaces.sql"), &[space_id])
-            .await?;
-        Ok(rows.into_iter().map(|row| row.get(0)).collect())
+            .await?
+            .into_iter()
+            .map(|row| SpaceMemberWithUser { space: row.get(0), user: row.get(1) });
+        Ok(members.collect())
     }
 }
 
@@ -307,8 +304,8 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     SpaceMember::add_admin(db, &user.id, &space.id).await?;
     SpaceMember::get(db, &user.id, &space.id).await.unwrap();
     SpaceMember::set_admin(db, &user.id, &space.id, true).await?;
-    let mut members = SpaceMember::get_by_space(db, &space.id).await?;
-    let member = members.pop().unwrap();
+    let mut members = SpaceMemberWithUser::get_by_space(db, &space.id).await?;
+    let member = members.pop().unwrap().space;
     assert_eq!(member.user_id, user.id);
     assert_eq!(member.space_id, space.id);
 
@@ -323,3 +320,4 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     Space::delete(db, &space.id).await?;
     Ok(())
 }
+

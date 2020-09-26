@@ -6,7 +6,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use crate::context::debug;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Server, Uri};
+use hyper::{Body, Request, Server};
 
 #[macro_use]
 mod utils;
@@ -57,25 +57,6 @@ async fn router(req: Request<Body>) -> Result<Response, AppError> {
     missing()
 }
 
-pub fn log_error(e: &AppError, method: &str, uri: &Uri, start: std::time::Instant) {
-    use std::error::Error;
-    use AppError::*;
-    match e {
-        NotFound(_) | Conflict(_) => log::debug!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e),
-        Validation(_) | BadRequest(_) | MethodNotAllowed => {
-            log::info!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e)
-        }
-        e => {
-            log::error!("{:>6} {} {:?} - {}", method, uri, start.elapsed(), e);
-            let mut maybe_source = Error::source(e);
-            while let Some(source) = maybe_source {
-                log::error!("- {:?}", source);
-                maybe_source = Error::source(source);
-            }
-        }
-    }
-}
-
 async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     use std::time::Instant;
     let start = Instant::now();
@@ -89,14 +70,12 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     if debug() {
         response = response.map(allow_origin);
     }
+    log::info!("{:>6} {} {:?}", method, uri, start.elapsed());
     match response {
-        Ok(response) => {
-            log::info!("{:>6} {} {:?}", method, uri, start.elapsed());
-            Ok(response)
-        }
+        Ok(response) => Ok(response),
         Err(e) => {
-            log_error(&e, method, &uri, start);
-            Ok(err_response(e))
+            error::log_error(&e, uri.path());
+            return Ok(err_response(e));
         }
     }
 }

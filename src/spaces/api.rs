@@ -31,7 +31,7 @@ pub struct Edit {
 #[serde(rename_all = "camelCase")]
 pub struct SpaceWithRelated {
     pub space: super::Space,
-    pub members: Vec<super::SpaceMember>,
+    pub members: Vec<super::models::SpaceMemberWithUser>,
     pub channels: Vec<crate::channels::Channel>,
 }
 
