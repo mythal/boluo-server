@@ -84,6 +84,12 @@ impl Space {
         Space::get(db, Some(id), None).await
     }
 
+    pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<Option<Space>, DbError> {
+        db.query_one(include_str!("sql/get_by_channel.sql"), &[channel_id])
+            .await
+            .map(|row| row.map(|row| row.get(0)))
+    }
+
     pub async fn refresh_token<T: Querist>(db: &mut T, id: &Uuid) -> Result<Uuid, DbError> {
         let row = db.query_exactly_one(include_str!("sql/refresh_token.sql"), &[id]).await?;
         Ok(row.get(0))

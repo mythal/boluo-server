@@ -15,8 +15,27 @@ use std::time::Duration;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::WebSocketStream;
 use uuid::Uuid;
+use crate::database;
+use crate::spaces::{Space, SpaceMember};
+use crate::channels::Channel;
+use crate::database::Querist;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
+
+
+async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Option<Uuid>) -> Result<(), AppError> {
+    if !space.allow_spectator {
+        if let Some(user_id) = user_id {
+            let space_member = SpaceMember::get(db, &user_id, &space.id).await?;
+            if space_member.is_none() {
+                return Err(AppError::NoPermission);
+            }
+        } else {
+            return Err(AppError::NoPermission);
+        }
+    }
+    Ok(())
+}
 
 async fn push_events(mailbox: Uuid, _mailbox_type: MailBoxType, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
@@ -104,6 +123,26 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
         mailbox_type,
         after,
     } = parse_query(req.uri())?;
+
+    let mut conn = database::get().await?;
+    let db = &mut *conn;
+    match mailbox_type {
+        MailBoxType::Space => {
+            let space = Space::get_by_id(db, &mailbox)
+                .await?
+                .ok_or_else(|| AppError::NotFound("space"))?;
+            check_space_perms(db, &space, user_id).await?;
+        },
+        MailBoxType::Channel => {
+            let channel = Channel::get_by_id(db, &mailbox)
+                .await?
+                .ok_or_else(|| AppError::NotFound("channel"))?;
+            let space = Space::get_by_id(db, &channel.space_id)
+                .await?
+                .ok_or_else(|| AppError::NotFound("space"))?;
+            check_space_perms(db, &space, user_id).await?;
+        },
+    }
     establish_web_socket(req, move |ws_stream| async move {
         let (mut outgoing, incoming) = ws_stream.split();
 

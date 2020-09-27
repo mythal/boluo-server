@@ -345,6 +345,9 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     assert_eq!(channel.space_id, space.id);
     assert_eq!(channel.name, channel_name);
 
+    let space_ = Space::get_by_channel(db, &channel.id).await?.unwrap();
+    assert_eq!(space.id, space_.id);
+
     let channels = Channel::get_by_space(db, &space.id).await?;
     assert_eq!(channels[0].id, channel.id);
 
