@@ -84,6 +84,11 @@ impl Space {
         Space::get(db, Some(id), None).await
     }
 
+    pub async fn refresh_token<T: Querist>(db: &mut T, id: &Uuid) -> Result<Uuid, DbError> {
+        let row = db.query_exactly_one(include_str!("sql/refresh_token.sql"), &[id]).await?;
+        Ok(row.get(0))
+    }
+
     pub async fn get_token<T: Querist>(db: &mut T, id: &Uuid) -> Result<Uuid, DbError> {
         let row = db.query_exactly_one(include_str!("sql/get_token.sql"), &[id]).await?;
         Ok(row.get(0))
@@ -299,6 +304,8 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert!(spaces.into_iter().find(|s| s.id == space.id).is_some());
     let token = Space::get_token(db, &space.id).await?;
     assert_eq!(token, space.invite_token);
+    let new_token = Space::refresh_token(db, &space.id).await?;
+    assert_ne!(token, new_token);
     let new_name = "Mythal";
     let description = "some description".to_string();
     let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None, None, None, None)

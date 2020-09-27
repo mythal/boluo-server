@@ -52,6 +52,21 @@ async fn token(req: Request<Body>) -> Result<Uuid, AppError> {
     Space::get_token(db, &id).await.map_err(Into::into)
 }
 
+async fn refresh_token(req: Request<Body>) -> Result<Uuid, AppError> {
+    let session = authenticate(&req).await?;
+    let IdQuery { id } = parse_query(req.uri())?;
+    let mut conn = database::get().await?;
+    let db = &mut *conn;
+    let is_admin = SpaceMember::get(db, &session.user_id, &id)
+        .await?
+        .map(|space_member| space_member.is_admin)
+        .unwrap_or(false);
+    if !is_admin {
+        return Err(AppError::NoPermission);
+    }
+    Space::refresh_token(db, &id).await.map_err(Into::into)
+}
+
 async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError> {
     let session = authenticate(&req).await?;
     let mut conn = database::get().await?;
@@ -231,6 +246,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/query", Method::GET) => query(req).await.map(ok_response),
         ("/query_with_related", Method::GET) => query_with_related(req).await.map(ok_response),
         ("/token", Method::GET) => token(req).await.map(ok_response),
+        ("/refresh_token", Method::POST) => refresh_token(req).await.map(ok_response),
         ("/my", Method::GET) => my_spaces(req).await.map(ok_response),
         ("/search", Method::GET) => search(req).await.map(ok_response),
         ("/create", Method::POST) => create(req).await.map(ok_response),
