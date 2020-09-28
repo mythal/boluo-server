@@ -292,22 +292,6 @@ impl Member {
         Member { channel, space, user }
     }
 
-    pub async fn get_by_user<T: Querist>(
-        db: &mut T,
-        channel_id: &Uuid,
-        user_id: &Uuid,
-    ) -> Result<Option<Member>, DbError> {
-        use postgres_types::Type;
-        let row = db
-            .query_one_typed(
-                include_str!("sql/get_members_information_by_channel.sql"),
-                &[Type::UUID, Type::UUID],
-                &[channel_id, &user_id],
-            )
-            .await?;
-        Ok(row.map(Member::mapper))
-    }
-
     pub async fn get_by_channel<T: Querist>(db: &mut T, channel_id: Uuid) -> Result<Vec<Member>, DbError> {
         use postgres_types::Type;
         let none_uuid: Option<Uuid> = None;
@@ -392,7 +376,6 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     assert_eq!(joined[0].member.channel_id, channel.id);
     assert_eq!(joined[1].member.channel_id, channel_2.id);
 
-    Member::get_by_user(db, &channel.id, &user.id).await?.unwrap();
     let member = Member::get_by_channel(db, channel.id).await?;
     assert_eq!(member.len(), 1);
 
