@@ -189,7 +189,8 @@ impl Message {
         db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
         let rows = db.query(source, &[channel_id, order_date, &order_offset]).await?;
         let order_list: Vec<MessageOrder> = rows.into_iter().map(Into::into).collect();
-        let message = Message::set_order(db, message_id, order_date, order_offset + offset_offset).await?;
+        let mut message = Message::set_order(db, message_id, order_date, order_offset + offset_offset).await?;
+        message.hide();
         Ok((vec![message], order_list))
     }
     pub async fn move_to_top<T: Querist>(
@@ -280,13 +281,19 @@ impl Message {
     ) -> Result<Message, ModelError> {
         db.query_exactly_one(include_str!("sql/set_order.sql"), &[&id, &order_date, &order_offset])
             .await
-            .map(|row| row.get(0))
+            .map(|row| {
+                let mut message: Message = row.get(0);
+                message.hide();
+                message
+            })
             .map_err(Into::into)
     }
     pub async fn swap<T: Querist>(db: &mut T, a: &Message, b: &Message) -> Result<Vec<Message>, ModelError> {
         db.execute(include_str!("./sql/set_deferred.sql"), &[]).await?;
-        let m = Message::set_order(db, &a.id, &b.order_date, b.order_offset).await?;
-        let n = Message::set_order(db, &b.id, &a.order_date, a.order_offset).await?;
+        let mut m = Message::set_order(db, &a.id, &b.order_date, b.order_offset).await?;
+        let mut n = Message::set_order(db, &b.id, &a.order_date, a.order_offset).await?;
+        m.hide();
+        n.hide();
         Ok(vec![m, n])
     }
     pub async fn edit<T: Querist>(
