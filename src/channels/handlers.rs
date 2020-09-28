@@ -249,8 +249,8 @@ async fn export(req: Request<Body>) -> Result<Vec<Message>, AppError> {
     if channel_member.is_none() && !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
-    Message::export(db, &channel.id).await.map_err(Into::into)
-
+    let hide = channel_member.map_or(true, |member| !member.is_master);
+    Message::export(db, &channel.id, hide).await.map_err(Into::into)
 }
 
 async fn my_channels(req: Request<Body>) -> Result<Vec<ChannelWithMember>, AppError> {
