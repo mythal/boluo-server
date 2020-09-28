@@ -80,3 +80,51 @@ fn test_sign() {
     let signature = base64::encode(&signature);
     verify(message, &*signature).unwrap();
 }
+
+pub struct MessageRng {
+    x: f64,
+}
+
+impl MessageRng {
+    pub fn new(seed: Vec<u8>) -> MessageRng {
+        let mut x: f64 = 0.0;
+        for i in seed {
+            x = x * 256.0 + i as f64;
+        }
+        MessageRng {
+            x,
+        }
+    }
+
+    fn next(&mut self) {
+        let mut x = self.x as i32;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.x = x as f64;
+    }
+
+    pub fn next_i32(&mut self, min: i32, max: i32) -> i32 {
+        self.next();
+        MessageRng::map(self.x, min as f64, max as f64 + 1.0).floor() as i32
+    }
+
+    fn map(x: f64, min: f64, max: f64) -> f64 {
+        let i32_min = i32::MIN as f64;
+        ((x - i32_min) / (i32::MAX as f64 - i32_min)) * (max - min) + min
+    }
+}
+
+
+#[test]
+fn rng_test() {
+    let mut rng = MessageRng::new(vec![118,53,43,110]);
+    let result = rng.next_i32(1, 20);
+    assert_eq!(result, 5);
+    let result = rng.next_i32(1, 20);
+    assert_eq!(result, 14);
+    let result = rng.next_i32(1, 20);
+    assert_eq!(result, 19);
+    let result = rng.next_i32(1, 20);
+    assert_eq!(result, 5);
+}
