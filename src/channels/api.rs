@@ -4,6 +4,7 @@ use crate::spaces::Space;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+use crate::users::User;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +61,13 @@ pub struct ChannelWithRelated {
 pub struct ChannelWithMember {
     pub channel: Channel,
     pub member: ChannelMember,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelMemberWithUser {
+    pub member: ChannelMember,
+    pub user: User,
 }
 
 #[derive(Deserialize, Debug)]

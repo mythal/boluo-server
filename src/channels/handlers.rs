@@ -1,7 +1,7 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel};
+use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel, ChannelMemberWithUser};
 use crate::channels::models::Member;
 use crate::csrf::authenticate;
 use crate::database;
@@ -167,12 +167,12 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
     channel_member
 }
 
-async fn members(req: Request<Body>) -> Result<Vec<ChannelMember>, AppError> {
+async fn all_members(req: Request<Body>) -> Result<Vec<ChannelMemberWithUser>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let db = &mut *db;
 
-    ChannelMember::get_by_channel(db, &id).await.map_err(Into::into)
+    ChannelMember::get_by_channel(db, &id, true).await.map_err(Into::into)
 }
 
 async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
@@ -278,7 +278,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/create", Method::POST) => create(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
         ("/edit_member", Method::POST) => edit_member(req).await.map(ok_response),
-        ("/members", Method::GET) => members(req).await.map(ok_response),
+        ("/all_members", Method::GET) => all_members(req).await.map(ok_response),
         ("/join", Method::POST) => join(req).await.map(ok_response),
         ("/leave", Method::POST) => leave(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),

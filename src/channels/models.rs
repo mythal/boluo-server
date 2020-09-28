@@ -3,13 +3,14 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::channels::api::ChannelWithMember;
+use crate::channels::api::{ChannelWithMember, ChannelMemberWithUser};
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::{Space, SpaceMember};
 use crate::users::User;
 use crate::utils::{inner_map, merge_blank};
 use std::collections::HashMap;
+use tokio_postgres::Row;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromSql)]
 #[serde(rename_all = "camelCase")]
@@ -169,11 +170,12 @@ impl ChannelMember {
         Ok(rows.into_iter().map(|row| (row.get(0), row.get(1))).collect())
     }
 
-    pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid) -> Result<Vec<ChannelMember>, DbError> {
+    pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid, full: bool) -> Result<Vec<ChannelMemberWithUser>, DbError> {
         let rows = db
-            .query(include_str!("sql/get_channel_member_list.sql"), &[channel])
+            .query(include_str!("sql/get_channel_member_list.sql"), &[channel, &full])
             .await?;
-        Ok(rows.into_iter().map(|row| row.get(0)).collect())
+        let mapper = |row: Row| ChannelMemberWithUser { member: row.get(0), user: row.get(1) };
+        Ok(rows.into_iter().map(mapper).collect())
     }
 
     pub async fn is_master<T: Querist>(db: &mut T, user_id: &Uuid, channel_id: &Uuid) -> Result<bool, DbError> {
@@ -350,16 +352,17 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     let member_altered = ChannelMember::get(db, &user.id, &channel.id).await?.unwrap();
     assert_eq!(member.join_date, member_altered.join_date);
     assert_eq!(member_altered.character_name, character_name);
-    let member_fetched = ChannelMember::get_by_channel(db, &channel.id)
+    let member_fetched = ChannelMember::get_by_channel(db, &channel.id, false)
         .await?
         .into_iter()
         .next()
-        .unwrap();
+        .unwrap()
+        .member;
     assert_eq!(member_fetched.join_date, member_altered.join_date);
     assert_eq!(member.join_date, member_fetched.join_date);
 
     ChannelMember::remove_user(db, &user.id, &channel.id).await?;
-    assert_eq!(ChannelMember::get_by_channel(db, &channel.id).await?.len(), 0);
+    assert_eq!(ChannelMember::get_by_channel(db, &channel.id, false).await?.len(), 0);
 
     ChannelMember::add_user(db, &user.id, &channel.id, "", false)
         .await
