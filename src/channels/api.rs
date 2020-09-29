@@ -28,6 +28,7 @@ pub struct Edit {
     pub grant_masters: Vec<Uuid>,
     #[serde(default)]
     pub remove_masters: Vec<Uuid>,
+    pub is_public: Option<bool>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -74,6 +75,15 @@ pub struct ChannelMemberWithUser {
 #[serde(rename_all = "camelCase")]
 pub struct JoinChannel {
     pub channel_id: Uuid,
+    #[serde(default)]
+    pub character_name: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AddMember {
+    pub channel_id: Uuid,
+    pub user_id: Uuid,
     #[serde(default)]
     pub character_name: String,
 }

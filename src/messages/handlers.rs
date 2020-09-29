@@ -236,9 +236,15 @@ async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
     let mut db = database::get().await?;
     let db = &mut *db;
 
-    Channel::get_by_id(db, &channel_id)
+    let channel = Channel::get_by_id(db, &channel_id)
         .await?
         .ok_or(AppError::NotFound("channels"))?;
+    if !channel.is_public {
+        let session = authenticate(&req).await?;
+        ChannelMember::get(db, &session.user_id, &channel_id)
+            .await?
+            .ok_or(AppError::NoPermission)?;
+    }
     let limit = limit.unwrap_or(128);
     Message::get_by_channel(db, &channel_id, before, limit)
         .await

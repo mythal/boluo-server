@@ -17,7 +17,7 @@ use tokio_tungstenite::WebSocketStream;
 use uuid::Uuid;
 use crate::database;
 use crate::spaces::{Space, SpaceMember};
-use crate::channels::Channel;
+use crate::channels::{Channel, ChannelMember};
 use crate::database::Querist;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
@@ -141,6 +141,12 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
                 .await?
                 .ok_or_else(|| AppError::NotFound("space"))?;
             check_space_perms(db, &space, user_id).await?;
+            if !channel.is_public {
+                let user_id = user_id.ok_or(AppError::Unauthenticated)?;
+                ChannelMember::get(db, &user_id, &channel.id)
+                    .await?
+                    .ok_or(AppError::Unauthenticated)?;
+            }
         },
     }
     establish_web_socket(req, move |ws_stream| async move {

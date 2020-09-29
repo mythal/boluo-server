@@ -1,7 +1,7 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel, ChannelMemberWithUser};
+use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel, ChannelMemberWithUser, AddMember};
 use crate::channels::models::Member;
 use crate::csrf::authenticate;
 use crate::database;
@@ -104,6 +104,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
         default_roll_command,
         grant_masters,
         remove_masters,
+        is_public,
     } = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
@@ -123,6 +124,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
         topic.as_deref(),
         default_dice_type.as_deref(),
         default_roll_command.as_deref(),
+        is_public,
     )
     .await?;
     let push_members = !(grant_masters.is_empty() && remove_masters.is_empty());
@@ -139,6 +141,33 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     Event::channel_edited(channel.clone());
     Event::space_updated(channel.space_id);
     Ok(channel)
+}
+
+async fn add_member(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
+    let session = authenticate(&req).await?;
+    let AddMember {
+        channel_id,
+        user_id,
+        character_name,
+    } = parse_body(req).await?;
+    let mut conn = database::get().await?;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
+
+    ChannelMember::get(db, &session.user_id, &channel_id)
+        .await?
+        .ok_or_else(|| AppError::NoPermission)?;
+
+    let channel = Channel::get_by_id(db, &channel_id)
+        .await?
+        .ok_or(AppError::NotFound("channels"))?;
+    SpaceMember::get(db, &session.user_id, &channel.space_id)
+        .await?
+        .ok_or(AppError::NoPermission)?;
+    let member = ChannelMember::add_user(db, &user_id, &channel_id, &*character_name, false).await?;
+    trans.commit().await?;
+    Event::push_members(channel_id);
+    Ok(ChannelWithMember { channel, member })
 }
 
 async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
@@ -182,7 +211,8 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         character_name,
     } = parse_body(req).await?;
     let mut conn = database::get().await?;
-    let db = &mut *conn;
+    let mut trans = conn.transaction().await?;
+    let db = &mut trans;
 
     let channel = Channel::get_by_id(db, &channel_id)
         .await?
@@ -191,6 +221,7 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         .await?
         .ok_or(AppError::NoPermission)?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, false).await?;
+    trans.commit().await?;
     Event::push_members(channel_id);
     Ok(ChannelWithMember { channel, member })
 }
@@ -277,6 +308,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/my", Method::GET) => my_channels(req).await.map(ok_response),
         ("/create", Method::POST) => create(req).await.map(ok_response),
         ("/edit", Method::POST) => edit(req).await.map(ok_response),
+        ("/add_member", Method::POST) => add_member(req).await.map(ok_response),
         ("/edit_member", Method::POST) => edit_member(req).await.map(ok_response),
         ("/all_members", Method::GET) => all_members(req).await.map(ok_response),
         ("/join", Method::POST) => join(req).await.map(ok_response),
