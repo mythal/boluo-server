@@ -67,7 +67,9 @@ impl PreviewPost {
             edit_for,
             clear,
         } = self;
-        let start = {
+        let start = if text.is_none() {
+            chrono::Local::now().naive_utc()
+        } else {
             let mut cache = cache::conn().await;
             let key = PreviewPost::start_key(id);
             if let Some(bytes) = cache.get(&key).await? {
