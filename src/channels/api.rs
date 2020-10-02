@@ -35,6 +35,7 @@ pub struct Edit {
     #[serde(default)]
     pub remove_masters: Vec<Uuid>,
     pub is_public: Option<bool>,
+    pub is_document: Option<bool>,
 }
 
 #[derive(Deserialize, Debug)]

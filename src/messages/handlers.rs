@@ -84,10 +84,13 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     let mut message = Message::get(db, &message_id, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("messages"))?;
+    let channel = Channel::get_by_id(db, &message.channel_id)
+        .await?
+        .ok_or(AppError::NotFound("channel"))?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if message.sender_id != session.user_id {
+    if !channel.is_document && message.sender_id != session.user_id {
         return Err(AppError::NoPermission);
     }
     if name.is_some() || text.is_some() || entities.is_some() || in_game.is_some() || is_action.is_some() {
@@ -125,11 +128,16 @@ async fn swap(req: Request<Body>) -> Result<bool, AppError> {
     let b = Message::get(db, &b, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("message"))?;
+    let channel = Channel::get_by_id(db, &a.channel_id)
+        .await?
+        .ok_or(AppError::NotFound("channel"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &a.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if !channel_member.is_master && a.sender_id != session.user_id {
-        return Err(AppError::NoPermission);
+    if !channel.is_document {
+        if !channel_member.is_master && a.sender_id != session.user_id {
+            return Err(AppError::NoPermission);
+        }
     }
     if a.channel_id != b.channel_id {
         return Err(AppError::BadRequest(
@@ -156,11 +164,16 @@ async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
     let message = Message::get(db, &message_id, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("message"))?;
+    let channel = Channel::get_by_id(db, &message.channel_id)
+        .await?
+        .ok_or(AppError::NotFound("channel"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if !channel_member.is_master && message.sender_id != session.user_id {
-        return Err(AppError::NoPermission);
+    if !channel.is_document {
+        if !channel_member.is_master && message.sender_id != session.user_id {
+            return Err(AppError::NoPermission);
+        }
     }
     let (messages, order_changes) = match mode {
         MoveToMode::Top => {
@@ -212,11 +225,16 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let message = Message::get(db, &id, Some(&session.user_id))
         .await?
         .ok_or(AppError::NotFound("messages"))?;
+    let channel = Channel::get_by_id(db, &message.channel_id)
+        .await?
+        .ok_or(AppError::NotFound("channel"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await?
         .ok_or(AppError::NoPermission)?;
-    if message.sender_id != session.user_id && !channel_member.is_master {
-        return Err(AppError::NoPermission);
+    if !channel.is_document {
+        if message.sender_id != session.user_id && !channel_member.is_master {
+            return Err(AppError::NoPermission);
+        }
     }
     let folded = Some(!message.folded);
     let message = Message::edit(db, None, &message.id, None, None, None, None, folded, None)

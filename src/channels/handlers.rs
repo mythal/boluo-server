@@ -106,6 +106,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
         grant_masters,
         remove_masters,
         is_public,
+        is_document,
     } = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
@@ -126,6 +127,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
         default_dice_type.as_deref(),
         default_roll_command.as_deref(),
         is_public,
+        is_document,
     )
     .await?;
     let push_members = !(grant_masters.is_empty() && remove_masters.is_empty());

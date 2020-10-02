@@ -84,7 +84,8 @@ CREATE TABLE channels
     "deleted"              boolean   NOT NULL DEFAULT false,
     "default_dice_type"    text      NOT NULL DEFAULT 'd20',
     "default_roll_command" text      NOT NULL DEFAULT 'd',
-    CONSTRAINT "unique_channel_name_in_space" UNIQUE (space_id, name)
+    "is_document"          bool      NOT NULL DEFAULT false
+        CONSTRAINT "unique_channel_name_in_space" UNIQUE (space_id, name)
 );
 
 CREATE TABLE channel_members

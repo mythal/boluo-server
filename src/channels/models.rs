@@ -23,6 +23,7 @@ pub struct Channel {
     #[serde(with = "crate::date_format")]
     pub created: NaiveDateTime,
     pub is_public: bool,
+    pub is_document: bool,
     #[serde(skip)]
     pub deleted: bool,
     pub default_dice_type: String,
@@ -91,6 +92,7 @@ impl Channel {
         default_dice_type: Option<&str>,
         default_roll_command: Option<&str>,
         is_public: Option<bool>,
+        is_document: Option<bool>,
     ) -> Result<Channel, ModelError> {
         use crate::validators;
 
@@ -107,7 +109,7 @@ impl Channel {
         let row = db
             .query_exactly_one(
                 include_str!("sql/edit_channel.sql"),
-                &[id, &name, &topic, &default_dice_type, &default_roll_command, &is_public],
+                &[id, &name, &topic, &default_dice_type, &default_roll_command, &is_public, &is_document],
             )
             .await?;
         Ok(row.get(0))
@@ -339,7 +341,7 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     assert_eq!(channels[0].id, channel.id);
 
     let new_name = "深水城水很深";
-    let channel_edited = Channel::edit(db, &channel.id, Some(new_name), None, None, None, Some(false)).await?;
+    let channel_edited = Channel::edit(db, &channel.id, Some(new_name), None, None, None, Some(false), None).await?;
     assert_eq!(channel_edited.name, new_name);
     assert_eq!(channel_edited.is_public, false);
     let (_, space) = Channel::get_with_space(db, &channel.id).await?.unwrap();
