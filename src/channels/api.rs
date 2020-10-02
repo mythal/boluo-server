@@ -6,6 +6,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 use crate::users::User;
 
+fn tautology() -> bool {
+    true
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Create {
@@ -14,6 +18,8 @@ pub struct Create {
     #[serde(default)]
     pub character_name: String,
     pub default_dice_type: Option<String>,
+    #[serde(default = "tautology")]
+    pub is_public: bool,
 }
 
 #[derive(Deserialize, Debug)]

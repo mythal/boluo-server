@@ -73,6 +73,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         name,
         character_name,
         default_dice_type,
+        is_public,
     } = interface::parse_body(req).await?;
 
     let mut conn = database::get().await?;
@@ -83,7 +84,7 @@ async fn create(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
         .ok_or_else(|| AppError::BadRequest("The space not found".to_string()))?;
     admin_only(db, &session.user_id, &space_id).await?;
 
-    let channel = Channel::create(db, &space_id, &*name, true, default_dice_type.as_deref()).await?;
+    let channel = Channel::create(db, &space_id, &*name, is_public, default_dice_type.as_deref()).await?;
     let channel_member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, true).await?;
     trans.commit().await?;
     let joined = ChannelWithMember {
@@ -217,6 +218,9 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     let channel = Channel::get_by_id(db, &channel_id)
         .await?
         .ok_or(AppError::NotFound("channels"))?;
+    if !channel.is_public {
+        return Err(AppError::NoPermission);
+    }
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await?
         .ok_or(AppError::NoPermission)?;
