@@ -103,7 +103,10 @@ where
         log::debug!("{}", e);
         AppError::BadRequest("Failed to read the request body".to_string())
     })?;
-    serde_json::from_slice(&*body).map_err(|_| AppError::BadRequest("Failed to parse the request body".to_string()))
+    serde_json::from_slice(&*body).map_err(|e| {
+        log::debug!("{}", e);
+        AppError::BadRequest("Failed to parse the request body".to_string())
+    })
 }
 #[derive(Deserialize, Debug, Eq, PartialEq)]
 pub struct IdQuery {

@@ -37,13 +37,17 @@ async fn query(req: Request<Body>) -> Result<Channel, AppError> {
 
 async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, AppError> {
     let query: IdQuery = parse_query(req.uri())?;
+    let session = authenticate(&req).await.ok();
 
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let (channel, space) = Channel::get_with_space(db, &query.id)
+    let (mut channel, space) = Channel::get_with_space(db, &query.id)
         .await?
         .ok_or(AppError::NotFound("channels"))?;
     let members = Member::get_by_channel(db, channel.id).await?;
+    let my_member: Option<&Member> = session
+        .and_then(|session| members.iter().find(|member| member.user.id == session.user_id));
+
     let color_list = ChannelMember::get_color_list(db, &channel.id).await?;
     let heartbeat_map = {
         let map = get_heartbeat_map().lock().await;
@@ -53,7 +57,12 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
         }
     };
 
-    let encoded_events = Event::get_from_cache(&query.id, 0).await;
+    let encoded_events = if channel.is_public || my_member.is_some() {
+        Event::get_from_cache(&query.id, 0).await
+    } else {
+        channel.topic = String::new();
+        Vec::new()
+    };
 
     let with_related = ChannelWithRelated {
         channel,
