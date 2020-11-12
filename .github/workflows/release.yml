@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - master
+env:
+  SHORT_SHA: $(git rev-parse --short=4 ${{ github.sha }})
 
 jobs:
   github:
@@ -22,7 +24,7 @@ jobs:
           args: --release
 
       - name: Archive
-        run: zip -j build.zip target/release/server target/release/manage
+        run: zip -j build.zip target/release/server target/release/manage schema.sql && zip -r build.zip migrations/
 
       - name: Create Release
         id: create_release
@@ -30,8 +32,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: "release-${{ github.sha }}"
-          release_name: Release ${{ github.sha }}
+          tag_name: v-${SHORT_SHA}
+          release_name: Release ${SHORT_SHA}
           draft: false
           prerelease: false
 
