@@ -37,3 +37,10 @@ jobs:
           REDIS_URL: redis://redis/
           DEBUG: 1
           PORT: 3000
+
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: target
+          path: |
+            target
