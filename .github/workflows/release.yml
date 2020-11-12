@@ -3,13 +3,15 @@ on:
   push:
     branches:
       - master
-env:
-  SHORT_SHA: $(git rev-parse --short=4 ${{ github.sha }})
 
 jobs:
   github:
     runs-on: ubuntu-latest
     steps:
+      - name: Get short SHA
+        id: short_sha
+        run: echo "::set-output name=sha8::$(echo ${GITHUB_SHA} | cut -c1-8)"
+
       - name: Checkout code
         uses: actions/checkout@v2
 
@@ -32,8 +34,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v-${{ env.SHORT_SHA }}
-          release_name: Release ${{ env.SHORT_SHA }}
+          tag_name: v${{ steps.today.outputs.date }}-${{ steps.short_sha.outputs.sha8 }}
+          release_name: Release ${{ github.sha }}
           draft: false
           prerelease: false
 
