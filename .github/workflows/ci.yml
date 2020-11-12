@@ -43,4 +43,5 @@ jobs:
         with:
           name: target
           path: |
-            target
+            target/release/manage
+            target/release/server
