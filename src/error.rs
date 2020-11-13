@@ -159,12 +159,7 @@ pub fn log_error(e: &AppError, source: &str) {
             log::info!("{} - {}", source, e)
         }
         e => {
-            log::error!("{} - {}", source, e);
-            let mut maybe_source = Error::source(e);
-            while let Some(source) = maybe_source {
-                log::error!("- {:?}", source);
-                maybe_source = Error::source(source);
-            }
+            log::error!("{} - {:?}", source, e);
         }
     }
 }
