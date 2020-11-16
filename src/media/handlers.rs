@@ -129,6 +129,9 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
     }
     let media = media.ok_or_else(|| AppError::BadRequest("Filename or media id must be specified.".to_string()))?;
     let path = Media::path(&*media.filename);
+    let size = std::fs::metadata(&path)
+        .map(|metadata| metadata.len())
+        .map_err(|_| AppError::NotFound("Failed to read file information."))?;
 
     let body = if method == hyper::Method::HEAD {
         Body::empty()
@@ -144,7 +147,7 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
 
     let mut response_builder = hyper::Response::builder()
         .header(header::ACCEPT_RANGES, HeaderValue::from_static("none"))
-        .header(header::CONTENT_LENGTH, HeaderValue::from(media.size))
+        .header(header::CONTENT_LENGTH, HeaderValue::from(size))
         .header(header::CACHE_CONTROL, HeaderValue::from_static("max-age=31536000")) // for year
         .header(
             header::CONTENT_DISPOSITION,
