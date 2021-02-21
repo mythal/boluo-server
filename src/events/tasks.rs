@@ -8,6 +8,7 @@ use std::mem::swap;
 use std::time::Duration;
 use tokio::time::interval;
 use uuid::Uuid;
+use tokio_stream::wrappers::IntervalStream;
 
 pub fn start() {
     tokio::spawn(events_clean());
@@ -17,7 +18,7 @@ pub fn start() {
 }
 
 async fn events_clean() {
-    interval(Duration::from_secs(60 * 60 * 2))
+    IntervalStream::new(interval(Duration::from_secs(60 * 60 * 2)))
         .for_each(|_| async {
             let mut next_map = HashMap::new();
             let before = timestamp() - 24 * 60 * 60 * 1000;
@@ -66,7 +67,7 @@ async fn push_heartbeat() {
     } else {
         Duration::from_secs(6)
     };
-    interval(duration)
+    IntervalStream::new(interval(duration))
         .for_each(|_| async {
             let map = get_heartbeat_map().lock().await;
             for (channel_id, heartbeat_map) in map.iter() {
@@ -77,7 +78,7 @@ async fn push_heartbeat() {
 }
 
 async fn heartbeat_clean() {
-    interval(Duration::from_secs(60 * 30))
+    IntervalStream::new(interval(Duration::from_secs(60 * 30)))
         .for_each(|_| async {
             let now = timestamp();
             let mut map_ref = get_heartbeat_map().lock().await;
@@ -98,7 +99,7 @@ async fn heartbeat_clean() {
 }
 
 async fn broadcast_clean() {
-    interval(Duration::from_secs(5 * 60))
+    IntervalStream::new(interval(Duration::from_secs(5 * 60)))
         .for_each(|_| async {
             let mut broadcast_table = get_broadcast_table().write().await;
             broadcast_table.retain(|_, v| v.receiver_count() != 0);

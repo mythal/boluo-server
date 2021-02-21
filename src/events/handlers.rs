@@ -19,6 +19,7 @@ use crate::database;
 use crate::spaces::{Space, SpaceMember};
 use crate::channels::{Channel, ChannelMember};
 use crate::database::Querist;
+use tokio_stream::StreamExt as _;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
@@ -39,12 +40,13 @@ async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Optio
 
 async fn push_events(mailbox: Uuid, _mailbox_type: MailBoxType, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
-    use tokio::sync::broadcast::RecvError;
+    use tokio::sync::broadcast::error::RecvError;
+    use tokio_stream::wrappers::IntervalStream;
     use tokio::time::interval;
     use tokio_tungstenite::tungstenite::Error::{AlreadyClosed, ConnectionClosed};
     let (tx, mut rx) = channel::<WsMessage>(32);
     let message_sender = async move {
-        while let Some(message) = rx.next().await {
+        while let Some(message) = tokio_stream::StreamExt::next(&mut rx).await {
             match outgoing.send(message).await {
                 Ok(_) => (),
                 Err(ConnectionClosed) | Err(AlreadyClosed) => break,
@@ -79,7 +81,7 @@ async fn push_events(mailbox: Uuid, _mailbox_type: MailBoxType, outgoing: &mut S
         Ok(())
     };
 
-    let ping = interval(Duration::from_secs(30)).for_each(|_| async {
+    let ping = IntervalStream::new(interval(Duration::from_secs(30))).for_each(|_| async {
         tx.clone().send(WsMessage::Ping(Vec::new())).await.ok();
     });
 
@@ -115,7 +117,6 @@ async fn handle_client_event(
 
 async fn connect(req: Request<Body>) -> Result<Response, AppError> {
     use futures::future;
-    use tokio::stream::StreamExt as _;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
 
     let EventQuery {

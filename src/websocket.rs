@@ -44,7 +44,7 @@ where
     use tokio_tungstenite::tungstenite::protocol::Role;
     let accept = check_websocket_header(req.headers())?;
     tokio::spawn(async {
-        match req.into_body().on_upgrade().await {
+        match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
                 let ws_stream = tokio_tungstenite::WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await;
                 log::debug!("WebSocket connection established");

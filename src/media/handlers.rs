@@ -13,7 +13,7 @@ use hyper::header::{self, HeaderValue};
 use hyper::{Body, Request, Uri};
 use std::path::PathBuf;
 use tokio::fs::File;
-use tokio::prelude::*;
+use tokio::io::AsyncWriteExt;
 
 fn content_disposition(attachment: bool, filename: &str) -> HeaderValue {
     use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
@@ -98,6 +98,7 @@ async fn media_upload(req: Request<Body>) -> Result<Media, AppError> {
 
 async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(), anyhow::Error> {
     use bytes::BytesMut;
+    use tokio::io::AsyncReadExt;
 
     let mut file = File::open(path).await?;
     let mut buffer = BytesMut::with_capacity(1024);
