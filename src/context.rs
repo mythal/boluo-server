@@ -3,6 +3,7 @@ use std::env;
 use once_cell::sync::OnceCell;
 
 static DEBUG: OnceCell<bool> = OnceCell::new();
+static SYSTEMD: OnceCell<bool> = OnceCell::new();
 static SECRET: OnceCell<String> = OnceCell::new();
 
 fn env_bool<T: AsRef<str>>(s: T) -> bool {
@@ -19,5 +20,5 @@ pub fn secret() -> &'static str {
 }
 
 pub fn is_systemd() -> bool {
-    *DEBUG.get_or_init(|| env::var("SYSTEMD").map(env_bool).unwrap_or(false))
+    *SYSTEMD.get_or_init(|| env::var("SYSTEMD").map(env_bool).unwrap_or(false))
 }
