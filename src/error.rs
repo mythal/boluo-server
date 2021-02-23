@@ -4,13 +4,21 @@ pub use redis::RedisError as CacheError;
 use std::error::Error;
 use thiserror::Error;
 pub use tokio_postgres::Error as DbError;
+use std::backtrace::Backtrace;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("An unexpected database error occurred: {0}")]
-    Database(DbError),
-    #[error("An unexpected cache database error occurred")]
-    Cache(#[from] CacheError),
+    #[error("An unexpected database error occurred: {source}")]
+    Database {
+        source: DbError,
+        backtrace: Backtrace,
+    },
+    #[error("An unexpected cache database error occurred: {source}")]
+    Cache {
+        #[from]
+        source: CacheError,
+        backtrace: Backtrace,
+    },
     #[error("Authentication failed")]
     Unauthenticated,
     #[error("\"{0}\" not found")]
@@ -30,9 +38,17 @@ pub enum AppError {
     #[error("\"{0}\" already exists")]
     Conflict(String),
     #[error("An I/O error occurred")]
-    Hyper(#[from] hyper::Error),
+    Hyper {
+        #[from]
+        source: hyper::Error,
+        backtrace: Backtrace,
+    },
     #[error("An I/O error occurred")]
-    TokioIo(#[from] tokio::io::Error),
+    TokioIo {
+        #[from]
+        source: tokio::io::Error,
+        backtrace: Backtrace,
+    },
 }
 
 impl AppError {
@@ -131,7 +147,7 @@ impl From<ModelError> for AppError {
     fn from(e: ModelError) -> Self {
         match e {
             ModelError::Validation(e) => AppError::Validation(e),
-            ModelError::Database(e) => AppError::Database(e),
+            ModelError::Database(source) => AppError::Database { source, backtrace: Backtrace::capture() },
             ModelError::Conflict(type_) => AppError::Conflict(type_),
         }
     }
@@ -159,7 +175,11 @@ pub fn log_error(e: &AppError, source: &str) {
             log::info!("{} - {}", source, e)
         }
         e => {
-            log::error!("{} - {:?}", source, e);
+            if let Some(backtrace) = e.backtrace() {
+                log::error!("{} - {}\n{}", source, e, backtrace);
+            } else {
+                log::error!("{} - {}\n", source, e);
+            }
         }
     }
 }
