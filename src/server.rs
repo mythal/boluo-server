@@ -70,7 +70,7 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     if debug() {
         response = response.map(allow_origin);
     }
-    log::info!("{:>6} {} {:?}", method, uri, start.elapsed());
+    log::info!("{} {} {:?}", method, uri, start.elapsed());
     match response {
         Ok(response) => Ok(response),
         Err(e) => {
