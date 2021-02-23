@@ -5,7 +5,7 @@ on:
       - master
 
 jobs:
-  github:
+  release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -15,6 +15,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
+          override: true
 
       - uses: actions-rs/cargo@v1
         with:
