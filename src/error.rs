@@ -180,6 +180,7 @@ pub fn log_error(e: &AppError, source: &str) {
             } else {
                 log::error!("{} - {}\n", source, e);
             }
+            sentry::capture_error(e);
         }
     }
 }
