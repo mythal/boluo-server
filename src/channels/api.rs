@@ -101,5 +101,6 @@ pub struct AddMember {
 pub struct Export {
     pub channel_id: Uuid,
     #[serde(with = "crate::date_format::option")]
+    #[serde(default)]
     pub after: Option<NaiveDateTime>,
 }
