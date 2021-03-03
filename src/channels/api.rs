@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 use crate::users::User;
+use chrono::NaiveDateTime;
 
 fn tautology() -> bool {
     true
@@ -93,4 +94,12 @@ pub struct AddMember {
     pub user_id: Uuid,
     #[serde(default)]
     pub character_name: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Export {
+    pub channel_id: Uuid,
+    #[serde(with = "crate::date_format::option")]
+    pub after: Option<NaiveDateTime>,
 }

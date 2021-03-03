@@ -98,8 +98,8 @@ impl Message {
         Ok(messages)
     }
 
-    pub async fn export<T: Querist>(db: &mut T, channel_id: &Uuid, hide: bool) -> Result<Vec<Message>, DbError> {
-        let rows = db.query(include_str!("./sql/export.sql"), &[channel_id]).await?;
+    pub async fn export<T: Querist>(db: &mut T, channel_id: &Uuid, hide: bool, after: Option<NaiveDateTime>) -> Result<Vec<Message>, DbError> {
+        let rows = db.query(include_str!("./sql/export.sql"), &[channel_id, &after]).await?;
         let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
         if hide {
             messages.iter_mut().for_each(Message::hide);
@@ -444,7 +444,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages[0].id, a.id);
     assert_eq!(messages[1].id, b.id);
-
+    Message::export(db, &channel.id, false, None).await.unwrap();
     Message::delete(db, &a.id).await?;
     assert!(Message::get(db, &a.id, Some(&user.id)).await?.is_none());
     Ok(())

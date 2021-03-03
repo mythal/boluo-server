@@ -1,7 +1,7 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel, ChannelMemberWithUser, AddMember};
+use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel, ChannelMemberWithUser, AddMember, Export};
 use crate::channels::models::Member;
 use crate::csrf::authenticate;
 use crate::database;
@@ -278,25 +278,25 @@ async fn by_space(req: Request<Body>) -> Result<Vec<Channel>, AppError> {
 }
 
 async fn export(req: Request<Body>) -> Result<Vec<Message>, AppError> {
-    let IdQuery { id } = parse_query(req.uri())?;
+    let Export { channel_id, after } = parse_query(req.uri())?;
     let session = authenticate(&req).await?;
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
-    let channel = Channel::get_by_id(db, &id).await?.ok_or(AppError::NotFound("channel"))?;
+    let channel = Channel::get_by_id(db, &channel_id).await?.ok_or(AppError::NotFound("channel"))?;
 
     let space_member = SpaceMember::get(db, &session.user_id, &channel.space_id).await?;
     if space_member.is_none() {
         return Err(AppError::NoPermission);
     }
     let space_member = space_member.unwrap();
-    let channel_member = ChannelMember::get(db, &session.user_id, &id).await?;
+    let channel_member = ChannelMember::get(db, &session.user_id, &channel_id).await?;
     if channel_member.is_none() && !space_member.is_admin {
         return Err(AppError::NoPermission);
     }
     let hide = channel_member.map_or(true, |member| !member.is_master);
-    Message::export(db, &channel.id, hide).await.map_err(Into::into)
+    Message::export(db, &channel.id, hide, after).await.map_err(Into::into)
 }
 
 async fn my_channels(req: Request<Body>) -> Result<Vec<ChannelWithMember>, AppError> {
