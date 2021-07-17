@@ -157,7 +157,7 @@ impl From<DbError> for ModelError {
     fn from(e: DbError) -> Self {
         use tokio_postgres::error::{DbError as DatabaseError, SqlState};
 
-        let db_error: Option<&DatabaseError> = e.source().and_then(Error::downcast_ref);
+        let db_error: Option<&DatabaseError> = e.source().and_then(<dyn Error>::downcast_ref);
         if let Some(e) = db_error {
             if e.code() == &SqlState::UNIQUE_VIOLATION {
                 return ModelError::Conflict(e.table().unwrap_or("Unknown").to_string());
