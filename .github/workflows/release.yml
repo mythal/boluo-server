@@ -25,9 +25,8 @@ jobs:
       - name: Archive
         run: zip -j build.zip target/release/server target/release/manage schema.sql && zip -r build.zip migrations/
 
-      - name: Upload to B2
-        uses: wei/rclone@v1
-        env:
-          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
         with:
-          args: copy build.zip b2:boluo-backup/
+          name: boluo-server
+          path: build.zip
