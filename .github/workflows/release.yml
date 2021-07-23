@@ -22,11 +22,12 @@ jobs:
           command: build
           args: --release
 
-      - name: Archive
-        run: zip -j build.zip target/release/server target/release/manage schema.sql && zip -r build.zip migrations/
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
           name: boluo-server
-          path: build.zip
+          path: |
+            schema.sql
+            target/release/server
+            target/release/manage
+            migrations/
