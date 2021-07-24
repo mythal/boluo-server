@@ -19,8 +19,8 @@ pub enum AppError {
         source: CacheError,
         backtrace: Backtrace,
     },
-    #[error("Authentication failed")]
-    Unauthenticated,
+    #[error("Authentication failed: {0}")]
+    Unauthenticated(String),
     #[error("\"{0}\" not found")]
     NotFound(&'static str),
     #[error("Permission denied: {0}")]
@@ -55,7 +55,7 @@ impl AppError {
     pub fn status_code(&self) -> StatusCode {
         use AppError::*;
         match self {
-            Unauthenticated => StatusCode::UNAUTHORIZED,
+            Unauthenticated(_) => StatusCode::UNAUTHORIZED,
             NotFound(_) => StatusCode::NOT_FOUND,
             NoPermission(_) => StatusCode::FORBIDDEN,
             Validation(_) | BadRequest(_) => StatusCode::BAD_REQUEST,
@@ -68,7 +68,7 @@ impl AppError {
     pub fn error_code(&self) -> &'static str {
         use AppError::*;
         match self {
-            Unauthenticated => "UNAUTHENTICATED",
+            Unauthenticated(_) => "UNAUTHENTICATED",
             NotFound(_) => "NOT_FOUND",
             NoPermission(_) => "NO_PERMISSION",
             Validation(_) => "VALIDATION_FAIL",

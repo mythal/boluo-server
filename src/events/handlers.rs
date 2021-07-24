@@ -100,7 +100,7 @@ async fn handle_client_event(
     let event: ClientEvent = serde_json::from_str(&*message)?;
     match event {
         ClientEvent::Preview { preview } => {
-            let user_id = user_id.ok_or(AppError::Unauthenticated)?;
+            let user_id = user_id.ok_or(AppError::Unauthenticated(format!("user id is empty")))?;
             preview.broadcast(mailbox, mailbox_type, user_id).await?;
         }
         ClientEvent::Heartbeat => {
@@ -137,10 +137,10 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
                 .await?.or_not_found()?;
             check_space_perms(db, &space, user_id).await?;
             if !channel.is_public {
-                let user_id = user_id.ok_or(AppError::Unauthenticated)?;
+                let user_id = user_id.ok_or(AppError::Unauthenticated(format!("user id is empty")))?;
                 ChannelMember::get(db, &user_id, &channel.id)
                     .await?
-                    .ok_or(AppError::Unauthenticated)?;
+                    .ok_or(AppError::Unauthenticated(format!("the user is not channel member")))?;
             }
         },
     }

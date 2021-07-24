@@ -21,7 +21,8 @@ pub fn token_verify(token: &str) -> Result<Uuid, AppError> {
     let parse_failed = || BadRequest("Failed to parse token".to_string());
     let session = iter.next().ok_or_else(parse_failed)?;
     let signature = iter.next().ok_or_else(parse_failed)?;
-    utils::verify(session, signature).ok_or(Unauthenticated)?;
+    utils::verify(session, signature)
+        .ok_or_else(|| Unauthenticated(format!("failed to verify token {}", session)))?;
     let session = base64::decode(session).map_err(error_unexpected!())?;
     Uuid::from_slice(session.as_slice()).map_err(error_unexpected!())
 }
@@ -79,7 +80,7 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     if let Some(Ok(t)) = authorization {
         token = t;
     } else {
-        token = headers.get(COOKIE).and_then(get_cookie).ok_or(Unauthenticated)?;
+        token = headers.get(COOKIE).and_then(get_cookie).ok_or(Unauthenticated(format!("unable to get cookie")))?;
     }
 
     let id = token_verify(token)?;
@@ -90,7 +91,7 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
         .get(&*key)
         .await
         .map_err(error_unexpected!())?
-        .ok_or(Unauthenticated)?;
+        .ok_or(Unauthenticated(format!("can't fetch session in cache")))?;
 
     let user_id = Uuid::from_slice(&*bytes).map_err(error_unexpected!())?;
     Ok(Session { id, user_id })
