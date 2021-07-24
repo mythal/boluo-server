@@ -12,22 +12,10 @@ jobs:
         uses: actions/checkout@v2
 
 
-      - uses: actions-rs/toolchain@v1
+      - uses: cachix/install-nix-action@v13
         with:
-          toolchain: nightly
-          override: true
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: boluo-server
-          path: |
-            schema.sql
-            target/release/server
-            target/release/manage
-            migrations/
+          nix_path: nixpkgs=channel:nixos-21.05
+          extra_nix_config: |
+            trusted-public-keys = binarycache.yuru.me:/PQxFq2js4z23C4JSN6oP0kAlPpIBmDHQtxHgXJL9IM=
+            substituters = http://binarycache.yuru.me
+      - run: nix-build .
