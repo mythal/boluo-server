@@ -19,7 +19,9 @@ jobs:
             experimental-features = nix-command flakes
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
-      - run: nix build
+      - run: nix bundle
+
+      - run: cp $(readlink -f boluo-server) ./server
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
@@ -27,5 +29,5 @@ jobs:
           name: boluo-server
           path: |
             schema.sql
-            result/bin/server
+            server
             migrations/
