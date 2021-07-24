@@ -127,17 +127,14 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
     match mailbox_type {
         MailBoxType::Space => {
             let space = Space::get_by_id(db, &mailbox)
-                .await?
-                .ok_or_else(|| AppError::NotFound("space"))?;
+                .await.or_not_found()?;
             check_space_perms(db, &space, user_id).await?;
         },
         MailBoxType::Channel => {
             let channel = Channel::get_by_id(db, &mailbox)
-                .await?
-                .ok_or_else(|| AppError::NotFound("channel"))?;
+                .await.or_not_found()?;
             let space = Space::get_by_id(db, &channel.space_id)
-                .await?
-                .ok_or_else(|| AppError::NotFound("space"))?;
+                .await?.or_not_found()?;
             check_space_perms(db, &space, user_id).await?;
             if !channel.is_public {
                 let user_id = user_id.ok_or(AppError::Unauthenticated)?;

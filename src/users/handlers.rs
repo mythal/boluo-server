@@ -40,7 +40,7 @@ pub async fn query_user(req: Request<Body>) -> Result<User, AppError> {
     };
 
     let mut db = database::get().await?;
-    User::get_by_id(&mut *db, &id).await?.ok_or(AppError::NotFound("user"))
+    User::get_by_id(&mut *db, &id).await.or_not_found()
 }
 
 pub async fn get_me(req: Request<Body>) -> Result<Option<GetMe>, AppError> {

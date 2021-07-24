@@ -2,8 +2,7 @@ use super::api::Upload;
 use super::models::Media;
 use crate::csrf::authenticate;
 use crate::database;
-use crate::error::AppError;
-use crate::error::ValidationFailed;
+use crate::error::{AppError, ValidationFailed, Find};
 use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::media::api::MediaQuery;
 use crate::media::models::MediaFile;
@@ -120,12 +119,11 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
     let db = &mut *conn;
     let mut media: Option<Media> = None;
     if let Some(id) = id {
-        media = Some(Media::get_by_id(db, &id).await?.ok_or(AppError::NotFound("media"))?);
+        media = Some(Media::get_by_id(db, &id).await.or_not_found()?);
     } else if let Some(filename) = filename {
         media = Some(
             Media::get_by_filename(db, &*filename)
-                .await?
-                .ok_or(AppError::NotFound("media"))?,
+                .await.or_not_found()?,
         );
     }
     let media = media.ok_or_else(|| AppError::BadRequest("Filename or media id must be specified.".to_string()))?;

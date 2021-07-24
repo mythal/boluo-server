@@ -20,13 +20,13 @@ async fn query(req: Request<Body>) -> Result<Space, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("space"))
+    Space::get_by_id(db, &id).await?.or_not_found()
 }
 
 pub async fn space_related(id: &Uuid) -> Result<SpaceWithRelated, AppError> {
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, id).await?.ok_or_else(|| AppError::NotFound("space"))?;
+    let space = Space::get_by_id(db, id).await?.or_not_found()?;
     let members = SpaceMemberWithUser::get_by_space(db, id).await?;
     let channels = Channel::get_by_space(db, id).await?;
     Ok(SpaceWithRelated { space, members, channels })
@@ -154,7 +154,7 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let mut db = database::get().await?;
     let db = &mut *db;
 
-    let space = Space::get_by_id(db, &space_id).await?.ok_or(AppError::NotFound("spaces"))?;
+    let space = Space::get_by_id(db, &space_id).await?.or_not_found()?;
     if !space.is_public && token != Some(space.invite_token) && space.owner_id != session.user_id {
         return Err(AppError::NoPermission(format!("join without wrong token")));
     }
@@ -192,13 +192,10 @@ async fn kick(req: Request<Body>) -> Result<bool, AppError> {
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let not_found = || AppError::NotFound("space member");
     let my_member = SpaceMember::get(db, &session.user_id, &space_id)
-        .await?
-        .ok_or_else(not_found)?;
+        .await.or_not_found()?;
     let kick_member = SpaceMember::get(db, &user_id, &space_id)
-        .await?
-        .ok_or_else(not_found)?;
+        .await.or_not_found()?;
     if kick_member.is_admin {
         return Err(AppError::BadRequest("Can't kick admin".to_string()));
     }
@@ -227,7 +224,7 @@ async fn delete(req: Request<Body>) -> Result<Space, AppError> {
     let mut conn = database::get().await?;
     let session = authenticate(&req).await?;
     let db = &mut *conn;
-    let space = Space::get_by_id(db, &id).await?.ok_or(AppError::NotFound("spaces"))?;
+    let space = Space::get_by_id(db, &id).await.or_not_found()?;
     if space.owner_id == session.user_id {
         Space::delete(db, &id).await?;
         log::info!("A space ({}) was deleted", space.id);
