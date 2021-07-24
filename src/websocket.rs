@@ -19,10 +19,13 @@ pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppErr
     }
     let connection = headers
         .get(CONNECTION)
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::BadRequest(String::new()))?;
-    if connection.find("Upgrade").is_none() {
-        return Err(AppError::BadRequest(String::new()));
+        .and_then(|v| {
+            v.to_str().ok()
+        })
+        .ok_or_else(|| AppError::BadRequest("Missing the \"Connection\" header".to_string()))?;
+    
+    if connection.find("Upgrade").is_none() && connection.find("upgrade").is_none() {
+        log::error!("Can't find \"upgrade\"");
     }
     let mut key = headers
         .get(SEC_WEBSOCKET_KEY)
@@ -42,7 +45,9 @@ where
 {
     use hyper::{header, StatusCode};
     use tokio_tungstenite::tungstenite::protocol::Role;
+    log::debug!("aa");
     let accept = check_websocket_header(req.headers())?;
+    log::debug!("bb");
     tokio::spawn(async {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
