@@ -11,16 +11,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-
-      - uses: actions-rs/toolchain@v1
+      - uses: cachix/install-nix-action@v13
         with:
-          toolchain: nightly
-          override: true
+          install_url: https://nixos-nix-install-tests.cachix.org/serve/i6laym9jw3wg9mw6ncyrk6gjx4l34vvx/install
+          install_options: '--tarball-url-prefix https://nixos-nix-install-tests.cachix.org/serve'
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+      - run: nix build
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
@@ -28,6 +27,5 @@ jobs:
           name: boluo-server
           path: |
             schema.sql
-            target/release/server
-            target/release/manage
+            result/bin/server
             migrations/
