@@ -1,4 +1,4 @@
-use crate::cache;
+use crate::{cache, error::Find};
 use crate::cache::make_key;
 use crate::channels::ChannelMember;
 use crate::database;
@@ -86,8 +86,7 @@ impl PreviewPost {
         let is_master = match mailbox_type {
             MailBoxType::Channel => {
                 ChannelMember::get(db, &user_id, &mailbox)
-                    .await?
-                    .ok_or(AppError::NoPermission)?
+                    .await.or_no_permssion()?
                     .is_master
             },
             _ => false,

@@ -5,7 +5,7 @@ use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::session::{remove_session, revoke_session};
 
 use crate::channels::Channel;
-use crate::error::{AppError, ValidationFailed};
+use crate::error::{AppError, Find, ValidationFailed};
 use crate::media::{upload, upload_params};
 use crate::spaces::Space;
 use crate::users::api::{CheckEmailExists, CheckUsernameExists, Edit, GetMe, QueryUser};
@@ -77,13 +77,8 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let form: Login = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let login = User::login(db, &*form.username, &*form.password)
-        .await?
-        .ok_or(AppError::NoPermission);
-    if let Err(AppError::NoPermission) = &login {
-        log::warn!("Someone failed to try to login: {}", form.username);
-    }
-    let user = login?;
+    let user = User::login(db, &*form.username, &*form.password)
+        .await.or_no_permssion()?;
     let session = session::start(&user.id).await.map_err(error_unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())

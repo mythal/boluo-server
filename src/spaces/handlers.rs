@@ -3,7 +3,7 @@ use super::{Space, SpaceMember};
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::database;
-use crate::error::AppError;
+use crate::error::{AppError, Find};
 use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
 use crate::spaces::api::{SpaceWithMember, SearchParams, Kick, Join};
 use hyper::{Body, Request};
@@ -47,7 +47,7 @@ async fn token(req: Request<Body>) -> Result<Uuid, AppError> {
         .map(|space_member| space_member.is_admin)
         .unwrap_or(false);
     if !is_admin {
-        return Err(AppError::NoPermission);
+        return Err(AppError::NoPermission(format!("A non-admin tries to get join token")));
     }
     Space::get_token(db, &id).await.map_err(Into::into)
 }
@@ -62,7 +62,7 @@ async fn refresh_token(req: Request<Body>) -> Result<Uuid, AppError> {
         .map(|space_member| space_member.is_admin)
         .unwrap_or(false);
     if !is_admin {
-        return Err(AppError::NoPermission);
+        return Err(AppError::NoPermission(format!("A non-admin tries to refresh join token")));
     }
     Space::refresh_token(db, &id).await.map_err(Into::into)
 }
@@ -123,10 +123,9 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let db = &mut trans;
 
     let space_member = SpaceMember::get(db, &session.user_id, &space_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
+        .await.or_no_permssion()?;
     if !space_member.is_admin {
-        return Err(AppError::NoPermission);
+        return Err(AppError::NoPermission(format!("A non-admin tries to edit space")));
     }
     let space = Space::edit(db, space_id, name, description, default_dice_type, explorable, is_public, allow_spectator)
         .await?
@@ -157,7 +156,7 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
 
     let space = Space::get_by_id(db, &space_id).await?.ok_or(AppError::NotFound("spaces"))?;
     if !space.is_public && token != Some(space.invite_token) && space.owner_id != session.user_id {
-        return Err(AppError::NoPermission);
+        return Err(AppError::NoPermission(format!("join without wrong token")));
     }
     let user_id = &session.user_id;
     let member = if &space.owner_id == user_id {
@@ -212,7 +211,7 @@ async fn kick(req: Request<Body>) -> Result<bool, AppError> {
         }
         Ok(true)
     } else {
-        Err(AppError::NoPermission)
+        Err(AppError::NoPermission(format!("A non-admin tries to kick")))
     }
 }
 
@@ -235,7 +234,7 @@ async fn delete(req: Request<Body>) -> Result<Space, AppError> {
         return Ok(space);
     }
     log::warn!("The user {} failed to try delete a space {}", session.user_id, space.id);
-    Err(AppError::NoPermission)
+    Err(AppError::NoPermission(format!("failed to delete")))
 }
 
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {

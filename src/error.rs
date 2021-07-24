@@ -23,8 +23,8 @@ pub enum AppError {
     Unauthenticated,
     #[error("\"{0}\" not found")]
     NotFound(&'static str),
-    #[error("Permission denied")]
-    NoPermission,
+    #[error("Permission denied: {0}")]
+    NoPermission(String),
     #[error("Validation failed: {0}")]
     Validation(#[from] ValidationFailed),
     #[error("An unexpected error occurred")]
@@ -57,7 +57,7 @@ impl AppError {
         match self {
             Unauthenticated => StatusCode::UNAUTHORIZED,
             NotFound(_) => StatusCode::NOT_FOUND,
-            NoPermission => StatusCode::FORBIDDEN,
+            NoPermission(_) => StatusCode::FORBIDDEN,
             Validation(_) | BadRequest(_) => StatusCode::BAD_REQUEST,
             MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Conflict(_) => StatusCode::CONFLICT,
@@ -70,7 +70,7 @@ impl AppError {
         match self {
             Unauthenticated => "UNAUTHENTICATED",
             NotFound(_) => "NOT_FOUND",
-            NoPermission => "NO_PERMISSION",
+            NoPermission(_) => "NO_PERMISSION",
             Validation(_) => "VALIDATION_FAIL",
             BadRequest(_) => "BAD_REQUEST",
             MethodNotAllowed => "METHOD_NOT_ALLOWED",
@@ -185,3 +185,37 @@ pub fn log_error(e: &AppError, source: &str) {
     }
 }
 
+pub trait Find<T: Sized> {
+    fn or_no_permssion(self) -> Result<T, AppError>;
+    fn or_not_found(self) -> Result<T, AppError>;
+}
+
+impl<T> Find<T> for Result<Option<T>, DbError> {
+    fn or_no_permssion(self) -> Result<T, AppError> {
+        match self {
+            Err(source) => Err(AppError::Database { source, backtrace: Backtrace::capture() }),
+            Ok(x) => x.or_no_permssion(),
+        }
+    }
+    fn or_not_found(self) -> Result<T, AppError> {
+        match self {
+            Err(source) => Err(AppError::Database { source, backtrace: Backtrace::capture() }),
+            Ok(x) => x.or_not_found(),
+        }
+    }
+}
+
+impl<T> Find<T> for Option<T> {
+    fn or_no_permssion(self) -> Result<T, AppError> {
+        match self {
+            None => Err(AppError::NoPermission(format!("Can't find {}", std::any::type_name::<T>()))),
+            Some(x) => Ok(x),
+        }
+    }
+    fn or_not_found(self) -> Result<T, AppError> {
+        match self {
+            None => Err(AppError::NotFound(std::any::type_name::<T>())),
+            Some(x) => Ok(x),
+        }
+    }
+}

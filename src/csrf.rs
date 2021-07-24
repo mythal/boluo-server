@@ -1,14 +1,12 @@
-use crate::error::AppError::{self, BadRequest, Unauthenticated};
+use crate::error::AppError;
 use crate::session::{self, Session};
-use crate::utils::{now_unix_duration, sign, verify};
-use hyper::header::{HeaderName, AUTHORIZATION};
+use crate::utils::{now_unix_duration, sign};
 use hyper::{Body, Request};
 use uuid::Uuid;
 
 // csrf-token:[session key(base 64)].[timestamp].[signature]
 
 pub async fn authenticate(req: &Request<Body>) -> Result<Session, AppError> {
-    use hyper::Method;
     let session = session::authenticate(req).await?;
     Ok(session)
 }

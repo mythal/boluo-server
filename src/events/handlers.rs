@@ -1,7 +1,7 @@
 use super::events::EventQuery;
 use super::Event;
 use crate::csrf::authenticate;
-use crate::error::AppError;
+use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
 use crate::events::events::{ClientEvent, MailBoxType};
 use crate::interface::{missing, parse_query, Response};
@@ -27,12 +27,9 @@ type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Option<Uuid>) -> Result<(), AppError> {
     if !space.allow_spectator {
         if let Some(user_id) = user_id {
-            let space_member = SpaceMember::get(db, &user_id, &space.id).await?;
-            if space_member.is_none() {
-                return Err(AppError::NoPermission);
-            }
+            SpaceMember::get(db, &user_id, &space.id).await.or_no_permssion()?;
         } else {
-            return Err(AppError::NoPermission);
+            return Err(AppError::NoPermission(format!("space do not allow spectator")));
         }
     }
     Ok(())

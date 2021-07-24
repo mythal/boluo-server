@@ -2,7 +2,7 @@ use super::api::{Edit, NewMessage};
 use super::Message;
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
-use crate::error::AppError;
+use crate::error::{AppError, Find};
 use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
@@ -29,8 +29,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
+        .await.or_no_permssion()?;
     let order_date: Option<i64> = match (order_date, message_id) {
         (None, Some(id)) => {
             let mut cache = cache::conn().await;
@@ -88,10 +87,9 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
         .await?
         .ok_or(AppError::NotFound("channel"))?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
+        .await.or_no_permssion()?;
     if !channel.is_document && message.sender_id != session.user_id {
-        return Err(AppError::NoPermission);
+        return Err(AppError::NoPermission(format!("user id dismatch")));
     }
     if name.is_some() || text.is_some() || entities.is_some() || in_game.is_some() || is_action.is_some() {
         let text = text.as_deref();
@@ -132,11 +130,10 @@ async fn swap(req: Request<Body>) -> Result<bool, AppError> {
         .await?
         .ok_or(AppError::NotFound("channel"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &a.channel_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
+        .await.or_no_permssion()?;
     if !channel.is_document {
         if !channel_member.is_master && a.sender_id != session.user_id {
-            return Err(AppError::NoPermission);
+            return Err(AppError::NoPermission(format!("user id dismatch")));
         }
     }
     if a.channel_id != b.channel_id {
@@ -168,11 +165,10 @@ async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
         .await?
         .ok_or(AppError::NotFound("channel"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
+        .await.or_no_permssion()?;
     if !channel.is_document {
         if !channel_member.is_master && message.sender_id != session.user_id {
-            return Err(AppError::NoPermission);
+            return Err(AppError::NoPermission(format!("user id dismatch")));
         }
     }
     let (messages, order_changes) = match mode {
@@ -207,10 +203,9 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
         .await?
         .ok_or(AppError::NotFound("messages"))?;
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
+        .await.or_no_permssion()?;
     if !space_member.is_admin && message.sender_id != session.user_id {
-        return Err(AppError::NoPermission);
+        return Err(AppError::NoPermission(format!("user id dismatch")));
     }
     Message::delete(db, &id).await?;
     Event::message_deleted(message.channel_id, message.id);
@@ -229,11 +224,10 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
         .await?
         .ok_or(AppError::NotFound("channel"))?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await?
-        .ok_or(AppError::NoPermission)?;
+        .await.or_no_permssion()?;
     if !channel.is_document {
         if message.sender_id != session.user_id && !channel_member.is_master {
-            return Err(AppError::NoPermission);
+            return Err(AppError::NoPermission(format!("user id dismatch")));
         }
     }
     let folded = Some(!message.folded);
@@ -260,8 +254,7 @@ async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
     if !channel.is_public {
         let session = authenticate(&req).await?;
         ChannelMember::get(db, &session.user_id, &channel_id)
-            .await?
-            .ok_or(AppError::NoPermission)?;
+            .await.or_no_permssion()?;
     }
     let limit = limit.unwrap_or(128);
     Message::get_by_channel(db, &channel_id, before, limit)
