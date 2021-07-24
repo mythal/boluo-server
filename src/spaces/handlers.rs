@@ -156,7 +156,7 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
 
     let space = Space::get_by_id(db, &space_id).await?.or_not_found()?;
     if !space.is_public && token != Some(space.invite_token) && space.owner_id != session.user_id {
-        return Err(AppError::NoPermission(format!("join without wrong token")));
+        return Err(AppError::NoPermission(format!("A user tries to join group without token")));
     }
     let user_id = &session.user_id;
     let member = if &space.owner_id == user_id {
