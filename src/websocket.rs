@@ -45,9 +45,7 @@ where
 {
     use hyper::{header, StatusCode};
     use tokio_tungstenite::tungstenite::protocol::Role;
-    log::debug!("aa");
     let accept = check_websocket_header(req.headers())?;
-    log::debug!("bb");
     tokio::spawn(async {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
