@@ -25,13 +25,13 @@ type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
 
 async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Option<Uuid>) -> Result<(), AppError> {
-    if !space.allow_spectator {
-        if let Some(user_id) = user_id {
-            SpaceMember::get(db, &user_id, &space.id).await.or_no_permssion()?;
-        } else {
-            return Err(AppError::NoPermission(format!("space do not allow spectator")));
-        }
-    }
+    // if !space.allow_spectator {
+    //     if let Some(user_id) = user_id {
+    //         SpaceMember::get(db, &user_id, &space.id).await.or_no_permssion()?;
+    //     } else {
+    //         return Err(AppError::NoPermission(format!("space do not allow spectator")));
+    //     }
+    // }
     Ok(())
 }
 
