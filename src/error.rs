@@ -167,20 +167,23 @@ impl From<DbError> for ModelError {
     }
 }
 
-pub fn log_error(e: &AppError, source: &str) {
+pub fn log_error(e: &AppError, from: &str) {
     use crate::error::AppError::*;
     match e {
-        NotFound(_) | Conflict(_) => log::debug!("{} - {}", source, e),
+        NotFound(_) | Conflict(_) => log::debug!("{} - {}", from, e),
         Validation(_) | BadRequest(_) | MethodNotAllowed => {
-            log::info!("{} - {}", source, e)
+            log::info!("{} - {}", from, e)
         }
         e => {
+            log::error!("{} - {}\n", from, e);
             if let Some(backtrace) = e.backtrace() {
-                log::error!("{} - {}\n{}", source, e, backtrace);
-            } else {
-                log::error!("{} - {}\n", source, e);
+                log::error!("{}", backtrace);
             }
-            sentry::capture_error(e);
+            let mut source: Option<&_> = e.source();
+            while let Some(e) = source {
+                log::error!("> {}", e);
+                source = e.source();
+            }
         }
     }
 }
