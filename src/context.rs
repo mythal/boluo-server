@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::PathBuf, path::Path};
 
 use once_cell::sync::OnceCell;
 
@@ -21,4 +21,10 @@ pub fn secret() -> &'static str {
 
 pub fn is_systemd() -> bool {
     *SYSTEMD.get_or_init(|| env::var("SYSTEMD").map(env_bool).unwrap_or(false))
+}
+
+static MEDIA_PATH: OnceCell<PathBuf> = OnceCell::new();
+
+pub fn media_path() -> &'static Path {
+    MEDIA_PATH.get_or_init(|| PathBuf::from(env::var("MEDIA_PATH").unwrap_or("media".to_string()))) 
 }

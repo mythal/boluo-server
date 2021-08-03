@@ -1,4 +1,4 @@
-use crate::database::Querist;
+use crate::{context::media_path, database::Querist};
 use crate::error::DbError;
 use crate::utils::inner_map;
 use chrono::naive::NaiveDateTime;
@@ -49,9 +49,11 @@ pub struct Media {
     pub created: NaiveDateTime,
 }
 
+
+
 impl Media {
     pub fn path(filename: &str) -> PathBuf {
-        let mut path = PathBuf::from("media");
+        let mut path = media_path().to_owned();
         path.push(filename);
         path
     }
