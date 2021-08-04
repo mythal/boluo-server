@@ -3,6 +3,7 @@
 **/*.rs.bk
 **/*.log
 .idea/
+.vscode/
 **/.DS_Store
 /media
 result
