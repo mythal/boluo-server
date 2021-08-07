@@ -16,7 +16,12 @@ pub fn debug() -> bool {
 }
 
 pub fn secret() -> &'static str {
-    &*SECRET.get_or_init(|| env::var("SECRET").unwrap())
+    let secret_string = if cfg!(test) {
+        "just a test".to_string()
+    } else {
+        env::var("SECRET").expect("environment variable `SECRET` not present")
+    };
+    &*SECRET.get_or_init(|| secret_string)
 }
 
 pub fn is_systemd() -> bool {
@@ -26,5 +31,9 @@ pub fn is_systemd() -> bool {
 static MEDIA_PATH: OnceCell<PathBuf> = OnceCell::new();
 
 pub fn media_path() -> &'static Path {
-    MEDIA_PATH.get_or_init(|| PathBuf::from(env::var("MEDIA_PATH").unwrap_or("media".to_string()))) 
+    let path = PathBuf::from(env::var("MEDIA_PATH").unwrap_or("media".to_string()));
+    if !path.exists() {
+        std::fs::create_dir_all(&*path).expect("Unable to create media directory");
+    }
+    MEDIA_PATH.get_or_init(|| path)
 }
