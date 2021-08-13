@@ -1,47 +1,39 @@
 {
   description = "Boluo Server";
   inputs = {
-    nixpkgs.url = github:NixOS/nixpkgs/nixos-20.03;
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    import-cargo.url = github:edolstra/import-cargo;
+    utils.url = "github:numtide/flake-utils";
+    naersk.url = "github:nmattia/naersk";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, import-cargo }:
-  let
-    system = "x86_64-linux";
-    inherit (import-cargo.builders) importCargo;
+  outputs = { self, nixpkgs, rust-overlay, naersk, utils }:
+  utils.lib.eachDefaultSystem (system: let
     overlays = [ (import rust-overlay) ];
     pkgs = import nixpkgs {
       inherit system overlays;
     };
-  in {
-
-    defaultPackage.x86_64-linux =
-      with import nixpkgs { system = system; };
-      stdenv.mkDerivation {
-        name = "boluo-server";
-        src = self;
-
-        nativeBuildInputs = [
-          # setupHook which makes sure that a CARGO_HOME with vendored dependencies
-          # exists
-          (importCargo { lockFile = ./Cargo.lock; inherit pkgs; }).cargoHome
-          pkgs.openssl.dev
-          pkgs.pkg-config
-          # Build-time dependencies
-          pkgs.rust-bin.nightly.latest.default
-          pkgs.rust-bin.nightly.latest.cargo
-        ];
-
-        buildPhase = ''
-          cargo build --release --offline
-        '';
-
-        installPhase = ''
-          install -Dm775 ./target/release/server $out/bin/server
-        '';
-
-      };
-
-  };
+    rust-bin = pkgs.rust-bin.nightly."2021-07-30";
+    naersk-lib = naersk.lib.${system}.override {
+      cargo = rust-bin.default;
+      rustc = rust-bin.default;
+    };
+  in rec {
+    packages.boluo-server = naersk-lib.buildPackage {
+      pname = "boluo-server";
+      nativeBuildInputs = [
+        rust-bin.default
+        pkgs.openssl.dev
+        pkgs.pkg-config
+      ];
+      root = ./.;
+    };
+    defaultPackage = packages.boluo-server;
+    apps.server = utils.lib.mkApp {
+      drv = packages.boluo-server;
+    };
+    devShell = pkgs.mkShell {
+      nativeBuildInputs = with pkgs; [ rust-bin.default rust-bin.cargo openssl.dev pkg-config ];
+    };
+  });
 }
