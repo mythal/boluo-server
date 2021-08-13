@@ -29,7 +29,7 @@ async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Optio
         if let Some(user_id) = user_id {
             SpaceMember::get(db, &user_id, &space.id).await.or_no_permssion()?;
         } else {
-            return Err(AppError::NoPermission(format!("space do not allow spectator")));
+            return Err(AppError::Unauthenticated(format!("space do not allow spectator")));
         }
     }
     Ok(())
