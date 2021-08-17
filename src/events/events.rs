@@ -5,6 +5,7 @@ use crate::events::context;
 use crate::events::context::{get_heartbeat_map, SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
 use crate::messages::{Message, MessageOrder};
+use crate::spaces::models::StatusKind;
 use crate::utils::timestamp;
 use crate::{cache, database};
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,8 @@ pub enum ClientEvent {
     Preview { preview: PreviewPost },
     #[serde(rename_all = "camelCase")]
     Heartbeat,
+    #[serde(rename_all = "camelCase")]
+    Status { kind: StatusKind },
 }
 
 #[derive(Serialize, Debug)]
@@ -174,7 +177,7 @@ impl Event {
             map.insert(mailbox, heartbeat_map);
         }
     }
-
+    
     pub fn push_members(channel_id: Uuid) {
         spawn(async move {
             if let Err(e) = Event::fire_members(channel_id).await {

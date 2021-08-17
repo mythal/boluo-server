@@ -1,14 +1,68 @@
+use std::collections::HashMap;
+use std::convert::TryInto;
+
 use chrono::naive::NaiveDateTime;
 use postgres_types::FromSql;
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use serde_repr::*;
 use uuid::Uuid;
 
+use crate::cache::{self, make_key};
 use crate::database::Querist;
-use crate::error::{DbError, ModelError};
+use crate::error::{AppError, DbError, ModelError, CacheError};
 use crate::spaces::api::SpaceWithMember;
 use crate::utils::{inner_map, merge_blank};
 use crate::users::User;
 use crate::channels::ChannelMember;
+
+
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum StatusKind {
+    Offline = 0,
+    Leave = 1,
+    Online = 2,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UserStatus {
+    pub timestamp: i64,
+    pub kind: StatusKind,
+}
+
+pub async fn update_status(space_id: Uuid, user_id: Uuid, kind: StatusKind, timestamp: i64) -> Result<bool, CacheError> {
+    let cache = cache::conn().await;
+    let mut redis = cache.inner; 
+    let heartbeat = UserStatus { timestamp, kind };
+
+    let key = make_key(b"space", &space_id, b"heartbeat");
+    let value = serde_json::to_vec(&heartbeat).unwrap();
+    
+    redis.hset(&*key, user_id.as_bytes(), &*value).await
+}
+
+pub async fn space_users_status(space_id: Uuid) -> Result<HashMap<Uuid, UserStatus>, AppError> {
+    let cache = cache::conn().await;
+    let mut redis = cache.inner;
+    let key = make_key(b"space", &space_id, b"heartbeat");
+    let redis_result: HashMap<Vec<u8>, Vec<u8>> = redis.hgetall(&*key).await?;
+    let mut table: HashMap<Uuid, UserStatus> = HashMap::new();
+    for (user_id_bytes, data) in redis_result.into_iter() {
+        let user_id_array: [u8; 16] = match user_id_bytes.try_into() {
+            Ok(array) => array,
+            Err(bytes) => {
+                log::error!("failed to convert user id in cache: {:?}", bytes);
+                continue;
+            },
+        };
+        match serde_json::from_slice::<UserStatus>(&*data) {
+            Ok(status) => { table.insert(Uuid::from_bytes(user_id_array), status); },
+            Err(err) => log::error!("failed to deserialize user status in cache: {}", err),
+        }
+    }
+    return Ok(table)
+}
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -345,3 +399,17 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     Ok(())
 }
 
+
+#[tokio::test]
+async fn status_test() -> Result<(), crate::error::AppError> {
+    use crate::utils::timestamp;
+    
+    let space_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let now = timestamp();
+    update_status(space_id, user_id, StatusKind::Online, now).await?;
+    let user_status = space_users_status(space_id).await?;
+    let status = user_status.get(&user_id).unwrap();
+    assert_eq!(status.kind, StatusKind::Online);
+    Ok(())
+}

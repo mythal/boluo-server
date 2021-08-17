@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::models::UserStatus;
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Create {
@@ -53,6 +55,7 @@ pub struct SpaceWithRelated {
     pub space: super::Space,
     pub members: Vec<super::models::SpaceMemberWithUser>,
     pub channels: Vec<crate::channels::Channel>,
+    pub users_status: std::collections::HashMap<Uuid, UserStatus>,
 }
 
 

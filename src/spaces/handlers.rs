@@ -1,4 +1,5 @@
 use super::api::{Create, Edit, SpaceWithRelated};
+use super::models::space_users_status;
 use super::{Space, SpaceMember};
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
@@ -29,7 +30,8 @@ pub async fn space_related(id: &Uuid) -> Result<SpaceWithRelated, AppError> {
     let space = Space::get_by_id(db, id).await?.or_not_found()?;
     let members = SpaceMemberWithUser::get_by_space(db, id).await?;
     let channels = Channel::get_by_space(db, id).await?;
-    Ok(SpaceWithRelated { space, members, channels })
+    let users_status = space_users_status(space.id).await?;
+    Ok(SpaceWithRelated { space, members, channels, users_status })
 }
 
 async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppError> {

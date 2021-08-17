@@ -5,6 +5,8 @@ use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
 use crate::events::events::{ClientEvent, MailBoxType};
 use crate::interface::{missing, parse_query, Response};
+use crate::spaces::models::update_status;
+use crate::utils::timestamp;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
 use anyhow::anyhow;
 use futures::stream::SplitSink;
@@ -106,6 +108,11 @@ async fn handle_client_event(
         ClientEvent::Heartbeat => {
             if let Some(user_id) = user_id {
                 Event::heartbeat(mailbox, user_id).await;
+            }
+        }
+        ClientEvent::Status { kind } => {
+            if let Some(user_id) = user_id {
+                update_status(mailbox, user_id, kind, timestamp()).await?;
             }
         }
     }
