@@ -5,7 +5,6 @@ use chrono::naive::NaiveDateTime;
 use postgres_types::FromSql;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use serde_repr::*;
 use uuid::Uuid;
 
 use crate::cache::{self, make_key};
@@ -16,12 +15,12 @@ use crate::spaces::api::SpaceWithMember;
 use crate::users::User;
 use crate::utils::{inner_map, merge_blank};
 
-#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StatusKind {
-    Offline = 0,
-    Leave = 1,
-    Online = 2,
+    Offline,
+    Leave,
+    Online,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
