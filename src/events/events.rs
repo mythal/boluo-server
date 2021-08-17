@@ -59,6 +59,7 @@ pub enum EventBody {
     MessagePreview {
         preview: Box<Preview>,
     },
+    #[serde(rename_all = "camelCase")]
     ChannelDeleted { channel_id: Uuid },
     #[serde(rename_all = "camelCase")]
     ChannelEdited {
@@ -70,6 +71,7 @@ pub enum EventBody {
         members: Vec<Member>,
     },
     Initialized,
+    #[serde(rename_all = "camelCase")]
     StatusMap {
         status_map: HashMap<Uuid, UserStatus>,
     },
