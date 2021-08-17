@@ -2,7 +2,6 @@ use crate::cache::make_key;
 use crate::channels::ChannelMember;
 use crate::database;
 use crate::error::AppError;
-use crate::events::events::MailBoxType;
 use crate::events::Event;
 use crate::{cache, error::Find};
 use chrono::NaiveDateTime;
@@ -15,8 +14,7 @@ use uuid::Uuid;
 pub struct Preview {
     pub id: Uuid,
     pub sender_id: Uuid,
-    pub mailbox: Uuid,
-    pub mailbox_type: MailBoxType,
+    pub channel_id: Uuid,
     pub parent_message_id: Option<Uuid>,
     pub name: String,
     pub media_id: Option<Uuid>,
@@ -37,6 +35,7 @@ pub struct Preview {
 #[serde(rename_all = "camelCase")]
 pub struct PreviewPost {
     pub id: Uuid,
+    pub channel_id: Uuid,
     pub name: String,
     pub media_id: Option<Uuid>,
     pub in_game: bool,
@@ -55,9 +54,10 @@ impl PreviewPost {
         make_key(b"preview", &id, b"start")
     }
 
-    pub async fn broadcast(self, mailbox: Uuid, mailbox_type: MailBoxType, user_id: Uuid) -> Result<(), AppError> {
+    pub async fn broadcast(self, space_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
         let PreviewPost {
             id,
+            channel_id,
             name,
             media_id,
             in_game,
@@ -83,21 +83,15 @@ impl PreviewPost {
         };
         let mut conn = database::get().await?;
         let db = &mut *conn;
-        let is_master = match mailbox_type {
-            MailBoxType::Channel => {
-                ChannelMember::get(db, &user_id, &mailbox)
-                    .await
-                    .or_no_permssion()?
-                    .is_master
-            }
-            _ => false,
-        };
+        let is_master = ChannelMember::get(db, &user_id, &channel_id)
+            .await
+            .or_no_permssion()?
+            .is_master;
         let whisper_to_users = None;
-        Event::message_preview(Box::new(Preview {
+        let preview = Box::new(Preview {
             id,
             sender_id: user_id,
-            mailbox,
-            mailbox_type,
+            channel_id,
             parent_message_id: None,
             name,
             media_id,
@@ -110,7 +104,8 @@ impl PreviewPost {
             is_master,
             edit_for,
             clear,
-        }));
+        });
+        Event::message_preview(space_id, preview);
         Ok(())
     }
 }

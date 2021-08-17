@@ -28,6 +28,7 @@ pub enum StatusKind {
 pub struct UserStatus {
     pub timestamp: i64,
     pub kind: StatusKind,
+    pub focus: Vec<Uuid>,
 }
 
 pub async fn update_status(
@@ -35,10 +36,11 @@ pub async fn update_status(
     user_id: Uuid,
     kind: StatusKind,
     timestamp: i64,
+    focus: Vec<Uuid>,
 ) -> Result<bool, CacheError> {
     let cache = cache::conn().await;
     let mut redis = cache.inner;
-    let heartbeat = UserStatus { timestamp, kind };
+    let heartbeat = UserStatus { timestamp, kind, focus };
 
     let key = make_key(b"space", &space_id, b"heartbeat");
     let value = serde_json::to_vec(&heartbeat).unwrap();
@@ -46,9 +48,7 @@ pub async fn update_status(
     redis.hset(&*key, user_id.as_bytes(), &*value).await
 }
 
-pub async fn space_users_status(space_id: Uuid) -> Result<HashMap<Uuid, UserStatus>, AppError> {
-    let cache = cache::conn().await;
-    let mut redis = cache.inner;
+pub async fn space_users_status(redis: &mut redis::aio::ConnectionManager, space_id: Uuid) -> Result<HashMap<Uuid, UserStatus>, AppError> {
     let key = make_key(b"space", &space_id, b"heartbeat");
     let redis_result: HashMap<Vec<u8>, Vec<u8>> = redis.hgetall(&*key).await?;
     let mut table: HashMap<Uuid, UserStatus> = HashMap::new();
@@ -424,11 +424,13 @@ async fn space_test() -> Result<(), crate::error::AppError> {
 async fn status_test() -> Result<(), crate::error::AppError> {
     use crate::utils::timestamp;
 
+    let mut cache = crate::cache::conn().await;
     let space_id = Uuid::new_v4();
     let user_id = Uuid::new_v4();
     let now = timestamp();
-    update_status(space_id, user_id, StatusKind::Online, now).await?;
-    let user_status = space_users_status(space_id).await?;
+    let kind = StatusKind::Online;
+    crate::events::Event::status(space_id, user_id, kind, now, vec![]).await;
+    let user_status = space_users_status(&mut cache.inner, space_id).await?;
     let status = user_status.get(&user_id).unwrap();
     assert_eq!(status.kind, StatusKind::Online);
     Ok(())

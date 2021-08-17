@@ -1,6 +1,4 @@
-use crate::context::debug;
 use crate::events::context::{get_broadcast_table, get_heartbeat_map};
-use crate::events::Event;
 use crate::utils::timestamp;
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -12,7 +10,6 @@ use uuid::Uuid;
 
 pub fn start() {
     tokio::spawn(events_clean());
-    tokio::spawn(push_heartbeat());
     tokio::spawn(heartbeat_clean());
     tokio::spawn(broadcast_clean());
 }
@@ -57,22 +54,6 @@ async fn events_clean() {
             drop(cache);
             let mut cache = super::context::get_cache().mailboxes.write().await;
             swap(&mut next_map, &mut *cache);
-        })
-        .await;
-}
-
-async fn push_heartbeat() {
-    let duration = if debug() {
-        Duration::from_secs(60)
-    } else {
-        Duration::from_secs(6)
-    };
-    IntervalStream::new(interval(duration))
-        .for_each(|_| async {
-            let map = get_heartbeat_map().lock().await;
-            for (channel_id, heartbeat_map) in map.iter() {
-                tokio::spawn(Event::push_heartbeat_map(*channel_id, heartbeat_map.clone()));
-            }
         })
         .await;
 }

@@ -28,7 +28,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
     } = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
+    let (channel_member, space_member) = ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
         .await
         .or_no_permssion()?;
     let order_date: Option<i64> = match (order_date, message_id) {
@@ -63,7 +63,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         order_date,
     )
     .await?;
-    Event::new_message(message.clone());
+    Event::new_message(space_member.space_id, message.clone());
     Ok(message)
 }
 
@@ -85,7 +85,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
         .await?
         .or_not_found()?;
     let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
-    ChannelMember::get(db, &session.user_id, &message.channel_id)
+    let (_, space_member) = ChannelMember::get_with_space_member(db, &session.user_id, &message.channel_id)
         .await
         .or_no_permssion()?;
     if !channel.is_document && message.sender_id != session.user_id {
@@ -109,7 +109,7 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
         .ok_or_else(|| unexpected!("The message had been delete."))?;
     }
     trans.commit().await?;
-    Event::message_edited(message.clone());
+    Event::message_edited(space_member.space_id, message.clone());
     Ok(message)
 }
 
@@ -199,7 +199,7 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
         return Err(AppError::NoPermission(format!("user id dismatch")));
     }
     Message::delete(db, &id).await?;
-    Event::message_deleted(message.channel_id, message.id);
+    Event::message_deleted(space_member.space_id, message.channel_id, message.id);
     Ok(message)
 }
 
@@ -222,7 +222,7 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let message = Message::edit(db, None, &message.id, None, None, None, None, folded, None)
         .await?
         .ok_or_else(|| unexpected!("message not found"))?;
-    Event::message_edited(message.clone());
+    Event::message_edited(channel.space_id, message.clone());
     Ok(message)
 }
 

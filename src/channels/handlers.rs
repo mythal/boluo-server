@@ -52,7 +52,7 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
     };
 
     let encoded_events = if channel.is_public || my_member.is_some() {
-        Event::get_from_cache(&query.id, 0).await
+        Event::get_from_cache(&query.id).await
     } else {
         channel.topic = String::new();
         Vec::new()
@@ -253,7 +253,7 @@ async fn delete(req: Request<Body>) -> Result<bool, AppError> {
 
     Channel::delete(db, &id).await?;
     log::info!("channel {} was deleted.", &id);
-    Event::channel_deleted(id);
+    Event::channel_deleted(channel.space_id, id);
     Event::space_updated(channel.space_id);
     Ok(true)
 }

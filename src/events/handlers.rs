@@ -1,14 +1,12 @@
 use super::events::EventQuery;
 use super::Event;
-use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::database::Querist;
 use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
-use crate::events::events::{ClientEvent, MailBoxType};
+use crate::events::events::{ClientEvent};
 use crate::interface::{missing, parse_query, Response};
-use crate::spaces::models::update_status;
 use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
@@ -38,9 +36,7 @@ async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Optio
 
 async fn push_events(
     mailbox: Uuid,
-    _mailbox_type: MailBoxType,
     outgoing: &mut Sender,
-    after: i64,
 ) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
     use tokio::sync::broadcast::error::RecvError;
@@ -63,7 +59,7 @@ async fn push_events(
         let mut tx = tx.clone();
         let mut mailbox_rx = get_mailbox_broadcast_rx(&mailbox).await;
 
-        let cached_events = Event::get_from_cache(&mailbox, after).await;
+        let cached_events = Event::get_from_cache(&mailbox).await;
         for e in cached_events.into_iter() {
             tx.send(WsMessage::Text(e)).await.ok();
         }
@@ -99,7 +95,6 @@ async fn push_events(
 
 async fn handle_client_event(
     mailbox: Uuid,
-    mailbox_type: MailBoxType,
     user_id: Option<Uuid>,
     message: String,
 ) -> Result<(), anyhow::Error> {
@@ -107,16 +102,11 @@ async fn handle_client_event(
     match event {
         ClientEvent::Preview { preview } => {
             let user_id = user_id.ok_or(AppError::Unauthenticated(format!("user id is empty")))?;
-            preview.broadcast(mailbox, mailbox_type, user_id).await?;
+            preview.broadcast(mailbox, user_id).await?;
         }
-        ClientEvent::Heartbeat => {
+        ClientEvent::Status { kind, focus } => {
             if let Some(user_id) = user_id {
-                Event::heartbeat(mailbox, user_id).await;
-            }
-        }
-        ClientEvent::Status { kind } => {
-            if let Some(user_id) = user_id {
-                update_status(mailbox, user_id, kind, timestamp()).await?;
+                Event::status(mailbox, user_id, kind, timestamp(), focus).await;
             }
         }
     }
@@ -129,34 +119,19 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
 
     let EventQuery {
         mailbox,
-        mailbox_type,
-        after,
     } = parse_query(req.uri())?;
 
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    match mailbox_type {
-        MailBoxType::Space => {
-            let space = Space::get_by_id(db, &mailbox).await.or_not_found()?;
-            check_space_perms(db, &space, user_id).await?;
-        }
-        MailBoxType::Channel => {
-            let channel = Channel::get_by_id(db, &mailbox).await.or_not_found()?;
-            let space = Space::get_by_id(db, &channel.space_id).await?.or_not_found()?;
-            check_space_perms(db, &space, user_id).await?;
-            if !channel.is_public {
-                let user_id = user_id.ok_or(AppError::Unauthenticated(format!("user id is empty")))?;
-                ChannelMember::get(db, &user_id, &channel.id)
-                    .await?
-                    .ok_or(AppError::Unauthenticated(format!("the user is not channel member")))?;
-            }
-        }
+    let space = Space::get_by_id(db, &mailbox).await?;
+    if let Some(space) = space.as_ref() {
+        check_space_perms(db, space, user_id).await?;
     }
     establish_web_socket(req, move |ws_stream| async move {
         let (mut outgoing, incoming) = ws_stream.split();
 
         let server_push_events = async move {
-            if let Err(e) = push_events(mailbox, mailbox_type, &mut outgoing, after).await {
+            if let Err(e) = push_events(mailbox, &mut outgoing).await {
                 log::warn!("Failed to push events: {}", e);
             }
             outgoing.close().await.ok();
@@ -168,7 +143,7 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
             .and_then(future::ready)
             .try_for_each(|message: WsMessage| async move {
                 if let WsMessage::Text(message) = message {
-                    if let Err(e) = handle_client_event(mailbox, mailbox_type, user_id, message).await {
+                    if let Err(e) = handle_client_event(mailbox, user_id, message).await {
                         log::warn!("Failed to send event: {}", e);
                     }
                 }
