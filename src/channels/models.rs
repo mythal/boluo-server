@@ -3,7 +3,7 @@ use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::channels::api::{ChannelWithMember, ChannelMemberWithUser};
+use crate::channels::api::{ChannelMemberWithUser, ChannelWithMember};
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::{Space, SpaceMember};
@@ -109,7 +109,15 @@ impl Channel {
         let row = db
             .query_exactly_one(
                 include_str!("sql/edit_channel.sql"),
-                &[id, &name, &topic, &default_dice_type, &default_roll_command, &is_public, &is_document],
+                &[
+                    id,
+                    &name,
+                    &topic,
+                    &default_dice_type,
+                    &default_roll_command,
+                    &is_public,
+                    &is_document,
+                ],
             )
             .await?;
         Ok(row.get(0))
@@ -173,11 +181,18 @@ impl ChannelMember {
         Ok(rows.into_iter().map(|row| (row.get(0), row.get(1))).collect())
     }
 
-    pub async fn get_by_channel<T: Querist>(db: &mut T, channel: &Uuid, full: bool) -> Result<Vec<ChannelMemberWithUser>, DbError> {
+    pub async fn get_by_channel<T: Querist>(
+        db: &mut T,
+        channel: &Uuid,
+        full: bool,
+    ) -> Result<Vec<ChannelMemberWithUser>, DbError> {
         let rows = db
             .query(include_str!("sql/get_channel_member_list.sql"), &[channel, &full])
             .await?;
-        let mapper = |row: Row| ChannelMemberWithUser { member: row.get(0), user: row.get(1) };
+        let mapper = |row: Row| ChannelMemberWithUser {
+            member: row.get(0),
+            user: row.get(1),
+        };
         Ok(rows.into_iter().map(mapper).collect())
     }
 
@@ -215,8 +230,13 @@ impl ChannelMember {
             .await
     }
 
-    pub async fn remove_user_by_space<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<Vec<Uuid>, DbError> {
-        let channels = db.query(include_str!("sql/remove_user_by_space.sql"), &[user_id, space_id])
+    pub async fn remove_user_by_space<T: Querist>(
+        db: &mut T,
+        user_id: &Uuid,
+        space_id: &Uuid,
+    ) -> Result<Vec<Uuid>, DbError> {
+        let channels = db
+            .query(include_str!("sql/remove_user_by_space.sql"), &[user_id, space_id])
             .await?
             .into_iter()
             .map(|row| row.get(0));

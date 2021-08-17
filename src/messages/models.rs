@@ -98,8 +98,15 @@ impl Message {
         Ok(messages)
     }
 
-    pub async fn export<T: Querist>(db: &mut T, channel_id: &Uuid, hide: bool, after: Option<NaiveDateTime>) -> Result<Vec<Message>, DbError> {
-        let rows = db.query(include_str!("./sql/export.sql"), &[channel_id, &after]).await?;
+    pub async fn export<T: Querist>(
+        db: &mut T,
+        channel_id: &Uuid,
+        hide: bool,
+        after: Option<NaiveDateTime>,
+    ) -> Result<Vec<Message>, DbError> {
+        let rows = db
+            .query(include_str!("./sql/export.sql"), &[channel_id, &after])
+            .await?;
         let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
         if hide {
             messages.iter_mut().for_each(Message::hide);

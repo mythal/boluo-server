@@ -1,7 +1,10 @@
 use super::api::{Create, Edit};
 use super::models::ChannelMember;
 use super::Channel;
-use crate::channels::api::{ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, JoinChannel, ChannelMemberWithUser, AddMember, Export};
+use crate::channels::api::{
+    AddMember, ChannelMemberWithUser, ChannelWithMember, ChannelWithRelated, CheckChannelName, EditMember, Export,
+    JoinChannel,
+};
 use crate::channels::models::Member;
 use crate::csrf::authenticate;
 use crate::database;
@@ -10,11 +13,11 @@ use crate::error::{AppError, Find};
 use crate::events::context::get_heartbeat_map;
 use crate::events::Event;
 use crate::interface::{self, missing, ok_response, parse_body, parse_query, IdQuery, Response};
+use crate::messages::Message;
 use crate::spaces::{Space, SpaceMember};
 use hyper::{Body, Request};
 use std::collections::HashMap;
 use uuid::Uuid;
-use crate::messages::Message;
 
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
     SpaceMember::get(db, user_id, space_id).await.or_no_permssion()?;
@@ -25,8 +28,7 @@ async fn query(req: Request<Body>) -> Result<Channel, AppError> {
     let query: IdQuery = parse_query(req.uri())?;
 
     let mut db = database::get().await?;
-    Channel::get_by_id(&mut *db, &query.id)
-        .await.or_not_found()
+    Channel::get_by_id(&mut *db, &query.id).await.or_not_found()
 }
 
 async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, AppError> {
@@ -35,11 +37,10 @@ async fn query_with_related(req: Request<Body>) -> Result<ChannelWithRelated, Ap
 
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let (mut channel, space) = Channel::get_with_space(db, &query.id)
-        .await.or_not_found()?;
+    let (mut channel, space) = Channel::get_with_space(db, &query.id).await.or_not_found()?;
     let members = Member::get_by_channel(db, channel.id).await?;
-    let my_member: Option<&Member> = session
-        .and_then(|session| members.iter().find(|member| member.user.id == session.user_id));
+    let my_member: Option<&Member> =
+        session.and_then(|session| members.iter().find(|member| member.user.id == session.user_id));
 
     let color_list = ChannelMember::get_color_list(db, &channel.id).await?;
     let heartbeat_map = {
@@ -116,7 +117,8 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
     let db = &mut trans;
 
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     if !space_member.is_admin {
         return Err(AppError::NoPermission(format!("user is not admin")));
     }
@@ -159,12 +161,13 @@ async fn add_member(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     let db = &mut trans;
 
     ChannelMember::get(db, &session.user_id, &channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
 
-    let channel = Channel::get_by_id(db, &channel_id)
-        .await.or_not_found()?;
+    let channel = Channel::get_by_id(db, &channel_id).await.or_not_found()?;
     SpaceMember::get(db, &session.user_id, &channel.space_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     let member = ChannelMember::add_user(db, &user_id, &channel_id, &*character_name, false).await?;
     trans.commit().await?;
     Event::push_members(channel_id);
@@ -184,7 +187,8 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
     let db = &mut trans;
 
     ChannelMember::get(db, &session.user_id, &channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
 
     let character_name = character_name.as_deref();
     let text_color = text_color.as_deref();
@@ -214,13 +218,13 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
 
-    let channel = Channel::get_by_id(db, &channel_id)
-        .await.or_not_found()?;
+    let channel = Channel::get_by_id(db, &channel_id).await.or_not_found()?;
     if !channel.is_public {
         return Err(AppError::NoPermission(format!("private channel")));
     }
     SpaceMember::get(db, &session.user_id, &channel.space_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, false).await?;
     trans.commit().await?;
     Event::push_members(channel_id);
@@ -243,8 +247,7 @@ async fn delete(req: Request<Body>) -> Result<bool, AppError> {
     let mut conn = database::get().await?;
     let db = &mut *conn;
 
-    let channel = Channel::get_by_id(db, &id)
-        .await.or_not_found()?;
+    let channel = Channel::get_by_id(db, &id).await.or_not_found()?;
 
     admin_only(db, &session.user_id, &channel.space_id).await?;
 
@@ -271,7 +274,9 @@ async fn export(req: Request<Body>) -> Result<Vec<Message>, AppError> {
 
     let channel = Channel::get_by_id(db, &channel_id).await?.or_not_found()?;
 
-    let space_member = SpaceMember::get(db, &session.user_id, &channel.space_id).await.or_no_permssion()?;
+    let space_member = SpaceMember::get(db, &session.user_id, &channel.space_id)
+        .await
+        .or_no_permssion()?;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id).await?;
     if channel_member.is_none() && !space_member.is_admin {
         return Err(AppError::NoPermission(format!("user is not channel member")));

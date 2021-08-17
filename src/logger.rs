@@ -1,6 +1,6 @@
+use crate::context::is_systemd;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{Level, LevelFilter};
-use crate::context::is_systemd;
 
 pub fn to_systemd_log_level(level: Level) -> u8 {
     match level {

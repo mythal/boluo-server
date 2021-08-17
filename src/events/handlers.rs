@@ -1,11 +1,15 @@
 use super::events::EventQuery;
 use super::Event;
+use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
+use crate::database;
+use crate::database::Querist;
 use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
 use crate::events::events::{ClientEvent, MailBoxType};
 use crate::interface::{missing, parse_query, Response};
 use crate::spaces::models::update_status;
+use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
 use anyhow::anyhow;
@@ -14,17 +18,12 @@ use futures::{SinkExt, StreamExt, TryStreamExt};
 use hyper::upgrade::Upgraded;
 use hyper::{Body, Request};
 use std::time::Duration;
+use tokio_stream::StreamExt as _;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::WebSocketStream;
 use uuid::Uuid;
-use crate::database;
-use crate::spaces::{Space, SpaceMember};
-use crate::channels::{Channel, ChannelMember};
-use crate::database::Querist;
-use tokio_stream::StreamExt as _;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
-
 
 async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Option<Uuid>) -> Result<(), AppError> {
     if !space.allow_spectator {
@@ -37,11 +36,16 @@ async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Optio
     Ok(())
 }
 
-async fn push_events(mailbox: Uuid, _mailbox_type: MailBoxType, outgoing: &mut Sender, after: i64) -> Result<(), anyhow::Error> {
+async fn push_events(
+    mailbox: Uuid,
+    _mailbox_type: MailBoxType,
+    outgoing: &mut Sender,
+    after: i64,
+) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
     use tokio::sync::broadcast::error::RecvError;
-    use tokio_stream::wrappers::IntervalStream;
     use tokio::time::interval;
+    use tokio_stream::wrappers::IntervalStream;
     use tokio_tungstenite::tungstenite::Error::{AlreadyClosed, ConnectionClosed};
     let (tx, mut rx) = channel::<WsMessage>(32);
     let message_sender = async move {
@@ -133,15 +137,12 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
     let db = &mut *conn;
     match mailbox_type {
         MailBoxType::Space => {
-            let space = Space::get_by_id(db, &mailbox)
-                .await.or_not_found()?;
+            let space = Space::get_by_id(db, &mailbox).await.or_not_found()?;
             check_space_perms(db, &space, user_id).await?;
-        },
+        }
         MailBoxType::Channel => {
-            let channel = Channel::get_by_id(db, &mailbox)
-                .await.or_not_found()?;
-            let space = Space::get_by_id(db, &channel.space_id)
-                .await?.or_not_found()?;
+            let channel = Channel::get_by_id(db, &mailbox).await.or_not_found()?;
+            let space = Space::get_by_id(db, &channel.space_id).await?.or_not_found()?;
             check_space_perms(db, &space, user_id).await?;
             if !channel.is_public {
                 let user_id = user_id.ok_or(AppError::Unauthenticated(format!("user id is empty")))?;
@@ -149,7 +150,7 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
                     .await?
                     .ok_or(AppError::Unauthenticated(format!("the user is not channel member")))?;
             }
-        },
+        }
     }
     establish_web_socket(req, move |ws_stream| async move {
         let (mut outgoing, incoming) = ws_stream.split();

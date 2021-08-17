@@ -1,18 +1,15 @@
 use crate::pool::PoolError;
 use hyper::StatusCode;
 pub use redis::RedisError as CacheError;
+use std::backtrace::Backtrace;
 use std::error::Error;
 use thiserror::Error;
 pub use tokio_postgres::Error as DbError;
-use std::backtrace::Backtrace;
 
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("An unexpected database error occurred: {source}")]
-    Database {
-        source: DbError,
-        backtrace: Backtrace,
-    },
+    Database { source: DbError, backtrace: Backtrace },
     #[error("An unexpected cache database error occurred: {source}")]
     Cache {
         #[from]
@@ -147,7 +144,10 @@ impl From<ModelError> for AppError {
     fn from(e: ModelError) -> Self {
         match e {
             ModelError::Validation(e) => AppError::Validation(e),
-            ModelError::Database(source) => AppError::Database { source, backtrace: Backtrace::capture() },
+            ModelError::Database(source) => AppError::Database {
+                source,
+                backtrace: Backtrace::capture(),
+            },
             ModelError::Conflict(type_) => AppError::Conflict(type_),
         }
     }
@@ -196,13 +196,19 @@ pub trait Find<T: Sized> {
 impl<T> Find<T> for Result<Option<T>, DbError> {
     fn or_no_permssion(self) -> Result<T, AppError> {
         match self {
-            Err(source) => Err(AppError::Database { source, backtrace: Backtrace::capture() }),
+            Err(source) => Err(AppError::Database {
+                source,
+                backtrace: Backtrace::capture(),
+            }),
             Ok(x) => x.or_no_permssion(),
         }
     }
     fn or_not_found(self) -> Result<T, AppError> {
         match self {
-            Err(source) => Err(AppError::Database { source, backtrace: Backtrace::capture() }),
+            Err(source) => Err(AppError::Database {
+                source,
+                backtrace: Backtrace::capture(),
+            }),
             Ok(x) => x.or_not_found(),
         }
     }
@@ -211,7 +217,10 @@ impl<T> Find<T> for Result<Option<T>, DbError> {
 impl<T> Find<T> for Option<T> {
     fn or_no_permssion(self) -> Result<T, AppError> {
         match self {
-            None => Err(AppError::NoPermission(format!("Can't find {}", std::any::type_name::<T>()))),
+            None => Err(AppError::NoPermission(format!(
+                "Can't find {}",
+                std::any::type_name::<T>()
+            ))),
             Some(x) => Ok(x),
         }
     }

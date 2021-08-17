@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::mem::swap;
 use std::time::Duration;
 use tokio::time::interval;
-use uuid::Uuid;
 use tokio_stream::wrappers::IntervalStream;
+use uuid::Uuid;
 
 pub fn start() {
     tokio::spawn(events_clean());

@@ -58,11 +58,9 @@ pub struct SpaceWithRelated {
     pub users_status: std::collections::HashMap<Uuid, UserStatus>,
 }
 
-
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceWithMember {
     pub space: super::Space,
     pub member: super::SpaceMember,
 }
-

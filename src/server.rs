@@ -90,14 +90,17 @@ async fn main() {
     let port: u16 = env::var("PORT").unwrap().parse().unwrap();
     logger::setup_logger(debug()).unwrap();
     if let Ok(dsn) = env::var("SENTRY_DSN") {
-        SENTRY.set(
-            sentry::init((dsn, sentry::ClientOptions {
-                release: sentry::release_name!(),
-                debug: debug(),
-                environment: Some(if debug() { "development" } else { "production" }.into()),
-                ..Default::default()
-            }))
-        ).ok();
+        SENTRY
+            .set(sentry::init((
+                dsn,
+                sentry::ClientOptions {
+                    release: sentry::release_name!(),
+                    debug: debug(),
+                    environment: Some(if debug() { "development" } else { "production" }.into()),
+                    ..Default::default()
+                },
+            )))
+            .ok();
     };
 
     let addr: Ipv4Addr = env::var("HOST").unwrap_or("127.0.0.1".to_string()).parse().unwrap();

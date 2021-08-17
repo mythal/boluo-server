@@ -9,13 +9,12 @@ use serde_repr::*;
 use uuid::Uuid;
 
 use crate::cache::{self, make_key};
-use crate::database::Querist;
-use crate::error::{AppError, DbError, ModelError, CacheError};
-use crate::spaces::api::SpaceWithMember;
-use crate::utils::{inner_map, merge_blank};
-use crate::users::User;
 use crate::channels::ChannelMember;
-
+use crate::database::Querist;
+use crate::error::{AppError, CacheError, DbError, ModelError};
+use crate::spaces::api::SpaceWithMember;
+use crate::users::User;
+use crate::utils::{inner_map, merge_blank};
 
 #[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -31,14 +30,19 @@ pub struct UserStatus {
     pub kind: StatusKind,
 }
 
-pub async fn update_status(space_id: Uuid, user_id: Uuid, kind: StatusKind, timestamp: i64) -> Result<bool, CacheError> {
+pub async fn update_status(
+    space_id: Uuid,
+    user_id: Uuid,
+    kind: StatusKind,
+    timestamp: i64,
+) -> Result<bool, CacheError> {
     let cache = cache::conn().await;
-    let mut redis = cache.inner; 
+    let mut redis = cache.inner;
     let heartbeat = UserStatus { timestamp, kind };
 
     let key = make_key(b"space", &space_id, b"heartbeat");
     let value = serde_json::to_vec(&heartbeat).unwrap();
-    
+
     redis.hset(&*key, user_id.as_bytes(), &*value).await
 }
 
@@ -54,14 +58,16 @@ pub async fn space_users_status(space_id: Uuid) -> Result<HashMap<Uuid, UserStat
             Err(bytes) => {
                 log::error!("failed to convert user id in cache: {:?}", bytes);
                 continue;
-            },
+            }
         };
         match serde_json::from_slice::<UserStatus>(&*data) {
-            Ok(status) => { table.insert(Uuid::from_bytes(user_id_array), status); },
+            Ok(status) => {
+                table.insert(Uuid::from_bytes(user_id_array), status);
+            }
             Err(err) => log::error!("failed to deserialize user status in cache: {}", err),
         }
     }
-    return Ok(table)
+    return Ok(table);
 }
 
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
@@ -145,7 +151,9 @@ impl Space {
     }
 
     pub async fn refresh_token<T: Querist>(db: &mut T, id: &Uuid) -> Result<Uuid, DbError> {
-        let row = db.query_exactly_one(include_str!("sql/refresh_token.sql"), &[id]).await?;
+        let row = db
+            .query_exactly_one(include_str!("sql/refresh_token.sql"), &[id])
+            .await?;
         Ok(row.get(0))
     }
 
@@ -184,7 +192,15 @@ impl Space {
         let result = db
             .query_one(
                 include_str!("sql/edit.sql"),
-                &[&space_id, &name, &description, &default_dice_type, &explorable, &is_public, &allow_spectator],
+                &[
+                    &space_id,
+                    &name,
+                    &description,
+                    &default_dice_type,
+                    &explorable,
+                    &is_public,
+                    &allow_spectator,
+                ],
             )
             .await?;
         Ok(result.map(|row| row.get(0)))
@@ -200,7 +216,8 @@ impl Space {
                 pattern.push_str(s);
                 pattern.push('%');
                 pattern
-            }).collect();
+            })
+            .collect();
         let rows: Vec<Space> = db
             .query(include_str!("sql/search.sql"), &[&patterns])
             .await?
@@ -211,9 +228,7 @@ impl Space {
     }
 
     pub async fn get_by_user<T: Querist>(db: &mut T, user_id: &Uuid) -> Result<Vec<SpaceWithMember>, DbError> {
-        let rows = db
-            .query(include_str!("sql/get_spaces_by_user.sql"), &[user_id])
-            .await?;
+        let rows = db.query(include_str!("sql/get_spaces_by_user.sql"), &[user_id]).await?;
         Ok(rows
             .into_iter()
             .map(|row| SpaceWithMember {
@@ -224,13 +239,8 @@ impl Space {
     }
 
     pub async fn user_owned<T: Querist>(db: &mut T, user_id: &Uuid) -> Result<Vec<Space>, DbError> {
-        let rows = db
-            .query(include_str!("sql/user_owned_spaces.sql"), &[user_id])
-            .await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| row.get(0))
-            .collect())
+        let rows = db.query(include_str!("sql/user_owned_spaces.sql"), &[user_id]).await?;
+        Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 }
 
@@ -304,7 +314,6 @@ impl SpaceMember {
             .await?;
         Ok(rows.into_iter().next().map(|row| row.get(0)))
     }
-
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -320,7 +329,10 @@ impl SpaceMemberWithUser {
             .query(include_str!("sql/get_members_by_spaces.sql"), &[space_id])
             .await?
             .into_iter()
-            .map(|row| SpaceMemberWithUser { space: row.get(0), user: row.get(1) });
+            .map(|row| SpaceMemberWithUser {
+                space: row.get(0),
+                user: row.get(1),
+            });
         Ok(members.collect())
     }
 }
@@ -368,9 +380,18 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     assert_ne!(token, new_token);
     let new_name = "Mythal";
     let description = "some description".to_string();
-    let space_edited = Space::edit(db, space.id, Some(new_name.to_string()), Some(description), None, None, None, None)
-        .await?
-        .unwrap();
+    let space_edited = Space::edit(
+        db,
+        space.id,
+        Some(new_name.to_string()),
+        Some(description),
+        None,
+        None,
+        None,
+        None,
+    )
+    .await?
+    .unwrap();
     assert_eq!(space_edited.name, new_name);
 
     let _space_2 = Space::create(db, "学园都市".to_string(), &user.id, String::new(), None, None).await?;
@@ -399,11 +420,10 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     Ok(())
 }
 
-
 #[tokio::test]
 async fn status_test() -> Result<(), crate::error::AppError> {
     use crate::utils::timestamp;
-    
+
     let space_id = Uuid::new_v4();
     let user_id = Uuid::new_v4();
     let now = timestamp();

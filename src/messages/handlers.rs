@@ -29,7 +29,8 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     let order_date: Option<i64> = match (order_date, message_id) {
         (None, Some(id)) => {
             let mut cache = cache::conn().await;
@@ -81,11 +82,12 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     let mut trans = db.transaction().await?;
     let db = &mut trans;
     let mut message = Message::get(db, &message_id, Some(&session.user_id))
-        .await?.or_not_found()?;
-    let channel = Channel::get_by_id(db, &message.channel_id)
-        .await.or_not_found()?;
+        .await?
+        .or_not_found()?;
+    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
     ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     if !channel.is_document && message.sender_id != session.user_id {
         return Err(AppError::NoPermission(format!("user id dismatch")));
     }
@@ -118,14 +120,12 @@ async fn swap(req: Request<Body>) -> Result<bool, AppError> {
     let mut db = database::get().await?;
     let mut trans = db.transaction().await?;
     let db = &mut trans;
-    let a = Message::get(db, &a, Some(&session.user_id))
-        .await.or_not_found()?;
-    let b = Message::get(db, &b, Some(&session.user_id))
-        .await.or_not_found()?;
-    let channel = Channel::get_by_id(db, &a.channel_id)
-        .await.or_not_found()?;
+    let a = Message::get(db, &a, Some(&session.user_id)).await.or_not_found()?;
+    let b = Message::get(db, &b, Some(&session.user_id)).await.or_not_found()?;
+    let channel = Channel::get_by_id(db, &a.channel_id).await.or_not_found()?;
     let channel_member = ChannelMember::get(db, &session.user_id, &a.channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     if !channel.is_document {
         if !channel_member.is_master && a.sender_id != session.user_id {
             return Err(AppError::NoPermission(format!("user id dismatch")));
@@ -154,11 +154,12 @@ async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
     let mut trans = db.transaction().await?;
     let db = &mut trans;
     let message = Message::get(db, &message_id, Some(&session.user_id))
-        .await.or_not_found()?;
-    let channel = Channel::get_by_id(db, &message.channel_id)
-        .await.or_not_found()?;
+        .await
+        .or_not_found()?;
+    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     if !channel.is_document {
         if !channel_member.is_master && message.sender_id != session.user_id {
             return Err(AppError::NoPermission(format!("user id dismatch")));
@@ -182,8 +183,7 @@ async fn query(req: Request<Body>) -> Result<Message, AppError> {
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
-    Message::get(db, &id, user_id.as_ref())
-        .await.or_not_found()
+    Message::get(db, &id, user_id.as_ref()).await.or_not_found()
 }
 
 async fn delete(req: Request<Body>) -> Result<Message, AppError> {
@@ -191,10 +191,10 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let message = Message::get(db, &id, Some(&session.user_id))
-        .await.or_not_found()?;
+    let message = Message::get(db, &id, Some(&session.user_id)).await.or_not_found()?;
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     if !space_member.is_admin && message.sender_id != session.user_id {
         return Err(AppError::NoPermission(format!("user id dismatch")));
     }
@@ -208,12 +208,11 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let message = Message::get(db, &id, Some(&session.user_id))
-        .await.or_not_found()?;
-    let channel = Channel::get_by_id(db, &message.channel_id)
-        .await.or_not_found()?;
+    let message = Message::get(db, &id, Some(&session.user_id)).await.or_not_found()?;
+    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     if !channel.is_document {
         if message.sender_id != session.user_id && !channel_member.is_master {
             return Err(AppError::NoPermission(format!("user id dismatch")));
@@ -237,12 +236,12 @@ async fn by_channel(req: Request<Body>) -> Result<Vec<Message>, AppError> {
     let mut db = database::get().await?;
     let db = &mut *db;
 
-    let channel = Channel::get_by_id(db, &channel_id)
-        .await.or_not_found()?;
+    let channel = Channel::get_by_id(db, &channel_id).await.or_not_found()?;
     if !channel.is_public {
         let session = authenticate(&req).await?;
         ChannelMember::get(db, &session.user_id, &channel_id)
-            .await.or_no_permssion()?;
+            .await
+            .or_no_permssion()?;
     }
     let limit = limit.unwrap_or(128);
     Message::get_by_channel(db, &channel_id, before, limit)

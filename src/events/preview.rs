@@ -1,10 +1,10 @@
-use crate::{cache, error::Find};
 use crate::cache::make_key;
 use crate::channels::ChannelMember;
 use crate::database;
 use crate::error::AppError;
 use crate::events::events::MailBoxType;
 use crate::events::Event;
+use crate::{cache, error::Find};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -86,9 +86,10 @@ impl PreviewPost {
         let is_master = match mailbox_type {
             MailBoxType::Channel => {
                 ChannelMember::get(db, &user_id, &mailbox)
-                    .await.or_no_permssion()?
+                    .await
+                    .or_no_permssion()?
                     .is_master
-            },
+            }
             _ => false,
         };
         let whisper_to_users = None;

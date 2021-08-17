@@ -1,6 +1,6 @@
-use crate::{context::media_path, database::Querist};
 use crate::error::DbError;
 use crate::utils::inner_map;
+use crate::{context::media_path, database::Querist};
 use chrono::naive::NaiveDateTime;
 use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
@@ -48,8 +48,6 @@ pub struct Media {
     #[serde(with = "crate::date_format")]
     pub created: NaiveDateTime,
 }
-
-
 
 impl Media {
     pub fn path(filename: &str) -> PathBuf {

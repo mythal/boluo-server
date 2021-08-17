@@ -19,11 +19,9 @@ pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppErr
     }
     let connection = headers
         .get(CONNECTION)
-        .and_then(|v| {
-            v.to_str().ok()
-        })
+        .and_then(|v| v.to_str().ok())
         .ok_or_else(|| AppError::BadRequest("Missing the \"Connection\" header".to_string()))?;
-    
+
     if connection.find("Upgrade").is_none() && connection.find("upgrade").is_none() {
         log::error!("Can't find \"upgrade\"");
     }

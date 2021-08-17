@@ -5,15 +5,15 @@ use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::session::{remove_session, revoke_session};
 
 use crate::channels::Channel;
+use crate::context::debug;
 use crate::error::{AppError, Find, ValidationFailed};
+use crate::interface;
 use crate::media::{upload, upload_params};
 use crate::spaces::Space;
 use crate::users::api::{CheckEmailExists, CheckUsernameExists, Edit, GetMe, QueryUser};
 use crate::users::models::UserExt;
-use crate::interface;
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
-use crate::context::debug;
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -78,7 +78,8 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let user = User::login(db, &*form.username, &*form.password)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     let session = session::start(&user.id).await.map_err(error_unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())

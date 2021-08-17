@@ -5,11 +5,11 @@ use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::database;
 use crate::error::{AppError, Find};
-use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
-use crate::spaces::api::{SpaceWithMember, SearchParams, Kick, Join};
-use hyper::{Body, Request};
 use crate::events::Event;
+use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
+use crate::spaces::api::{Join, Kick, SearchParams, SpaceWithMember};
 use crate::spaces::models::SpaceMemberWithUser;
+use hyper::{Body, Request};
 use uuid::Uuid;
 
 async fn list(_req: Request<Body>) -> Result<Vec<Space>, AppError> {
@@ -31,7 +31,12 @@ pub async fn space_related(id: &Uuid) -> Result<SpaceWithRelated, AppError> {
     let members = SpaceMemberWithUser::get_by_space(db, id).await?;
     let channels = Channel::get_by_space(db, id).await?;
     let users_status = space_users_status(space.id).await?;
-    Ok(SpaceWithRelated { space, members, channels, users_status })
+    Ok(SpaceWithRelated {
+        space,
+        members,
+        channels,
+        users_status,
+    })
 }
 
 async fn query_with_related(req: Request<Body>) -> Result<SpaceWithRelated, AppError> {
@@ -64,7 +69,9 @@ async fn refresh_token(req: Request<Body>) -> Result<Uuid, AppError> {
         .map(|space_member| space_member.is_admin)
         .unwrap_or(false);
     if !is_admin {
-        return Err(AppError::NoPermission(format!("A non-admin tries to refresh join token")));
+        return Err(AppError::NoPermission(format!(
+            "A non-admin tries to refresh join token"
+        )));
     }
     Space::refresh_token(db, &id).await.map_err(Into::into)
 }
@@ -125,13 +132,23 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
     let db = &mut trans;
 
     let space_member = SpaceMember::get(db, &session.user_id, &space_id)
-        .await.or_no_permssion()?;
+        .await
+        .or_no_permssion()?;
     if !space_member.is_admin {
         return Err(AppError::NoPermission(format!("A non-admin tries to edit space")));
     }
-    let space = Space::edit(db, space_id, name, description, default_dice_type, explorable, is_public, allow_spectator)
-        .await?
-        .ok_or_else(|| unexpected!("No such space found."))?;
+    let space = Space::edit(
+        db,
+        space_id,
+        name,
+        description,
+        default_dice_type,
+        explorable,
+        is_public,
+        allow_spectator,
+    )
+    .await?
+    .ok_or_else(|| unexpected!("No such space found."))?;
 
     if space.owner_id == session.user_id {
         for user_id in grant_admins.iter() {
@@ -158,7 +175,9 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
 
     let space = Space::get_by_id(db, &space_id).await?.or_not_found()?;
     if !space.is_public && token != Some(space.invite_token) && space.owner_id != session.user_id {
-        return Err(AppError::NoPermission(format!("A user tries to join group without token")));
+        return Err(AppError::NoPermission(format!(
+            "A user tries to join group without token"
+        )));
     }
     let user_id = &session.user_id;
     let member = if &space.owner_id == user_id {
@@ -194,10 +213,8 @@ async fn kick(req: Request<Body>) -> Result<bool, AppError> {
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let my_member = SpaceMember::get(db, &session.user_id, &space_id)
-        .await.or_not_found()?;
-    let kick_member = SpaceMember::get(db, &user_id, &space_id)
-        .await.or_not_found()?;
+    let my_member = SpaceMember::get(db, &session.user_id, &space_id).await.or_not_found()?;
+    let kick_member = SpaceMember::get(db, &user_id, &space_id).await.or_not_found()?;
     if kick_member.is_admin {
         return Err(AppError::BadRequest("Can't kick admin".to_string()));
     }
@@ -218,7 +235,9 @@ async fn members(req: Request<Body>) -> Result<Vec<SpaceMemberWithUser>, AppErro
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let db = &mut *db;
-    SpaceMemberWithUser::get_by_space(&mut *db, &id).await.map_err(Into::into)
+    SpaceMemberWithUser::get_by_space(&mut *db, &id)
+        .await
+        .map_err(Into::into)
 }
 
 async fn delete(req: Request<Body>) -> Result<Space, AppError> {

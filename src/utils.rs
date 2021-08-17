@@ -91,9 +91,7 @@ impl MessageRng {
         for i in seed {
             x = x * 256.0 + i as f64;
         }
-        MessageRng {
-            x,
-        }
+        MessageRng { x }
     }
 
     fn next(&mut self) {
@@ -115,10 +113,9 @@ impl MessageRng {
     }
 }
 
-
 #[test]
 fn rng_test() {
-    let mut rng = MessageRng::new(vec![118,53,43,110]);
+    let mut rng = MessageRng::new(vec![118, 53, 43, 110]);
     let result = rng.next_i32(1, 20);
     assert_eq!(result, 5);
     let result = rng.next_i32(1, 20);

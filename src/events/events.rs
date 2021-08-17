@@ -1,10 +1,12 @@
 use crate::channels::models::Member;
 use crate::channels::Channel;
 
+use crate::error::log_error;
 use crate::events::context;
 use crate::events::context::{get_heartbeat_map, SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
 use crate::messages::{Message, MessageOrder};
+use crate::spaces::api::SpaceWithRelated;
 use crate::spaces::models::StatusKind;
 use crate::utils::timestamp;
 use crate::{cache, database};
@@ -13,8 +15,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::spawn;
 use uuid::Uuid;
-use crate::spaces::api::SpaceWithRelated;
-use crate::error::log_error;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -177,7 +177,7 @@ impl Event {
             map.insert(mailbox, heartbeat_map);
         }
     }
-    
+
     pub fn push_members(channel_id: Uuid) {
         spawn(async move {
             if let Err(e) = Event::fire_members(channel_id).await {
@@ -216,8 +216,14 @@ impl Event {
     pub fn space_updated(space_id: Uuid) {
         tokio::spawn(async move {
             match crate::spaces::handlers::space_related(&space_id).await {
-                Ok(space_with_related) =>
-                    Event::async_fire(EventBody::SpaceUpdated { space_with_related }, space_id, MailBoxType::Space).await,
+                Ok(space_with_related) => {
+                    Event::async_fire(
+                        EventBody::SpaceUpdated { space_with_related },
+                        space_id,
+                        MailBoxType::Space,
+                    )
+                    .await
+                }
                 Err(e) => log_error(&e, "event"),
             }
         });
@@ -256,13 +262,12 @@ impl Event {
     }
 
     async fn async_fire(body: EventBody, mailbox: Uuid, mailbox_type: MailBoxType) {
-
         let cache = super::context::get_cache().mailbox(&mailbox).await;
         let mut cache = cache.lock().await;
 
         if mailbox_type == MailBoxType::Space {
             match body {
-                body @ EventBody::SpaceUpdated { .. }  => {
+                body @ EventBody::SpaceUpdated { .. } => {
                     let event = Event::build(body, mailbox, mailbox_type);
                     cache.events.clear();
                     cache.events.push_front(event.clone());
@@ -270,7 +275,7 @@ impl Event {
                 }
                 _ => {}
             }
-            return
+            return;
         }
         enum Kind {
             Preview(Uuid),
