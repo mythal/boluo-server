@@ -181,6 +181,16 @@ impl ChannelMember {
         Ok(rows.into_iter().map(|row| (row.get(0), row.get(1))).collect())
     }
 
+    pub async fn get_by_space<T: Querist>(
+        db: &mut T,
+        space_id: &Uuid,
+    ) -> Result<Vec<ChannelMember>, DbError> {
+        let rows = db
+            .query(include_str!("sql/get_channel_member_list_by_space.sql"), &[space_id])
+            .await?;
+        Ok(rows.into_iter().map(|row: Row| row.get(0)).collect())
+    }
+
     pub async fn get_by_channel<T: Querist>(
         db: &mut T,
         channel: &Uuid,
@@ -405,6 +415,7 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
 
     let member = Member::get_by_channel(db, channel.id).await?;
     assert_eq!(member.len(), 1);
+    ChannelMember::get_by_space(db, &space.id).await?;
 
     ChannelMember::remove_user(db, &user.id, &channel.id).await?;
     ChannelMember::remove_user(db, &user.id, &channel_2.id).await?;

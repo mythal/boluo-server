@@ -31,11 +31,13 @@ pub async fn space_related(id: &Uuid) -> Result<SpaceWithRelated, AppError> {
     let members = SpaceMemberWithUser::get_by_space(db, id).await?;
     let channels = Channel::get_by_space(db, id).await?;
     let users_status = space_users_status(space.id).await?;
+    let channel_members = ChannelMember::get_by_space(db, &space.id).await?;
     Ok(SpaceWithRelated {
         space,
         members,
         channels,
         users_status,
+        channel_members,
     })
 }
 
