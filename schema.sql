@@ -15,7 +15,7 @@ CREATE TABLE media
     "size"              integer   NOT NULL,
     "description"       text      NOT NULL DEFAULT '',
     "source"            text      NOT NULL DEFAULT '',
-    "created"           timestamp NOT NULL DEFAULT now()
+    "created"           timestamp NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
 CREATE TABLE users
@@ -26,7 +26,7 @@ CREATE TABLE users
     "nickname"    text      NOT NULL,
     "password"    text      NOT NULL,
     "bio"         text      NOT NULL DEFAULT '',
-    "joined"      timestamp NOT NULL DEFAULT now(),
+    "joined"      timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "deactivated" boolean   NOT NULL DEFAULT false,
     "avatar_id"   uuid               DEFAULT NULL
         CONSTRAINT "user_avatar" REFERENCES media (id) ON DELETE SET NULL
@@ -47,8 +47,8 @@ CREATE TABLE spaces
     "id"                uuid      NOT NULL DEFAULT uuid_generate_v1mc() PRIMARY KEY,
     "name"              text      NOT NULL,
     "description"       text      NOT NULL DEFAULT '',
-    "created"           timestamp NOT NULL DEFAULT now(),
-    "modified"          timestamp NOT NULL DEFAULT now(),
+    "created"           timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
+    "modified"          timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "owner_id"          uuid      NOT NULL
         CONSTRAINT "space_owner" REFERENCES users (id) ON DELETE RESTRICT,
     "is_public"         boolean   NOT NULL DEFAULT true,
@@ -68,7 +68,7 @@ CREATE TABLE space_members
     "space_id"  uuid      NOT NULL
         CONSTRAINT "space_member_space" REFERENCES spaces (id) ON DELETE CASCADE,
     "is_admin"  boolean   NOT NULL DEFAULT false,
-    "join_date" timestamp NOT NULL DEFAULT now(),
+    "join_date" timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     CONSTRAINT "user_space_id_pair" PRIMARY KEY ("user_id", "space_id")
 );
 
@@ -79,7 +79,7 @@ CREATE TABLE channels
     "topic"                text      NOT NULL DEFAULT '',
     "space_id"             uuid      NOT NULL
         CONSTRAINT "channel_space" REFERENCES spaces (id) ON DELETE CASCADE,
-    "created"              timestamp NOT NULL DEFAULT now(),
+    "created"              timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "is_public"            boolean   NOT NULL DEFAULT true,
     "deleted"              boolean   NOT NULL DEFAULT false,
     "default_dice_type"    text      NOT NULL DEFAULT 'd20',
@@ -94,7 +94,7 @@ CREATE TABLE channel_members
         CONSTRAINT "channel_member_user" REFERENCES users (id) ON DELETE CASCADE,
     "channel_id"     uuid      NOT NULL
         CONSTRAINT "channel_member_channel" REFERENCES channels (id) ON DELETE CASCADE,
-    "join_date"      timestamp NOT NULL DEFAULT now(),
+    "join_date"      timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "character_name" text      NOT NULL,
     text_color       text               DEFAULT NULL,
     is_joined        boolean   NOT NULL DEFAULT true,
@@ -129,9 +129,9 @@ CREATE TABLE messages
     -- [user1, user2]: both master, user1 and user2 are able to read the message.
     "whisper_to_users"  uuid[]             DEFAULT null,
     "entities"          jsonb     NOT NULL DEFAULT '[]',
-    "created"           timestamp NOT NULL DEFAULT now(),
-    "modified"          timestamp NOT NULL DEFAULT now(),
-    "order_date"        timestamp NOT NULL DEFAULT now(),
+    "created"           timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
+    "modified"          timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
+    "order_date"        timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "order_offset"      integer   NOT NULL DEFAULT 0
 );
 
@@ -149,7 +149,7 @@ CREATE TABLE restrained_members
         CONSTRAINT "restrained_member_space" REFERENCES spaces (id) ON DELETE CASCADE,
     "blocked"         boolean   NOT NULL DEFAULT false,
     "muted"           boolean   NOT NULL DEFAULT false,
-    "restrained_date" timestamp NOT NULL DEFAULT now(),
+    "restrained_date" timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "operator_id"     uuid               DEFAULT null
         CONSTRAINT "restrain_operator" REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT "restrained_space_id_pair" PRIMARY KEY (user_id, space_id)
@@ -173,5 +173,5 @@ CREATE TABLE events
     "receiver_id" uuid
         CONSTRAINT "event_receiver" REFERENCES users (id) ON DELETE CASCADE,
     "payload"     jsonb      NOT NULL DEFAULT '{}',
-    "created"     timestamp  NOT NULL default now()
+    "created"     timestamp  NOT NULL default (now() at time zone 'utc')
 );

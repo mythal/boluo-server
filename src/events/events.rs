@@ -39,6 +39,7 @@ pub enum ClientEvent {
 pub enum EventBody {
     #[serde(rename_all = "camelCase")]
     NewMessage {
+        channel_id: Uuid,
         message: Box<Message>,
     },
     #[serde(rename_all = "camelCase")]
@@ -48,21 +49,25 @@ pub enum EventBody {
     },
     #[serde(rename_all = "camelCase")]
     MessagesMoved {
+        channel_id: Uuid,
         moved_messages: Vec<Message>,
         order_changes: Vec<MessageOrder>,
     },
     #[serde(rename_all = "camelCase")]
     MessageEdited {
+        channel_id: Uuid,
         message: Box<Message>,
     },
     #[serde(rename_all = "camelCase")]
     MessagePreview {
+        channel_id: Uuid,
         preview: Box<Preview>,
     },
     #[serde(rename_all = "camelCase")]
     ChannelDeleted { channel_id: Uuid },
     #[serde(rename_all = "camelCase")]
     ChannelEdited {
+        channel_id: Uuid,
         channel: Channel,
     },
     #[serde(rename_all = "camelCase")]
@@ -98,41 +103,46 @@ impl Event {
         }
     }
 
-    pub fn new_message(space_id: Uuid, message: Message) {
+    pub fn new_message(mailbox: Uuid, message: Message) {
+        let channel_id = message.channel_id;
         let message = Box::new(message);
-        Event::fire(EventBody::NewMessage { message }, space_id)
+        Event::fire(EventBody::NewMessage { message, channel_id }, mailbox)
     }
 
-    pub fn message_deleted(space_id: Uuid, channel_id: Uuid, message_id: Uuid) {
+    pub fn message_deleted(mailbox: Uuid, channel_id: Uuid, message_id: Uuid) {
         Event::fire(
             EventBody::MessageDeleted { message_id, channel_id },
-            space_id,
+            mailbox,
         )
     }
 
-    pub fn message_edited(space_id: Uuid, message: Message) {
+    pub fn message_edited(mailbox: Uuid, message: Message) {
+        let channel_id = message.channel_id;
         let message = Box::new(message);
-        Event::fire(EventBody::MessageEdited { message }, space_id)
+        Event::fire(EventBody::MessageEdited { message, channel_id }, mailbox)
     }
-    pub fn messages_moved(space_id: Uuid, moved_messages: Vec<Message>, order_changes: Vec<MessageOrder>) {
+    pub fn messages_moved(mailbox: Uuid, moved_messages: Vec<Message>, order_changes: Vec<MessageOrder>) {
         if moved_messages.is_empty() && order_changes.is_empty() {
             return;
         }
+        let channel_id = moved_messages[0].channel_id;
         Event::fire(
             EventBody::MessagesMoved {
+                channel_id,
                 moved_messages,
                 order_changes,
             },
-            space_id,
+            mailbox,
         )
     }
 
-    pub fn channel_deleted(space_id: Uuid, channel_id: Uuid) {
-        Event::fire(EventBody::ChannelDeleted { channel_id }, space_id)
+    pub fn channel_deleted(mailbox: Uuid, channel_id: Uuid) {
+        Event::fire(EventBody::ChannelDeleted { channel_id }, mailbox)
     }
 
-    pub fn message_preview(space_id: Uuid, preview: Box<Preview>) {
-        Event::fire(EventBody::MessagePreview { preview }, space_id);
+    pub fn message_preview(mailbox: Uuid, preview: Box<Preview>) {
+        let channel_id = preview.channel_id;
+        Event::fire(EventBody::MessagePreview { preview, channel_id }, mailbox);
     }
 
     pub async fn heartbeat(mailbox: Uuid, user_id: Uuid) {
@@ -173,7 +183,8 @@ impl Event {
 
     pub fn channel_edited(channel: Channel) {
         let space_id = channel.space_id;
-        Event::fire(EventBody::ChannelEdited { channel }, space_id);
+        let channel_id = channel.id;
+        Event::fire(EventBody::ChannelEdited { channel, channel_id }, space_id);
     }
 
     pub fn cache_key(mailbox: &Uuid) -> Vec<u8> {
@@ -252,7 +263,7 @@ impl Event {
         }
 
         let kind = match &body {
-            EventBody::MessagePreview { preview } => {
+            EventBody::MessagePreview { preview, channel_id: _ } => {
                 if preview.edit_for.is_some() {
                     Kind::Edition(preview.id)
                 } else {

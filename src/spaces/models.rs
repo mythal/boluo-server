@@ -323,14 +323,18 @@ pub struct SpaceMemberWithUser {
 }
 
 impl SpaceMemberWithUser {
-    pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<SpaceMemberWithUser>, DbError> {
+    pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<HashMap<Uuid, SpaceMemberWithUser>, DbError> {
         let members = db
             .query(include_str!("sql/get_members_by_spaces.sql"), &[space_id])
             .await?
             .into_iter()
-            .map(|row| SpaceMemberWithUser {
-                space: row.get(0),
-                user: row.get(1),
+            .map(|row| {
+                let value = SpaceMemberWithUser {
+                    space: row.get(0),
+                    user: row.get(1),
+                };
+                let key = value.user.id;
+                (key, value)
             });
         Ok(members.collect())
     }
@@ -402,8 +406,8 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     SpaceMember::add_admin(db, &user.id, &space.id).await?;
     SpaceMember::get(db, &user.id, &space.id).await.unwrap();
     SpaceMember::set_admin(db, &user.id, &space.id, true).await?;
-    let mut members = SpaceMemberWithUser::get_by_space(db, &space.id).await?;
-    let member = members.pop().unwrap().space;
+    let members = SpaceMemberWithUser::get_by_space(db, &space.id).await?;
+    let member = members.into_iter().next().unwrap().1.space;
     assert_eq!(member.user_id, user.id);
     assert_eq!(member.space_id, space.id);
 

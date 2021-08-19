@@ -1,0 +1,12 @@
+ALTER TABLE ONLY media ALTER COLUMN "created" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY users ALTER COLUMN "joined" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY spaces ALTER COLUMN "created" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY spaces ALTER COLUMN "modified" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY space_members ALTER COLUMN "join_date" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY channels ALTER COLUMN "created" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY channel_members ALTER COLUMN "join_date" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY messages ALTER COLUMN "created" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY messages ALTER COLUMN "modified" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY messages ALTER COLUMN "order_date" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY restrained_members ALTER COLUMN "restrained_date" SET DEFAULT (now() at time zone 'utc');
+ALTER TABLE ONLY events ALTER COLUMN "created" SET DEFAULT (now() at time zone 'utc');

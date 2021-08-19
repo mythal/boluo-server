@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::api::{Create, Edit, SpaceWithRelated};
 use super::models::space_users_status;
 use super::{Space, SpaceMember};
@@ -234,7 +236,7 @@ async fn kick(req: Request<Body>) -> Result<bool, AppError> {
     }
 }
 
-async fn members(req: Request<Body>) -> Result<Vec<SpaceMemberWithUser>, AppError> {
+async fn members(req: Request<Body>) -> Result<HashMap<Uuid, SpaceMemberWithUser>, AppError> {
     let IdQuery { id } = parse_query(req.uri())?;
     let mut db = database::get().await?;
     let db = &mut *db;

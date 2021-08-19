@@ -6,6 +6,6 @@ SET name         = COALESCE($2, name),
     is_action    = COALESCE($6, is_action),
     folded       = COALESCE($7, folded),
     media_id     = COALESCE($8, media_id),
-    modified     = now()
+    modified     = (now() at time zone 'utc')
 WHERE id = $1
 RETURNING messages;

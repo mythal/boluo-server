@@ -1,4 +1,4 @@
-use chrono::naive::NaiveDateTime;
+use chrono::prelude::*;
 use postgres_types::FromSql;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -184,11 +184,15 @@ impl ChannelMember {
     pub async fn get_by_space<T: Querist>(
         db: &mut T,
         space_id: &Uuid,
-    ) -> Result<Vec<ChannelMember>, DbError> {
+    ) -> Result<HashMap<Uuid, ChannelMember>, DbError> {
         let rows = db
             .query(include_str!("sql/get_channel_member_list_by_space.sql"), &[space_id])
             .await?;
-        Ok(rows.into_iter().map(|row: Row| row.get(0)).collect())
+        Ok(rows.into_iter().map(|row: Row| {
+            let member = row.get::<_, ChannelMember>(0);
+            let id = member.user_id;
+            (id, member)
+        }).collect())
     }
 
     pub async fn get_by_channel<T: Querist>(

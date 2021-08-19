@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -53,10 +55,10 @@ pub struct Edit {
 #[serde(rename_all = "camelCase")]
 pub struct SpaceWithRelated {
     pub space: super::Space,
-    pub members: Vec<super::models::SpaceMemberWithUser>,
+    pub members: HashMap<Uuid, super::models::SpaceMemberWithUser>,
     pub channels: Vec<crate::channels::Channel>,
-    pub channel_members: Vec<crate::channels::ChannelMember>,
-    pub users_status: std::collections::HashMap<Uuid, UserStatus>,
+    pub channel_members: HashMap<Uuid, crate::channels::ChannelMember>,
+    pub users_status: HashMap<Uuid, UserStatus>,
 }
 
 #[derive(Serialize, Debug)]

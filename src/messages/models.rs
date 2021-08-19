@@ -140,9 +140,11 @@ impl Message {
             return Err(ValidationFailed("Text is empty.").into());
         }
         let entities = JsonValue::Array(entities);
+        let source = include_str!("sql/create.sql");
+        dbg!(source);
         let row = db
             .query_exactly_one_typed(
-                include_str!("sql/create.sql"),
+                source,
                 &[
                     Type::UUID,
                     Type::UUID,
