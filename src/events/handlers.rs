@@ -7,7 +7,7 @@ use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
 use crate::events::events::{ClientEvent};
 use crate::interface::{missing, parse_query, Response};
-use crate::spaces::models::{StatusKind, update_status};
+use crate::spaces::models::{StatusKind};
 use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
@@ -107,14 +107,14 @@ async fn handle_client_event(
         }
         ClientEvent::Status { kind, focus } => {
             if let Some(user_id) = user_id {
-                Event::status(mailbox, user_id, kind, timestamp(), focus).await;
+                Event::status(mailbox, user_id, kind, timestamp(), focus).await?;
             }
         }
     }
     Ok(())
 }
 
-async fn connect(req: Request<Body>) -> Result<Response, AppError> {
+async fn connect(req: Request<Body>) -> Result<Response, anyhow::Error> {
     use futures::future;
     let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
 
@@ -155,8 +155,9 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
         future::select(server_push_events, receive_client_events).await;
         log::debug!("WebSocket connection close");
         if let (Some(user_id), Some(space)) = (user_id, space) {
-            update_status(space.id, user_id, StatusKind::Offline, timestamp(), vec![]).await.ok();
+            Event::status(space.id, user_id, StatusKind::Offline, timestamp(), vec![]).await?;
         }
+        Ok(())
     })
 }
 
@@ -164,7 +165,10 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/connect", Method::GET) => connect(req).await,
+        ("/connect", Method::GET) => connect(req).await.map_err(|e| e.downcast().unwrap_or_else(|e| {
+            log::error!("{}", &e);
+            AppError::Unexpected(e)
+        })),
         _ => missing(),
     }
 }

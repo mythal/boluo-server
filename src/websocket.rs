@@ -35,11 +35,11 @@ pub fn check_websocket_header(headers: &HeaderMap) -> Result<HeaderValue, AppErr
     HeaderValue::from_str(&*accept).map_err(error_unexpected!())
 }
 
-pub fn establish_web_socket<H, F>(req: Request, handler: H) -> Result<Response, AppError>
+pub fn establish_web_socket<H, F>(req: Request, handler: H) -> Result<Response, anyhow::Error>
 where
     H: FnOnce(WebSocketStream<Upgraded>) -> F,
     H: Send + 'static,
-    F: Future<Output = ()> + Send,
+    F: Future<Output = Result<(), anyhow::Error>> + Send,
 {
     use hyper::{header, StatusCode};
     use tokio_tungstenite::tungstenite::protocol::Role;
@@ -49,7 +49,9 @@ where
             Ok(upgraded) => {
                 let ws_stream = tokio_tungstenite::WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await;
                 log::debug!("WebSocket connection established");
-                handler(ws_stream).await;
+                if let Err(err) = handler(ws_stream).await {
+                    log::error!("error in websocket connection: {}", err);
+                }
             }
             Err(e) => {
                 log::error!("Failed to upgrade connection: {}", e);
@@ -63,5 +65,5 @@ where
         .header(header::CONNECTION, "Upgrade")
         .header(header::SEC_WEBSOCKET_ACCEPT, accept)
         .body(Body::empty())
-        .map_err(error_unexpected!())
+        .map_err(Into::into)
 }

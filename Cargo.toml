@@ -3,6 +3,7 @@ name = "boluo_server"
 version = "0.1.0"
 authors = ["Quan Brew <t@ioover.net>"]
 edition = "2018"
+resolver = "2"
 default-run = "server"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -29,7 +30,7 @@ futures = "0.3"
 regex = "1"
 serde_urlencoded = "0.7"
 cookie = "0.15"
-time = { version = "0.2", default-features = false }
+time = { version = "0.2", default-features = false, features = [ "std" ] }
 ring = "0.16"
 base64 = "0.13"
 log = "0.4"

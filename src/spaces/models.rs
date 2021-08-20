@@ -7,10 +7,10 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::cache::{self, make_key};
+use crate::cache::{make_key};
 use crate::channels::ChannelMember;
 use crate::database::Querist;
-use crate::error::{AppError, CacheError, DbError, ModelError};
+use crate::error::{AppError, DbError, ModelError};
 use crate::spaces::api::SpaceWithMember;
 use crate::users::User;
 use crate::utils::{inner_map, merge_blank};
@@ -19,7 +19,7 @@ use crate::utils::{inner_map, merge_blank};
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StatusKind {
     Offline,
-    Leave,
+    Away,
     Online,
 }
 
@@ -28,23 +28,6 @@ pub struct UserStatus {
     pub timestamp: i64,
     pub kind: StatusKind,
     pub focus: Vec<Uuid>,
-}
-
-pub async fn update_status(
-    space_id: Uuid,
-    user_id: Uuid,
-    kind: StatusKind,
-    timestamp: i64,
-    focus: Vec<Uuid>,
-) -> Result<bool, CacheError> {
-    let cache = cache::conn().await;
-    let mut redis = cache.inner;
-    let heartbeat = UserStatus { timestamp, kind, focus };
-
-    let key = make_key(b"space", &space_id, b"heartbeat");
-    let value = serde_json::to_vec(&heartbeat).unwrap();
-
-    redis.hset(&*key, user_id.as_bytes(), &*value).await
 }
 
 pub async fn space_users_status(redis: &mut redis::aio::ConnectionManager, space_id: Uuid) -> Result<HashMap<Uuid, UserStatus>, AppError> {
@@ -424,7 +407,7 @@ async fn space_test() -> Result<(), crate::error::AppError> {
 }
 
 #[tokio::test]
-async fn status_test() -> Result<(), crate::error::AppError> {
+async fn status_test() -> Result<(), anyhow::Error> {
     use crate::utils::timestamp;
 
     let mut cache = crate::cache::conn().await;
@@ -432,7 +415,7 @@ async fn status_test() -> Result<(), crate::error::AppError> {
     let user_id = Uuid::new_v4();
     let now = timestamp();
     let kind = StatusKind::Online;
-    crate::events::Event::status(space_id, user_id, kind, now, vec![]).await;
+    crate::events::Event::status(space_id, user_id, kind, now, vec![]).await?;
     let user_status = space_users_status(&mut cache.inner, space_id).await?;
     let status = user_status.get(&user_id).unwrap();
     assert_eq!(status.kind, StatusKind::Online);

@@ -144,19 +144,33 @@ impl Event {
         let channel_id = preview.channel_id;
         Event::fire(EventBody::MessagePreview { preview, channel_id }, mailbox);
     }
+    pub async fn push_status(redis: &mut redis::aio::ConnectionManager, space_id: Uuid) -> Result<(), anyhow::Error> {
+        let status_map = space_users_status(redis, space_id).await?;
+        Event::transient(space_id, EventBody::StatusMap { status_map });
+        Ok(())
+    }
 
-    pub async fn status(space_id: Uuid, user_id: Uuid, kind: StatusKind, timestamp: i64, focus: Vec<Uuid>) {
+    pub async fn status(space_id: Uuid, user_id: Uuid, kind: StatusKind, timestamp: i64, focus: Vec<Uuid>) -> Result<(), anyhow::Error> {
         let cache = cache::conn().await;
         let mut redis = cache.inner;
         let heartbeat = UserStatus { timestamp, kind, focus };
-    
+        let mut changed = true;
+
         let key = cache::make_key(b"space", &space_id, b"heartbeat");
-        let value = serde_json::to_vec(&heartbeat).unwrap();
-    
-        if let Err(err) = redis.hset::<_, _, _, bool>(&*key, user_id.as_bytes(), &*value).await {
-            log::error!("failed to set user state: {}", err);
+        let old_value: Option<Result<UserStatus, _>> = redis.hget::<_, _, Option<Vec<u8>>>(&*key, user_id.as_bytes())
+            .await?
+            .as_deref()
+            .map(serde_json::from_slice);
+        if let Some(Ok(old_value)) = old_value {
+            changed = old_value.kind != kind;
         }
-        space_users_status(&mut redis, space_id).await.ok();
+        let value = serde_json::to_vec(&heartbeat)?;
+    
+        let created: bool = redis.hset(&*key, user_id.as_bytes(), &*value).await?;
+        if created || changed {
+            Event::push_status(&mut redis, space_id).await?;
+        }
+        Ok(())
     }
 
     pub fn push_members(channel_id: Uuid) {

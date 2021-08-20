@@ -1,4 +1,7 @@
+use crate::events::Event;
+use crate::{cache, database};
 use crate::events::context::{get_broadcast_table, get_heartbeat_map};
+use crate::spaces::Space;
 use crate::utils::timestamp;
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -12,6 +15,26 @@ pub fn start() {
     tokio::spawn(events_clean());
     tokio::spawn(heartbeat_clean());
     tokio::spawn(broadcast_clean());
+    tokio::spawn(push_status());
+}
+
+async fn push_status() {
+    IntervalStream::new(interval(Duration::from_secs(4)))
+        .for_each(|_| async {
+            let spaces = match database::get().await {
+                Ok(mut db) => match Space::all(&mut *db).await {
+                    Ok(all_space) => all_space.into_iter().map(|space| space.id).collect(),
+                    _ => vec![],
+                }
+                _ => vec![],
+            };
+
+            let mut redis = cache::conn().await;
+            for space_id in spaces {
+                Event::push_status(&mut redis.inner, space_id).await.ok();
+            }
+        })
+        .await;
 }
 
 async fn events_clean() {
