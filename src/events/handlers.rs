@@ -7,6 +7,7 @@ use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
 use crate::events::events::{ClientEvent};
 use crate::interface::{missing, parse_query, Response};
+use crate::spaces::models::{StatusKind, update_status};
 use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
@@ -153,6 +154,9 @@ async fn connect(req: Request<Body>) -> Result<Response, AppError> {
         futures::pin_mut!(receive_client_events);
         future::select(server_push_events, receive_client_events).await;
         log::debug!("WebSocket connection close");
+        if let (Some(user_id), Some(space)) = (user_id, space) {
+            update_status(space.id, user_id, StatusKind::Offline, timestamp(), vec![]).await.ok();
+        }
     })
 }
 
