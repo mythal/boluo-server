@@ -136,7 +136,7 @@ async fn swap(req: Request<Body>) -> Result<bool, AppError> {
             "Cannot move message to a different channel".to_string(),
         ));
     }
-    Event::messages_moved(a.channel_id, Message::swap(db, &a, &b).await?, vec![]);
+    Event::messages_moved(channel.space_id, Message::swap(db, &a, &b).await?, vec![]);
     trans.commit().await?;
     Ok(true)
 }
@@ -174,7 +174,7 @@ async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
         }
     };
     trans.commit().await?;
-    Event::messages_moved(message.channel_id, messages, order_changes);
+    Event::messages_moved(channel.space_id, messages, order_changes);
     Ok(true)
 }
 

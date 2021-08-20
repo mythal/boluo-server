@@ -3,7 +3,7 @@ use crate::channels::Channel;
 
 use crate::error::log_error;
 use crate::events::context;
-use crate::events::context::{get_heartbeat_map, SyncEvent};
+use crate::events::context::{SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
 use crate::messages::{Message, MessageOrder};
 use crate::spaces::api::SpaceWithRelated;
@@ -137,26 +137,12 @@ impl Event {
     }
 
     pub fn channel_deleted(mailbox: Uuid, channel_id: Uuid) {
-        Event::fire(EventBody::ChannelDeleted { channel_id }, mailbox)
+        Event::transient(mailbox, EventBody::ChannelDeleted { channel_id })
     }
 
     pub fn message_preview(mailbox: Uuid, preview: Box<Preview>) {
         let channel_id = preview.channel_id;
         Event::fire(EventBody::MessagePreview { preview, channel_id }, mailbox);
-    }
-
-    pub async fn heartbeat(mailbox: Uuid, user_id: Uuid) {
-        let now = timestamp();
-        let map = get_heartbeat_map();
-        let mut map = map.lock().await;
-        if let Some(heartbeat_map) = map.get_mut(&mailbox) {
-            heartbeat_map.insert(user_id, now);
-        } else {
-            let mut heartbeat_map = HashMap::new();
-            heartbeat_map.remove(&user_id);
-            heartbeat_map.insert(user_id, now);
-            map.insert(mailbox, heartbeat_map);
-        }
     }
 
     pub async fn status(space_id: Uuid, user_id: Uuid, kind: StatusKind, timestamp: i64, focus: Vec<Uuid>) {
@@ -184,7 +170,7 @@ impl Event {
     pub fn channel_edited(channel: Channel) {
         let space_id = channel.space_id;
         let channel_id = channel.id;
-        Event::fire(EventBody::ChannelEdited { channel, channel_id }, space_id);
+        Event::transient(space_id, EventBody::ChannelEdited { channel, channel_id })
     }
 
     pub fn cache_key(mailbox: &Uuid) -> Vec<u8> {
@@ -211,11 +197,8 @@ impl Event {
         tokio::spawn(async move {
             match crate::spaces::handlers::space_related(&space_id).await {
                 Ok(space_with_related) => {
-                    Event::async_fire(
-                        EventBody::SpaceUpdated { space_with_related },
-                        space_id,
-                    )
-                    .await
+                    let body = EventBody::SpaceUpdated { space_with_related };
+                    Event::transient(space_id, body);
                 }
                 Err(e) => log_error(&e, "event"),
             }
@@ -232,7 +215,11 @@ impl Event {
 
     async fn fire_members(channel_id: Uuid) -> Result<(), anyhow::Error> {
         let mut db = database::get().await?;
-        let members = Member::get_by_channel(&mut *db, channel_id).await?;
+        let db = &mut *db;
+        let channel = Channel::get_by_id(db, &channel_id)
+            .await?
+            .ok_or(anyhow::anyhow!("channel not found"))?;
+        let members = Member::get_by_channel(db, channel_id).await?;
         drop(db);
         let event = SyncEvent::new(Event {
             mailbox: channel_id,
@@ -240,7 +227,7 @@ impl Event {
             timestamp: timestamp(),
         });
 
-        Event::send(channel_id, Arc::new(event)).await;
+        Event::send(channel.space_id, Arc::new(event)).await;
         Ok(())
     }
 
@@ -287,6 +274,16 @@ impl Event {
         }
 
         Event::send(mailbox, event).await;
+    }
+
+    pub fn transient(mailbox: Uuid, body: EventBody) {
+        spawn(async move {
+            let event = Event::build(
+                body,
+                mailbox,
+            );
+            Event::send(mailbox, event).await;
+        });
     }
 
     pub fn fire(body: EventBody, mailbox: Uuid) {
