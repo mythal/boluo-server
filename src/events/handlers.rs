@@ -1,21 +1,22 @@
 use super::events::EventQuery;
 use super::Event;
+use crate::cache::make_key;
 use crate::csrf::authenticate;
-use crate::database;
+use crate::{cache, database};
 use crate::database::Querist;
 use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
 use crate::events::events::{ClientEvent};
-use crate::interface::{missing, parse_query, Response};
+use crate::interface::{Request, Response, missing, ok_response, parse_query};
 use crate::spaces::models::{StatusKind};
 use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
+use super::api::Token;
 use anyhow::anyhow;
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use hyper::upgrade::Upgraded;
-use hyper::{Body, Request};
 use std::time::Duration;
 use tokio_stream::StreamExt as _;
 use tokio_tungstenite::tungstenite;
@@ -114,13 +115,33 @@ async fn handle_client_event(
     Ok(())
 }
 
-async fn connect(req: Request<Body>) -> Result<Response, anyhow::Error> {
+async fn connect(req: Request) -> Result<Response, anyhow::Error> {
+    use std::convert::TryInto;
     use futures::future;
-    let user_id = authenticate(&req).await.ok().map(|session| session.user_id);
 
     let EventQuery {
         mailbox,
+        token
     } = parse_query(req.uri())?;
+
+
+    let mut user_id = authenticate(&req).await.ok().map(|session| session.user_id);
+    if let (None, Some(token)) = (user_id, token) {
+        let mut redis = cache::conn().await;
+        let key = make_key(b"token", &token, b"user_id");
+        let data = redis.get(&*key).await?;
+        if let Some(bytes) = data {
+            user_id = Some(
+                Uuid::from_bytes(
+                    bytes
+                        .try_into()
+                        .map_err(|_| anyhow!("can't convert user id in cache to UUID type"))?
+                )
+            )
+        }
+    }
+
+
 
     let mut conn = database::get().await?;
     let db = &mut *conn;
@@ -161,7 +182,20 @@ async fn connect(req: Request<Body>) -> Result<Response, anyhow::Error> {
     })
 }
 
-pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
+
+pub async fn token(req: Request) -> Result<Token, AppError> {
+    if let Ok(session) = authenticate(&req).await {
+        let mut redis = cache::conn().await;
+        let token = Uuid::new_v4();
+        let key = make_key(b"token", &token, b"user_id");
+        redis.set_with_expiration(&*key, session.user_id.as_bytes(), 10).await?;
+        Ok(Token { token: Some(token.to_string()) })
+    } else {
+        Ok(Token { token: None })
+    }
+}
+
+pub async fn router(req: Request, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
     match (path, req.method().clone()) {
@@ -169,6 +203,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
             log::error!("{}", &e);
             AppError::Unexpected(e)
         })),
+        ("/token", Method::GET) => token(req).await.map(ok_response),
         _ => missing(),
     }
 }

@@ -21,6 +21,8 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct EventQuery {
     pub mailbox: Uuid,
+    #[serde(default)]
+    pub token: Option<Uuid>,
 }
 
 
@@ -79,6 +81,7 @@ pub enum EventBody {
     #[serde(rename_all = "camelCase")]
     StatusMap {
         status_map: HashMap<Uuid, UserStatus>,
+        space_id: Uuid,
     },
     #[serde(rename_all = "camelCase")]
     SpaceUpdated {
@@ -146,7 +149,7 @@ impl Event {
     }
     pub async fn push_status(redis: &mut redis::aio::ConnectionManager, space_id: Uuid) -> Result<(), anyhow::Error> {
         let status_map = space_users_status(redis, space_id).await?;
-        Event::transient(space_id, EventBody::StatusMap { status_map });
+        Event::transient(space_id, EventBody::StatusMap { status_map, space_id });
         Ok(())
     }
 
