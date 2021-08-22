@@ -100,7 +100,12 @@ async fn handle_client_event(
     user_id: Option<Uuid>,
     message: String,
 ) -> Result<(), anyhow::Error> {
-    let event: ClientEvent = serde_json::from_str(&*message)?;
+    let event: Result<ClientEvent, _> = serde_json::from_str(&*message);
+    if let Err(event) = event {
+        log::debug!("failed to parse event from client: {}", event);
+        return Ok(());
+    }
+    let event = event.unwrap();
     match event {
         ClientEvent::Preview { preview } => {
             let user_id = user_id.ok_or(AppError::Unauthenticated(format!("user id is empty")))?;
@@ -166,7 +171,7 @@ async fn connect(req: Request) -> Result<Response, anyhow::Error> {
             .try_for_each(|message: WsMessage| async move {
                 if let WsMessage::Text(message) = message {
                     if let Err(e) = handle_client_event(mailbox, user_id, message).await {
-                        log::warn!("Failed to send event: {}", e);
+                        log::warn!("Failed to handle the event from client: {}", e);
                     }
                 }
                 Ok(())
