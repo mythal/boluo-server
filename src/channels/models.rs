@@ -28,6 +28,7 @@ pub struct Channel {
     pub deleted: bool,
     pub default_dice_type: String,
     pub default_roll_command: String,
+    pub serial: i32,
 }
 
 impl Channel {

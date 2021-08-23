@@ -1,3 +1,12 @@
+WITH last AS (
+    (
+        SELECT floor(m.pos + 1.0) AS pos
+        FROM messages m
+        WHERE m.channel_id = $3
+        ORDER BY m.pos DESC
+        LIMIT 1
+    ) UNION ALL (SELECT 0.0 AS pos)
+)
 INSERT INTO messages (
     id,
     sender_id,
@@ -12,22 +21,25 @@ INSERT INTO messages (
     media_id,
     order_date,
     created,
-    modified
+    modified,
+    pos
 )
-VALUES (
-    COALESCE($1, uuid_generate_v1mc()),
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    $7,
-    $8,
-    $9,
-    $10,
-    $11,
-    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc'),
-    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc'),
-    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')
-)
+SELECT 
+    COALESCE($1, uuid_generate_v1mc()) AS id,
+    $2 AS sender_id,
+    $3 AS channel_id,
+    $4 AS name,
+    $5 AS text,
+    $6 AS entities,
+    $7 AS in_game,
+    $8 AS is_action,
+    $9 AS is_master,
+    $10 AS whisper_to_users,
+    $11 AS media_id,
+    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS order_date,
+    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS created,
+    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS modified,
+    pos
+FROM last
+LIMIT 1
 RETURNING messages;

@@ -5,7 +5,7 @@ use crate::error::log_error;
 use crate::events::context;
 use crate::events::context::{SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
-use crate::messages::{Message, MessageOrder};
+use crate::messages::{Message};
 use crate::spaces::api::SpaceWithRelated;
 use crate::spaces::models::{StatusKind, UserStatus, space_users_status};
 use crate::utils::timestamp;
@@ -48,12 +48,6 @@ pub enum EventBody {
     MessageDeleted {
         message_id: Uuid,
         channel_id: Uuid,
-    },
-    #[serde(rename_all = "camelCase")]
-    MessagesMoved {
-        channel_id: Uuid,
-        moved_messages: Vec<Message>,
-        order_changes: Vec<MessageOrder>,
     },
     #[serde(rename_all = "camelCase")]
     MessageEdited {
@@ -123,20 +117,6 @@ impl Event {
         let channel_id = message.channel_id;
         let message = Box::new(message);
         Event::fire(EventBody::MessageEdited { message, channel_id }, mailbox)
-    }
-    pub fn messages_moved(mailbox: Uuid, moved_messages: Vec<Message>, order_changes: Vec<MessageOrder>) {
-        if moved_messages.is_empty() && order_changes.is_empty() {
-            return;
-        }
-        let channel_id = moved_messages[0].channel_id;
-        Event::fire(
-            EventBody::MessagesMoved {
-                channel_id,
-                moved_messages,
-                order_changes,
-            },
-            mailbox,
-        )
     }
 
     pub fn channel_deleted(mailbox: Uuid, channel_id: Uuid) {

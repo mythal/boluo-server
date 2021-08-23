@@ -6,7 +6,7 @@ use crate::error::{AppError, Find};
 use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
-use crate::messages::api::{ByChannel, MoveTo, MoveToMode, Swap};
+use crate::messages::api::{ByChannel, MoveTo, MoveToMode, MoveBetween};
 use crate::spaces::SpaceMember;
 use crate::{cache, database, interface};
 use chrono::NaiveDateTime;
@@ -113,40 +113,12 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     Ok(message)
 }
 
-async fn swap(req: Request<Body>) -> Result<bool, AppError> {
-    let session = authenticate(&req).await?;
-    let Swap { a, b } = interface::parse_query(req.uri())?;
-
-    let mut db = database::get().await?;
-    let mut trans = db.transaction().await?;
-    let db = &mut trans;
-    let a = Message::get(db, &a, Some(&session.user_id)).await.or_not_found()?;
-    let b = Message::get(db, &b, Some(&session.user_id)).await.or_not_found()?;
-    let channel = Channel::get_by_id(db, &a.channel_id).await.or_not_found()?;
-    let channel_member = ChannelMember::get(db, &session.user_id, &a.channel_id)
-        .await
-        .or_no_permssion()?;
-    if !channel.is_document {
-        if !channel_member.is_master && a.sender_id != session.user_id {
-            return Err(AppError::NoPermission(format!("user id dismatch")));
-        }
-    }
-    if a.channel_id != b.channel_id {
-        return Err(AppError::BadRequest(
-            "Cannot move message to a different channel".to_string(),
-        ));
-    }
-    Event::messages_moved(channel.space_id, Message::swap(db, &a, &b).await?, vec![]);
-    trans.commit().await?;
-    Ok(true)
-}
-
 async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let MoveTo {
+        channel_id: _,
         message_id,
-        order_date,
-        order_offset,
+        target_id,
         mode,
     } = interface::parse_body(req).await?;
 
@@ -162,19 +134,54 @@ async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
         .or_no_permssion()?;
     if !channel.is_document {
         if !channel_member.is_master && message.sender_id != session.user_id {
-            return Err(AppError::NoPermission(format!("user id dismatch")));
+            return Err(AppError::NoPermission(format!("Only the master can move other's messages.")));
         }
     }
-    let (messages, order_changes) = match mode {
+    let message = match mode {
         MoveToMode::Top => {
-            Message::move_to_top(db, &message_id, &message.channel_id, &order_date, order_offset).await?
+            Message::move_to_top(db, &message_id, &target_id).await?
         }
         MoveToMode::Bottom => {
-            Message::move_to_bottom(db, &message_id, &message.channel_id, &order_date, order_offset).await?
+            Message::move_to_bottom(db, &message_id, &target_id).await?
         }
-    };
+    }.or_not_found()?;
     trans.commit().await?;
-    Event::messages_moved(channel.space_id, messages, order_changes);
+    Event::message_edited(channel.space_id, message);
+    Ok(true)
+}
+
+async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
+    let session = authenticate(&req).await?;
+    let MoveBetween {
+        message_id,
+        channel_id,
+        a,
+        b,
+    } = interface::parse_body(req).await?;
+
+    let (a, b) = match (a, b) {
+        (None, None) => return Err(AppError::BadRequest("a and b cannot both be null".to_string())),
+        (Some(a), Some(b)) => if a < b { (Some(a), Some(b)) } else { (Some(b), Some(a)) },
+        otherwise => otherwise,
+    };
+
+    let mut db = database::get().await?;
+    let mut trans = db.transaction().await?;
+    let db = &mut trans;
+    let message = Message::get(db, &message_id, Some(&session.user_id))
+        .await
+        .or_not_found()?;
+    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
+    let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
+        .await
+        .or_no_permssion()?;
+    if !channel.is_document {
+        if !channel_member.is_master && message.sender_id != session.user_id {
+            return Err(AppError::NoPermission(format!("Only the master can move other's messages.")));
+        }
+    }
+    trans.commit().await?;
+    Event::message_edited(channel.space_id, message);
     Ok(true)
 }
 
@@ -257,7 +264,6 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/by_channel", Method::GET) => by_channel(req).await.map(ok_response),
         ("/send", Method::POST) => send(req).await.map(ok_response),
         ("/edit", Method::PATCH) => edit(req).await.map(ok_response),
-        ("/swap", Method::POST) => swap(req).await.map(ok_response),
         ("/move_to", Method::POST) => move_to(req).await.map(ok_response),
         ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
