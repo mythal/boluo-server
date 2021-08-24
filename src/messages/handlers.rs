@@ -154,15 +154,16 @@ async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
     let MoveBetween {
         message_id,
-        channel_id,
+        channel_id: _,
         a,
         b,
     } = interface::parse_body(req).await?;
 
     let (a, b) = match (a, b) {
         (None, None) => return Err(AppError::BadRequest("a and b cannot both be null".to_string())),
-        (Some(a), Some(b)) => if a < b { (Some(a), Some(b)) } else { (Some(b), Some(a)) },
-        otherwise => otherwise,
+        (Some(a), Some(b)) => if a < b { (a, b) } else { (b, a) },
+        (None, Some(b)) => ((b - 2.0).floor(), b),
+        (Some(a), None) => (a, (a + 2.0).ceil()),
     };
 
     let mut db = database::get().await?;
@@ -180,6 +181,7 @@ async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
             return Err(AppError::NoPermission(format!("Only the master can move other's messages.")));
         }
     }
+    let message = Message::move_between(db, &message_id, &a, &b).await?.or_not_found()?;
     trans.commit().await?;
     Event::message_edited(channel.space_id, message);
     Ok(true)

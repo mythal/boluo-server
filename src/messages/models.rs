@@ -188,12 +188,26 @@ impl Message {
         target_id: &Uuid,
     ) -> Result<Option<Message>, ModelError> {
         db
-            .query_exactly_one(include_str!("sql/move_to_bottom.sql"), &[
+            .query_one(include_str!("sql/move_to_bottom.sql"), &[
                 id,
                 target_id,
             ])
             .await
-            .map(|row| row.get(0))
+            .map(|row| row.map(|row| row.get(0)))
+            .map_err(Into::into)
+    }
+    pub async fn move_between<T: Querist>(
+        db: &mut T,
+        id: &Uuid,
+        a: &f64,
+        b: &f64,
+    ) -> Result<Option<Message>, ModelError> {
+        use postgres_types::Type;
+
+        db
+            .query_one_typed(include_str!("sql/move_between.sql"), &[Type::UUID, Type::FLOAT8, Type::FLOAT8], &[id, a, b])
+            .await
+            .map(|row| row.map(|row| row.get(0)))
             .map_err(Into::into)
     }
     pub async fn edit<T: Querist>(
@@ -334,5 +348,29 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].text, b.text);
+
+    let c = Message::create(
+        db,
+        None,
+        &channel.id,
+        &user.id,
+        "orange",
+        &*user.nickname,
+        "昨天我打了疫苗，已经是变种人了！",
+        vec![],
+        true,
+        false,
+        true,
+        None,
+        Some(Uuid::nil()),
+        Some(timestamp()),
+    )
+        .await.unwrap();
+    let a = messages[1].pos;
+    let b = messages[0].pos;
+    Message::move_between(db, &c.id, &a, &b).await.unwrap().unwrap();
+    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[1].text, c.text);
     Ok(())
 }
