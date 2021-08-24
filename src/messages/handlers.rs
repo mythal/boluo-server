@@ -6,7 +6,7 @@ use crate::error::{AppError, Find};
 use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
-use crate::messages::api::{ByChannel, MoveTo, MoveToMode, MoveBetween};
+use crate::messages::api::{ByChannel, MoveTo, MoveToMode, MovePosBetween};
 use crate::spaces::SpaceMember;
 use crate::{cache, database, interface};
 use chrono::NaiveDateTime;
@@ -152,7 +152,7 @@ async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
 
 async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
-    let MoveBetween {
+    let MovePosBetween {
         message_id,
         channel_id: _,
         a,
@@ -267,6 +267,7 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/send", Method::POST) => send(req).await.map(ok_response),
         ("/edit", Method::PATCH) => edit(req).await.map(ok_response),
         ("/move_to", Method::POST) => move_to(req).await.map(ok_response),
+        ("/move_between", Method::POST) => move_between(req).await.map(ok_response),
         ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),
         _ => missing(),

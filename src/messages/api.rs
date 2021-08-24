@@ -47,7 +47,7 @@ pub struct MoveTo {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct MoveBetween {
+pub struct MovePosBetween {
     pub message_id: Uuid,
     pub a: Option<f64>,
     pub b: Option<f64>,
