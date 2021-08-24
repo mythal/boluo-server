@@ -85,7 +85,6 @@ CREATE TABLE channels
     "default_dice_type"    text      NOT NULL DEFAULT 'd20',
     "default_roll_command" text      NOT NULL DEFAULT 'd',
     "is_document"          bool      NOT NULL DEFAULT false,
-    "serial"               integer   NOT NULL DEFAULT 0,
     CONSTRAINT "unique_channel_name_in_space" UNIQUE (space_id, name)
 );
 
@@ -134,7 +133,7 @@ CREATE TABLE messages
     "modified"          timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "order_date"        timestamp NOT NULL DEFAULT (now() at time zone 'utc'),
     "order_offset"      integer   NOT NULL DEFAULT 0,
-    "pos"               float     NOT NULL DEFAULT 0.0,
+    "pos"               float     NOT NULL DEFAULT 0.0
 );
 
 ALTER TABLE messages
