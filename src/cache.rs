@@ -52,7 +52,10 @@ pub async fn conn() -> Connection {
         connection.clone()
     } else {
         use std::env::var;
-        let url = var("REDIS_URL").expect("Failed to load Redis URL");
+        let url = if let Ok(url) = var("REDIS_URL") { url } else {
+            log::warn!("Failed to load Redis URL, use default");
+            "redis://127.0.0.1/".to_string()
+        };
         let connection_manager = redis::Client::open(&*url)
             .expect("Unable to open redis")
             .get_tokio_connection_manager()
