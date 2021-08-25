@@ -5,7 +5,7 @@ WITH last AS (
         WHERE m.channel_id = $3
         ORDER BY m.pos DESC
         LIMIT 1
-    ) UNION ALL (SELECT 0.0 AS pos)
+    ) UNION ALL (SELECT 42.0 AS pos)
 )
 INSERT INTO messages (
     id,
@@ -39,7 +39,7 @@ SELECT
     COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS order_date,
     COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS created,
     COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS modified,
-    pos
+    COALESCE($13, pos)
 FROM last
 LIMIT 1
 RETURNING messages;

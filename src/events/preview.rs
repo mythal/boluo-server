@@ -27,6 +27,7 @@ pub struct Preview {
     pub entities: Vec<JsonValue>,
     #[serde(with = "crate::date_format")]
     pub start: NaiveDateTime,
+    pub pos: f64,
     #[serde(with = "crate::date_format::option")]
     pub edit_for: Option<NaiveDateTime>,
 }
@@ -47,6 +48,7 @@ pub struct PreviewPost {
     #[serde(default)]
     #[serde(with = "crate::date_format::option")]
     pub edit_for: Option<NaiveDateTime>,
+    pub pos: f64,
 }
 
 impl PreviewPost {
@@ -66,6 +68,7 @@ impl PreviewPost {
             entities,
             edit_for,
             clear,
+            pos,
         } = self;
         let start = if text.is_none() {
             chrono::Local::now().naive_utc()
@@ -104,6 +107,7 @@ impl PreviewPost {
             is_master,
             edit_for,
             clear,
+            pos,
         });
         Event::message_preview(space_id, preview);
         Ok(())

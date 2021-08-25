@@ -211,13 +211,13 @@ impl Event {
     }
 
     async fn fire_members(channel_id: Uuid) -> Result<(), anyhow::Error> {
-        let mut db = database::get().await?;
-        let db = &mut *db;
+        let mut conn = database::get().await?;
+        let db = &mut *conn;
         let channel = Channel::get_by_id(db, &channel_id)
             .await?
             .ok_or(anyhow::anyhow!("channel not found"))?;
         let members = Member::get_by_channel(db, channel_id).await?;
-        drop(db);
+        drop(conn);
         let event = SyncEvent::new(Event {
             mailbox: channel_id,
             body: EventBody::Members { members, channel_id },

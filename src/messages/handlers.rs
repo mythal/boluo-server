@@ -6,7 +6,7 @@ use crate::error::{AppError, Find};
 use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
-use crate::messages::api::{ByChannel, MoveTo, MoveToMode, MovePosBetween};
+use crate::messages::api::{ByChannel, MoveBetween};
 use crate::spaces::SpaceMember;
 use crate::{cache, database, interface};
 use chrono::NaiveDateTime;
@@ -61,6 +61,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         whisper_to_users,
         media_id,
         order_date,
+        None,
     )
     .await?;
     Event::new_message(space_member.space_id, message.clone());
@@ -113,58 +114,13 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     Ok(message)
 }
 
-async fn move_to(req: Request<Body>) -> Result<bool, AppError> {
-    let session = authenticate(&req).await?;
-    let MoveTo {
-        channel_id: _,
-        message_id,
-        target_id,
-        mode,
-    } = interface::parse_body(req).await?;
-
-    let mut db = database::get().await?;
-    let mut trans = db.transaction().await?;
-    let db = &mut trans;
-    let message = Message::get(db, &message_id, Some(&session.user_id))
-        .await
-        .or_not_found()?;
-    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
-    let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
-        .await
-        .or_no_permssion()?;
-    if !channel.is_document {
-        if !channel_member.is_master && message.sender_id != session.user_id {
-            return Err(AppError::NoPermission(format!("Only the master can move other's messages.")));
-        }
-    }
-    let message = match mode {
-        MoveToMode::Top => {
-            Message::move_to_top(db, &message_id, &target_id).await?
-        }
-        MoveToMode::Bottom => {
-            Message::move_to_bottom(db, &message_id, &target_id).await?
-        }
-    }.or_not_found()?;
-    trans.commit().await?;
-    Event::message_edited(channel.space_id, message);
-    Ok(true)
-}
-
 async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
     let session = authenticate(&req).await?;
-    let MovePosBetween {
+    let MoveBetween {
         message_id,
-        channel_id: _,
-        a,
-        b,
+        channel_id,
+        range,
     } = interface::parse_body(req).await?;
-
-    let (a, b) = match (a, b) {
-        (None, None) => return Err(AppError::BadRequest("a and b cannot both be null".to_string())),
-        (Some(a), Some(b)) => if a < b { (a, b) } else { (b, a) },
-        (None, Some(b)) => ((b - 2.0).floor(), b),
-        (Some(a), None) => (a, (a + 2.0).ceil()),
-    };
 
     let mut db = database::get().await?;
     let mut trans = db.transaction().await?;
@@ -181,7 +137,18 @@ async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
             return Err(AppError::NoPermission(format!("Only the master can move other's messages.")));
         }
     }
-    let message = Message::move_between(db, &message_id, &a, &b).await?.or_not_found()?;
+
+    let message = match range {
+        (None, None) => return Err(AppError::BadRequest("a and b cannot both be null".to_string())),
+        (Some(a), Some(b)) => if a < b {
+            Message::move_between(db, &message_id, &a, &b).await?.or_not_found()?
+        } else {
+            Message::move_between(db, &message_id, &b, &a).await?.or_not_found()?
+        },
+        (None, Some(b)) => Message::move_above(db, &channel_id, &message_id, &b).await?.or_not_found()?,
+        (Some(a), None) => Message::move_bottom(db, &channel_id, &message_id, &a).await?.or_not_found()?,
+    };
+
     trans.commit().await?;
     Event::message_edited(channel.space_id, message);
     Ok(true)
@@ -266,7 +233,6 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/by_channel", Method::GET) => by_channel(req).await.map(ok_response),
         ("/send", Method::POST) => send(req).await.map(ok_response),
         ("/edit", Method::PATCH) => edit(req).await.map(ok_response),
-        ("/move_to", Method::POST) => move_to(req).await.map(ok_response),
         ("/move_between", Method::POST) => move_between(req).await.map(ok_response),
         ("/toggle_fold", Method::POST) => toggle_fold(req).await.map(ok_response),
         ("/delete", Method::POST) => delete(req).await.map(ok_response),

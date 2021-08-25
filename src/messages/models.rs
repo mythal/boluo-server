@@ -9,6 +9,15 @@ use crate::error::{DbError, ModelError, ValidationFailed};
 use crate::utils::merge_blank;
 use crate::validators::CHARACTER_NAME;
 
+pub fn check_pos(pos: f64) -> Result<(), ValidationFailed> {
+    if pos.is_nan() || pos.is_infinite() {
+        return Err(ValidationFailed("The wrong floating point value was used for the position value"))
+    } else if pos < 0.0 {
+        return Err(ValidationFailed("The position value cannot be less than zero"))
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
 #[postgres(name = "messages")]
@@ -110,8 +119,12 @@ impl Message {
         whisper_to: Option<Vec<Uuid>>,
         media_id: Option<Uuid>,
         created: Option<i64>,
+        pos: Option<f64>,
     ) -> Result<Message, ModelError> {
         use postgres_types::Type;
+        if let Some(pos) = pos {
+            check_pos(pos)?;
+        }
         let mut name = merge_blank(&*name);
         if name.is_empty() {
             name = default_name.trim().to_string();
@@ -138,6 +151,7 @@ impl Message {
                     Type::UUID_ARRAY,
                     Type::UUID,
                     Type::INT8,
+                    Type::FLOAT8,
                 ],
                 &[
                     &message_id,
@@ -152,6 +166,7 @@ impl Message {
                     &whisper_to,
                     &media_id,
                     &created,
+                    &pos,
                 ],
             )
             .await?;
@@ -168,34 +183,39 @@ impl Message {
         self.text = String::new();
         self.entities = JsonValue::Array(Vec::new());
     }
-    pub async fn move_to_top<T: Querist>(
+
+    pub async fn move_above<T: Querist>(
         db: &mut T,
-        id: &Uuid,
-        target_id: &Uuid,
+        channel_id: &Uuid,
+        message_id: &Uuid,
+        pos: &f64,
     ) -> Result<Option<Message>, ModelError> {
+        use postgres_types::Type;
+        check_pos(*pos)?;
+
         db
-            .query_one(include_str!("sql/move_to_top.sql"), &[
-                id,
-                target_id,
-            ])
+            .query_one_typed(include_str!("sql/move_above.sql"), &[Type::UUID, Type::UUID, Type::FLOAT8], &[channel_id, message_id, pos])
             .await
             .map(|row| row.map(|row| row.get(0)))
             .map_err(Into::into)
     }
-    pub async fn move_to_bottom<T: Querist>(
+
+    pub async fn move_bottom<T: Querist>(
         db: &mut T,
-        id: &Uuid,
-        target_id: &Uuid,
+        channel_id: &Uuid,
+        message_id: &Uuid,
+        pos: &f64,
     ) -> Result<Option<Message>, ModelError> {
+        use postgres_types::Type;
+        check_pos(*pos)?;
+
         db
-            .query_one(include_str!("sql/move_to_bottom.sql"), &[
-                id,
-                target_id,
-            ])
+            .query_one_typed(include_str!("sql/move_bottom.sql"), &[Type::UUID, Type::UUID, Type::FLOAT8], &[channel_id, message_id, pos])
             .await
             .map(|row| row.map(|row| row.get(0)))
             .map_err(Into::into)
     }
+
     pub async fn move_between<T: Querist>(
         db: &mut T,
         id: &Uuid,
@@ -203,6 +223,15 @@ impl Message {
         b: &f64,
     ) -> Result<Option<Message>, ModelError> {
         use postgres_types::Type;
+        check_pos(*a)?;
+        check_pos(*b)?;
+        if *a == *b {
+            return db
+                .query_one_typed(include_str!("sql/set_position.sql"), &[Type::UUID, Type::FLOAT8], &[id, a])
+                .await
+                .map(|row| row.map(|row| row.get(0)))
+                .map_err(Into::into);
+        }
 
         db
             .query_one_typed(include_str!("sql/move_between.sql"), &[Type::UUID, Type::FLOAT8, Type::FLOAT8], &[id, a, b])
@@ -287,6 +316,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         Some(vec![]),
         Some(Uuid::nil()),
         Some(timestamp()),
+        None,
     )
     .await?;
     assert_eq!(message.text, "");
@@ -334,17 +364,9 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         None,
         Some(Uuid::nil()),
         Some(timestamp()),
+        None,
     )
     .await.unwrap();
-    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
-    assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].text, b.text);
-    Message::move_to_bottom(db, &a.id, &b.id).await.unwrap();
-    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
-    assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].text, a.text);
-
-    Message::move_to_top(db, &a.id, &b.id).await.unwrap();
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].text, b.text);
@@ -364,6 +386,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         None,
         Some(Uuid::nil()),
         Some(timestamp()),
+        None,
     )
         .await.unwrap();
     let a = messages[1].pos;
@@ -371,6 +394,12 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     Message::move_between(db, &c.id, &a, &b).await.unwrap().unwrap();
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 3);
-    assert_eq!(messages[1].text, c.text);
+    assert_eq!(messages[1].id, c.id);
+    Message::move_above(db, &c.channel_id, &c.id, &messages[2].pos).await?;
+    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
+    assert_eq!(messages[2].id, c.id);
+    Message::move_bottom(db, &c.channel_id, &c.id, &messages[0].pos).await?;
+    let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
+    assert_eq!(messages[0].id, c.id);
     Ok(())
 }

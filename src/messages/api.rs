@@ -36,21 +36,12 @@ pub enum MoveToMode {
     Bottom,
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct MoveTo {
-    pub channel_id: Uuid,
-    pub message_id: Uuid,
-    pub target_id: Uuid,
-    pub mode: MoveToMode,
-}
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct MovePosBetween {
+pub struct MoveBetween {
     pub message_id: Uuid,
-    pub a: Option<f64>,
-    pub b: Option<f64>,
+    pub range: (Option<f64>, Option<f64>),
     pub channel_id: Uuid,
 }
 
