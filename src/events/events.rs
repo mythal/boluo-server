@@ -181,8 +181,8 @@ impl Event {
             cache
                 .edition_map
                 .values()
-                .chain(cache.preview_map.values())
                 .chain(cache.events.iter())
+                .chain(cache.preview_map.values())
                 .map(|event| event.encoded.clone())
                 .collect()
         } else {

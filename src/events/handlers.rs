@@ -65,6 +65,7 @@ async fn push_events(
         for e in cached_events.into_iter() {
             tx.send(WsMessage::Text(e)).await.ok();
         }
+        tx.send(WsMessage::Text(serde_json::to_string(&Event::initialized(mailbox)).unwrap())).await.ok();
 
         loop {
             let message = match mailbox_rx.recv().await {
