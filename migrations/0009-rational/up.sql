@@ -3,12 +3,9 @@ CREATE EXTENSION IF NOT EXISTS "pg_rational";
 ALTER TABLE messages ADD COLUMN "pos" float NOT NULL DEFAULT 42.0;
 
 WITH messages_order_table AS (
-    SELECT a.id AS id, (count(b.id) + 1)::float AS pos
-    FROM messages a
-        LEFT JOIN messages b
-            ON a.channel_id = b.channel_id AND (a.order_date > b.order_date OR (a.order_date = b.order_date AND a.order_offset > b.order_offset))
-         GROUP BY a.id
-         ORDER BY pos
+    SELECT msg.id AS id, row_number() over(partition by msg.channel_id order by order_date, order_offset) AS pos
+    FROM messages msg
+    ORDER BY pos
 )
 UPDATE messages
 SET pos = messages_order_table.pos
