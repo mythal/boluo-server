@@ -33,7 +33,8 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         .or_no_permssion()?;
     let pos: Option<f64> = match (pos, message_id) {
         (None, Some(id)) => {
-            PreviewPost::get_start(&id).await?.map(|x| x as f64)
+            let mut cache = crate::cache::conn().await;
+            PreviewPost::get_start(&mut cache, &id).await?.map(|x| x as f64)
         }
         _ => None,
     };

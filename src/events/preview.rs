@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 use redis::AsyncCommands;
+use crate::database::Querist;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -48,7 +49,6 @@ pub struct PreviewPost {
     #[serde(default)]
     #[serde(with = "crate::date_format::option")]
     pub edit_for: Option<NaiveDateTime>,
-    pub pos: f64,
 }
 
 impl PreviewPost {
@@ -56,14 +56,13 @@ impl PreviewPost {
         make_key(b"preview", &id, b"start")
     }
 
-    pub async fn get_start(message_id: &Uuid) -> Result<Option<i64>, CacheError> {
+    pub async fn get_start(cache: &mut cache::Connection, message_id: &Uuid) -> Result<Option<i64>, CacheError> {
         let preview_start_key = make_key(b"preview", message_id, b"start");
-        let mut cache = cache::conn().await;
         let preview_start: Option<i64> = cache.inner.get(&preview_start_key).await?;
         Ok(preview_start)
     }
 
-    pub async fn start(channel_id: &Uuid, message_id: &Uuid, new: bool, initial_pos: f64) -> Result<i64, CacheError> {
+    async fn start<T: Querist>(db: &mut T, channel_id: &Uuid, message_id: &Uuid, new: bool) -> Result<i64, CacheError> {
         let channel_start_key = make_key(b"channel", channel_id, b"start");
         let preview_start_key = make_key(b"preview", message_id, b"start");
         let mut cache = cache::conn().await;
@@ -71,7 +70,11 @@ impl PreviewPost {
         if let (false, Some(preview_start)) = (new, preview_start) {
             Ok(preview_start)
         } else {
-            let _: () = cache.inner.set_nx(&channel_start_key, initial_pos.ceil() as i64).await?;
+            let channel_start: Option<i64> = cache.inner.get(&channel_start_key).await?;
+            if channel_start.is_none() {
+                let initial_pos = crate::messages::Message::max_pos(db, channel_id).await;
+                let _: () = cache.inner.set_nx(&channel_start_key, initial_pos.ceil() as i64).await?;
+            }
             let channel_start: i64 = cache.inner.incr(&channel_start_key, 1).await?;
             cache.inner.set_ex(&preview_start_key, channel_start, 60 * 5).await?;
             Ok(channel_start)
@@ -90,11 +93,10 @@ impl PreviewPost {
             entities,
             edit_for,
             clear,
-            pos,
         } = self;
-        let start: f64 = PreviewPost::start(&channel_id, &id, text.is_none(), pos).await? as f64;
         let mut conn = database::get().await?;
         let db = &mut *conn;
+        let start: f64 = PreviewPost::start(db, &channel_id, &id, text.is_none()).await? as f64;
         let is_master = ChannelMember::get(db, &user_id, &channel_id)
             .await
             .or_no_permssion()?
