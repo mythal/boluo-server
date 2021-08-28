@@ -8,8 +8,7 @@ use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::messages::api::{ByChannel, MoveBetween};
 use crate::spaces::SpaceMember;
-use crate::{cache, database, interface};
-use chrono::NaiveDateTime;
+use crate::{database, interface};
 use hyper::{Body, Request};
 
 async fn send(req: Request<Body>) -> Result<Message, AppError> {
@@ -25,23 +24,16 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         order_date,
         media_id,
         whisper_to_users,
+        pos,
     } = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let (channel_member, space_member) = ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
         .await
         .or_no_permssion()?;
-    let order_date: Option<i64> = match (order_date, message_id) {
+    let pos: Option<f64> = match (pos, message_id) {
         (None, Some(id)) => {
-            let mut cache = cache::conn().await;
-            let key = PreviewPost::start_key(id);
-            if let Some(bytes) = cache.get(&key).await? {
-                serde_json::from_slice::<NaiveDateTime>(&*bytes)
-                    .ok()
-                    .map(|date| date.timestamp_millis())
-            } else {
-                None
-            }
+            PreviewPost::get_start(&id).await?.map(|x| x as f64)
         }
         _ => None,
     };
@@ -61,7 +53,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         whisper_to_users,
         media_id,
         order_date,
-        None,
+        pos,
     )
     .await?;
     Event::new_message(space_member.space_id, message.clone());

@@ -239,6 +239,16 @@ impl Message {
             .map(|row| row.map(|row| row.get(0)))
             .map_err(Into::into)
     }
+    pub async fn max_pos<T: Querist>(
+        db: &mut T,
+        channel_id: &Uuid,
+    ) -> f64 {
+        db
+            .query_exactly_one(include_str!("./sql/max_pos.sql"), &[channel_id])
+            .await
+            .map(|row| row.get(0))
+            .unwrap_or(42.0)
+    }
     pub async fn edit<T: Querist>(
         db: &mut T,
         name: Option<&str>,

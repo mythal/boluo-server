@@ -123,6 +123,15 @@ impl Channel {
         Ok(row.get(0))
     }
 
+    pub async fn max_pos<T: Querist>(db: &mut T) -> Result<Vec<(Uuid, f64)>, DbError> {
+        let rows = db.query(include_str!("sql/channel_max_pos.sql"), &[]).await?;
+        let result: Vec<(Uuid, f64)> = rows
+            .into_iter()
+            .map(|row| (row.get(0), row.get(1)))
+            .collect();
+        Ok(result)
+    }
+
     pub async fn get_by_user<T: Querist>(db: &mut T, user_id: Uuid) -> Result<Vec<ChannelWithMember>, DbError> {
         let rows = db
             .query(include_str!("sql/get_channels_by_user.sql"), &[&user_id])
@@ -420,6 +429,8 @@ async fn channels_test() -> Result<(), crate::error::AppError> {
     let member = Member::get_by_channel(db, channel.id).await?;
     assert_eq!(member.len(), 1);
     ChannelMember::get_by_space(db, &space.id).await?;
+
+    Channel::max_pos(db).await?;
 
     ChannelMember::remove_user(db, &user.id, &channel.id).await?;
     ChannelMember::remove_user(db, &user.id, &channel_2.id).await?;
