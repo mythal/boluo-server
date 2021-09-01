@@ -85,6 +85,7 @@ CREATE TABLE channels
     "default_dice_type"    text      NOT NULL DEFAULT 'd20',
     "default_roll_command" text      NOT NULL DEFAULT 'd',
     "is_document"          bool      NOT NULL DEFAULT false,
+    "old_name"             text      NOT NULL DEFAULT '',
     CONSTRAINT "unique_channel_name_in_space" UNIQUE (space_id, name)
 );
 

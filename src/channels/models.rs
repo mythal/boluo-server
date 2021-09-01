@@ -24,6 +24,7 @@ pub struct Channel {
     pub created: NaiveDateTime,
     pub is_public: bool,
     pub is_document: bool,
+    pub old_name: String,
     #[serde(skip)]
     pub deleted: bool,
     pub default_dice_type: String,
