@@ -1,5 +1,5 @@
 use crate::error::DbError;
-use crate::utils::inner_map;
+use crate::utils::{inner_result_map};
 use crate::{context::media_path, database::Querist};
 use chrono::naive::NaiveDateTime;
 use postgres_types::FromSql;
@@ -58,14 +58,14 @@ impl Media {
 
     pub async fn get_by_id<T: Querist>(db: &mut T, media_id: &Uuid) -> Result<Option<Media>, DbError> {
         let result = db.query_one(include_str!("sql/get_by_id.sql"), &[media_id]).await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(result, |row| row.try_get(0))
     }
 
     pub async fn get_by_filename<T: Querist>(db: &mut T, filename: &str) -> Result<Option<Media>, DbError> {
         let result = db
             .query_one(include_str!("sql/get_by_filename.sql"), &[&filename])
             .await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(result, |row| row.try_get(0))
     }
 
     pub async fn create<T: Querist>(

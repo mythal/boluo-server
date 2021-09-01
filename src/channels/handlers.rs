@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 async fn admin_only<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<(), AppError> {
-    SpaceMember::get(db, user_id, space_id).await.or_no_permssion()?;
+    SpaceMember::get(db, user_id, space_id).await.or_no_permission()?;
     Ok(())
 }
 
@@ -118,7 +118,7 @@ async fn edit(req: Request<Body>) -> Result<Channel, AppError> {
 
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &channel_id)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
     if !space_member.is_admin {
         return Err(AppError::NoPermission(format!("user is not admin")));
     }
@@ -162,12 +162,12 @@ async fn add_member(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
 
     ChannelMember::get(db, &session.user_id, &channel_id)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
 
     let channel = Channel::get_by_id(db, &channel_id).await.or_not_found()?;
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
     let member = ChannelMember::add_user(db, &user_id, &channel_id, &*character_name, false).await?;
     trans.commit().await?;
     Event::push_members(channel_id);
@@ -188,7 +188,7 @@ async fn edit_member(req: Request<Body>) -> Result<ChannelMember, AppError> {
 
     ChannelMember::get(db, &session.user_id, &channel_id)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
 
     let character_name = character_name.as_deref();
     let text_color = text_color.as_deref();
@@ -224,7 +224,7 @@ async fn join(req: Request<Body>) -> Result<ChannelWithMember, AppError> {
     }
     SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
     let member = ChannelMember::add_user(db, &session.user_id, &channel.id, &*character_name, false).await?;
     trans.commit().await?;
     Event::push_members(channel_id);
@@ -276,7 +276,7 @@ async fn export(req: Request<Body>) -> Result<Vec<Message>, AppError> {
 
     let space_member = SpaceMember::get(db, &session.user_id, &channel.space_id)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
     let channel_member = ChannelMember::get(db, &session.user_id, &channel_id).await?;
     if channel_member.is_none() && !space_member.is_admin {
         return Err(AppError::NoPermission(format!("user is not channel member")));

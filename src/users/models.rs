@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::utils::{inner_map, merge_blank};
+use crate::utils::{merge_blank, inner_result_map};
 
 #[derive(Debug, Serialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -70,14 +70,14 @@ impl User {
         use postgres_types::Type;
 
         let email = email.map(|s| s.to_ascii_lowercase());
-        let result = db
+        let row = db
             .query_one_typed(
                 include_str!("sql/get.sql"),
                 &[Type::UUID, Type::TEXT, Type::TEXT],
                 &[&id, &email, &username],
             )
             .await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(row, |row| row.try_get(0))
     }
 
     pub async fn login<T: Querist>(db: &mut T, username: &str, password: &str) -> Result<Option<User>, DbError> {
@@ -127,10 +127,9 @@ impl User {
         if let Some(bio) = bio {
             BIO.run(bio)?;
         }
-        db.query_exactly_one(include_str!("sql/edit.sql"), &[id, &nickname, &bio, &avatar])
-            .await
-            .map_err(Into::into)
-            .map(|row| row.get(0))
+        let row = db.query_exactly_one(include_str!("sql/edit.sql"), &[id, &nickname, &bio, &avatar])
+            .await?;
+        row.try_get(0).map_err(Into::into)
     }
 }
 
@@ -156,9 +155,9 @@ impl UserExt {
         user_id: Uuid,
         settings: serde_json::Value,
     ) -> Result<serde_json::Value, DbError> {
-        db.query_exactly_one(include_str!("sql/set_settings.sql"), &[&user_id, &settings])
-            .await
-            .map(|row| row.get(0))
+        let row = db.query_exactly_one(include_str!("sql/set_settings.sql"), &[&user_id, &settings])
+            .await?;
+        row.try_get(0).map_err(Into::into)
     }
 }
 

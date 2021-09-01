@@ -8,7 +8,7 @@ use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::{Space, SpaceMember};
 use crate::users::User;
-use crate::utils::{inner_map, merge_blank};
+use crate::utils::{merge_blank, inner_result_map};
 use std::collections::HashMap;
 use tokio_postgres::Row;
 
@@ -59,21 +59,25 @@ impl Channel {
 
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<Channel>, DbError> {
         let result = db.query_one(include_str!("sql/fetch_channel.sql"), &[&id]).await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(result, |row| row.try_get(0))
     }
 
     pub async fn get_by_name<T: Querist>(db: &mut T, space_id: Uuid, name: &str) -> Result<Option<Channel>, DbError> {
         let result = db
             .query_one(include_str!("sql/get_channel_by_name.sql"), &[&space_id, &name])
             .await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(result, |row| row.try_get(0))
     }
 
     pub async fn get_with_space<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<(Channel, Space)>, DbError> {
-        let result = db
+        let row = db
             .query_one(include_str!("sql/fetch_channel_with_space.sql"), &[&id])
-            .await;
-        inner_map(result, |row| (row.get(0), row.get(1)))
+            .await?;
+        if let Some(row) = row {
+            Ok(Some((row.try_get(0)?, row.try_get(1)?)))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<Vec<Channel>, DbError> {
@@ -177,13 +181,12 @@ impl ChannelMember {
         if !character_name.is_empty() {
             validators::CHARACTER_NAME.run(character_name)?;
         }
-        db.query_exactly_one(
-            include_str!("sql/add_user_to_channel.sql"),
-            &[user_id, channel_id, &character_name, &is_master],
-        )
-        .await
-        .map_err(Into::into)
-        .map(|row| row.get(1))
+        let row = db.query_exactly_one(
+                include_str!("sql/add_user_to_channel.sql"),
+                &[user_id, channel_id, &character_name, &is_master],
+            )
+            .await?;
+        Ok(row.try_get(1)?)
     }
 
     pub async fn get_color_list<T: Querist>(db: &mut T, channel_id: &Uuid) -> Result<HashMap<Uuid, String>, DbError> {
@@ -321,7 +324,7 @@ impl ChannelMember {
         let result = db
             .query_one(include_str!("sql/set_master.sql"), &[user_id, channel_id, &is_master])
             .await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(result, |row| row.try_get(0))
     }
 }
 

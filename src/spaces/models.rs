@@ -13,7 +13,7 @@ use crate::database::Querist;
 use crate::error::{AppError, DbError, ModelError};
 use crate::spaces::api::SpaceWithMember;
 use crate::users::User;
-use crate::utils::{inner_map, merge_blank};
+use crate::utils::{merge_blank, inner_result_map};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -114,7 +114,7 @@ impl Space {
                 &[&id, &name, &join_owner],
             )
             .await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(result, |row| row.try_get(0))
     }
 
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<Space>, DbError> {
@@ -136,12 +136,12 @@ impl Space {
         let row = db
             .query_exactly_one(include_str!("sql/refresh_token.sql"), &[id])
             .await?;
-        Ok(row.get(0))
+        row.try_get(0)
     }
 
     pub async fn get_token<T: Querist>(db: &mut T, id: &Uuid) -> Result<Uuid, DbError> {
         let row = db.query_exactly_one(include_str!("sql/get_token.sql"), &[id]).await?;
-        Ok(row.try_get(0)?)
+        row.try_get(0)
     }
 
     pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<bool>, DbError> {
@@ -252,13 +252,14 @@ impl SpaceMember {
         space_id: &Uuid,
         is_admin: Option<bool>,
     ) -> Result<Option<SpaceMember>, DbError> {
-        let result = db
+        let row = db
             .query_one(
                 include_str!("sql/set_space_member.sql"),
                 &[&is_admin, user_id, space_id],
             )
             .await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(row, |row| row.try_get(0))
+
     }
 
     pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<Vec<Uuid>, DbError> {
@@ -283,7 +284,7 @@ impl SpaceMember {
         let result = db
             .query_one(include_str!("sql/get_space_member.sql"), &[user_id, space_id])
             .await;
-        inner_map(result, |row| row.get(0))
+        inner_result_map(result, |row| row.try_get(0))
     }
 
     pub async fn get_by_channel<T: Querist>(

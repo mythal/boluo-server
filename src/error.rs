@@ -189,18 +189,18 @@ pub fn log_error(e: &AppError, from: &str) {
 }
 
 pub trait Find<T: Sized> {
-    fn or_no_permssion(self) -> Result<T, AppError>;
+    fn or_no_permission(self) -> Result<T, AppError>;
     fn or_not_found(self) -> Result<T, AppError>;
 }
 
 impl<T> Find<T> for Result<Option<T>, DbError> {
-    fn or_no_permssion(self) -> Result<T, AppError> {
+    fn or_no_permission(self) -> Result<T, AppError> {
         match self {
             Err(source) => Err(AppError::Database {
                 source,
                 backtrace: Backtrace::capture(),
             }),
-            Ok(x) => x.or_no_permssion(),
+            Ok(x) => x.or_no_permission(),
         }
     }
     fn or_not_found(self) -> Result<T, AppError> {
@@ -215,7 +215,7 @@ impl<T> Find<T> for Result<Option<T>, DbError> {
 }
 
 impl<T> Find<T> for Option<T> {
-    fn or_no_permssion(self) -> Result<T, AppError> {
+    fn or_no_permission(self) -> Result<T, AppError> {
         match self {
             None => Err(AppError::NoPermission(format!(
                 "Can't find {}",

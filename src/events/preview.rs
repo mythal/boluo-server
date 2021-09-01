@@ -99,7 +99,7 @@ impl PreviewPost {
         let start: f64 = PreviewPost::start(db, &channel_id, &id, text.is_none()).await? as f64;
         let is_master = ChannelMember::get(db, &user_id, &channel_id)
             .await
-            .or_no_permssion()?
+            .or_no_permission()?
             .is_master;
         let whisper_to_users = None;
         let preview = Box::new(Preview {

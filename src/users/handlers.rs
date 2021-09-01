@@ -79,7 +79,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let db = &mut *conn;
     let user = User::login(db, &*form.username, &*form.password)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
     let session = session::start(&user.id).await.map_err(error_unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())

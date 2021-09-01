@@ -138,7 +138,7 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
 
     let space_member = SpaceMember::get(db, &session.user_id, &space_id)
         .await
-        .or_no_permssion()?;
+        .or_no_permission()?;
     if !space_member.is_admin {
         return Err(AppError::NoPermission(format!("A non-admin tries to edit space")));
     }

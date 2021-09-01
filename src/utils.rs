@@ -69,6 +69,14 @@ pub fn inner_map<T, E, U, F: Fn(T) -> U>(x: Result<Option<T>, E>, mapper: F) -> 
     x.map(|y| y.map(mapper))
 }
 
+pub fn inner_result_map<T, E, U, F: Fn(T) -> Result<U, E>>(x: Result<Option<T>, E>, mapper: F) -> Result<Option<U>, E> {
+    match x {
+        Ok(Some(x)) => mapper(x).map(|value| Some(value)),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 pub fn merge_blank(s: &str) -> String {
     regex!(r"\s+").replace_all(s, " ").trim().to_string()
 }
