@@ -28,7 +28,11 @@ pub struct User {
 impl User {
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<User>, DbError> {
         let rows = db.query_typed(include_str!("sql/all.sql"), &[], &[]).await?;
-        Ok(rows.into_iter().map(|row| row.get(0)).collect())
+        let mut users = vec![];
+        for row in rows {
+            users.push(row.try_get(0)?);
+        }
+        Ok(users)
     }
 
     pub async fn register<T: Querist>(
@@ -54,7 +58,7 @@ impl User {
                 &[&email, &username, &&*nickname, &password],
             )
             .await?;
-        Ok(row.get(0))
+        row.try_get(0).map_err(Into::into)
     }
 
     async fn get<T: Querist>(

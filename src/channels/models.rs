@@ -53,7 +53,7 @@ impl Channel {
             )
             .await?;
 
-        Ok(row.get(0))
+        Ok(row.try_get(0)?)
     }
 
     pub async fn get_by_id<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<Channel>, DbError> {
@@ -120,7 +120,7 @@ impl Channel {
                 ],
             )
             .await?;
-        Ok(row.get(0))
+        Ok(row.try_get(0)?)
     }
 
     pub async fn max_pos<T: Querist>(db: &mut T) -> Result<Vec<(Uuid, f64)>, DbError> {

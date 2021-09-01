@@ -52,18 +52,19 @@ pub struct Message {
 
 impl Message {
     pub async fn get<T: Querist>(db: &mut T, id: &Uuid, user_id: Option<&Uuid>) -> Result<Option<Message>, DbError> {
-        let result = db
+        let row = db
             .query_one(include_str!("sql/get.sql"), &[id, &user_id])
-            .await?
-            .map(|row| {
-                let mut message: Message = row.get(0);
-                let should_hide: Option<bool> = row.get(1);
-                if should_hide.unwrap_or(true) {
-                    message.hide();
-                }
-                message
-            });
-        Ok(result)
+            .await?;
+        if let Some(row) = row {
+            let mut message: Message = row.try_get(0)?;
+            let should_hide: Option<bool> = row.try_get(1)?;
+            if should_hide.unwrap_or(true) {
+                message.hide();
+            }
+            Ok(Some(message))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn get_by_channel<T: Querist>(
@@ -83,7 +84,10 @@ impl Message {
                 &[channel_id, &before, &limit],
             )
             .await?;
-        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
+        let mut messages: Vec<Message> = vec![];
+        for row in rows {
+            messages.push(row.try_get(0)?);
+        }
         messages.iter_mut().for_each(Message::hide);
         Ok(messages)
     }
@@ -97,7 +101,10 @@ impl Message {
         let rows = db
             .query(include_str!("./sql/export.sql"), &[channel_id, &after])
             .await?;
-        let mut messages: Vec<Message> = rows.into_iter().map(|row| row.get(0)).collect();
+        let mut messages: Vec<Message> = vec![];
+        for row in rows {
+            messages.push(row.try_get(0)?);
+        }
         if hide {
             messages.iter_mut().for_each(Message::hide);
         }
@@ -170,7 +177,7 @@ impl Message {
                 ],
             )
             .await?;
-        let mut message: Message = row.get(0);
+        let mut message: Message = row.try_get(0)?;
         message.hide();
         Ok(message)
     }
@@ -193,11 +200,14 @@ impl Message {
         use postgres_types::Type;
         check_pos(*pos)?;
 
-        db
+        let row = db
             .query_one_typed(include_str!("sql/move_above.sql"), &[Type::UUID, Type::UUID, Type::FLOAT8], &[channel_id, message_id, pos])
-            .await
-            .map(|row| row.map(|row| row.get(0)))
-            .map_err(Into::into)
+            .await?;
+        if let Some(row) = row {
+            Ok(row.try_get(0)?)
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn move_bottom<T: Querist>(
@@ -209,11 +219,14 @@ impl Message {
         use postgres_types::Type;
         check_pos(*pos)?;
 
-        db
+        let row = db
             .query_one_typed(include_str!("sql/move_bottom.sql"), &[Type::UUID, Type::UUID, Type::FLOAT8], &[channel_id, message_id, pos])
-            .await
-            .map(|row| row.map(|row| row.get(0)))
-            .map_err(Into::into)
+            .await?;
+        if let Some(row) = row {
+            Ok(Some(row.try_get(0)?))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn move_between<T: Querist>(
@@ -225,29 +238,31 @@ impl Message {
         use postgres_types::Type;
         check_pos(*a)?;
         check_pos(*b)?;
-        if *a == *b {
-            return db
+        let row = if *a == *b {
+            db
                 .query_one_typed(include_str!("sql/set_position.sql"), &[Type::UUID, Type::FLOAT8], &[id, a])
-                .await
-                .map(|row| row.map(|row| row.get(0)))
-                .map_err(Into::into);
+                .await?
+        } else {
+            db
+                .query_one_typed(include_str!("sql/move_between.sql"), &[Type::UUID, Type::FLOAT8, Type::FLOAT8], &[id, a, b])
+                .await?
+        };
+        if let Some(row) = row {
+            Ok(Some(row.try_get(0)?))
+        } else {
+            Ok(None)
         }
-
-        db
-            .query_one_typed(include_str!("sql/move_between.sql"), &[Type::UUID, Type::FLOAT8, Type::FLOAT8], &[id, a, b])
-            .await
-            .map(|row| row.map(|row| row.get(0)))
-            .map_err(Into::into)
     }
     pub async fn max_pos<T: Querist>(
         db: &mut T,
         channel_id: &Uuid,
     ) -> f64 {
+        let default = 42.0;
         db
             .query_exactly_one(include_str!("./sql/max_pos.sql"), &[channel_id])
             .await
-            .map(|row| row.get(0))
-            .unwrap_or(42.0)
+            .map(|row| row.try_get(0).unwrap_or(default))
+            .unwrap_or(default)
     }
     pub async fn edit<T: Querist>(
         db: &mut T,
@@ -265,18 +280,19 @@ impl Message {
         if let Some(ref name) = name {
             CHARACTER_NAME.run(name)?;
         }
-        let result: Option<Message> = db
+        let row = db
             .query_one(
                 include_str!("sql/edit.sql"),
                 &[id, &name, &text, &entities, &in_game, &is_action, &folded, &media_id],
             )
-            .await?
-            .map(|row| {
-                let mut message: Message = row.get(0);
-                message.hide();
-                message
-            });
-        Ok(result)
+            .await?;
+        if let Some(row) = row {
+            let mut message: Message = row.try_get(0)?;
+            message.hide();
+            Ok(Some(message))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {

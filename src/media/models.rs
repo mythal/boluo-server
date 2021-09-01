@@ -92,6 +92,6 @@ impl Media {
                 ],
             )
             .await?;
-        Ok(row.get(0))
+        Ok(row.try_get(0)?)
     }
 }

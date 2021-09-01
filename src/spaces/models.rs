@@ -97,7 +97,7 @@ impl Space {
                 &[&name, owner_id, &password, &default_dice_type, &description],
             )
             .await?;
-        Ok(row.get(0))
+        Ok(row.try_get(0)?)
     }
 
     pub async fn delete<T: Querist>(db: &mut T, id: &Uuid) -> Result<(), DbError> {
@@ -141,7 +141,7 @@ impl Space {
 
     pub async fn get_token<T: Querist>(db: &mut T, id: &Uuid) -> Result<Uuid, DbError> {
         let row = db.query_exactly_one(include_str!("sql/get_token.sql"), &[id]).await?;
-        Ok(row.get(0))
+        Ok(row.try_get(0)?)
     }
 
     pub async fn is_public<T: Querist>(db: &mut T, id: &Uuid) -> Result<Option<bool>, DbError> {

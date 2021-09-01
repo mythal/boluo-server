@@ -165,7 +165,7 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
         .await
         .or_no_permssion()?;
     if !space_member.is_admin && message.sender_id != session.user_id {
-        return Err(AppError::NoPermission(format!("user id dismatch")));
+        return Err(AppError::NoPermission(format!("user id mismatch")));
     }
     Message::delete(db, &id).await?;
     Event::message_deleted(space_member.space_id, message.channel_id, message.id);
