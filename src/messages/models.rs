@@ -125,7 +125,6 @@ impl Message {
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
         media_id: Option<Uuid>,
-        created: Option<i64>,
         pos: Option<f64>,
     ) -> Result<Message, ModelError> {
         use postgres_types::Type;
@@ -157,7 +156,6 @@ impl Message {
                     Type::BOOL,
                     Type::UUID_ARRAY,
                     Type::UUID,
-                    Type::INT8,
                     Type::FLOAT8,
                 ],
                 &[
@@ -172,7 +170,6 @@ impl Message {
                     &is_master,
                     &whisper_to,
                     &media_id,
-                    &created,
                     &pos,
                 ],
             )
@@ -307,7 +304,6 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     use crate::spaces::Space;
     use crate::spaces::SpaceMember;
     use crate::users::User;
-    use crate::utils::timestamp;
 
     let mut client = Client::new().await?;
     let mut trans = client.transaction().await?;
@@ -341,7 +337,6 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         Some(vec![]),
         Some(Uuid::nil()),
-        Some(timestamp()),
         None,
     )
     .await?;
@@ -389,7 +384,6 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         None,
         Some(Uuid::nil()),
-        Some(timestamp()),
         None,
     )
     .await.unwrap();
@@ -411,7 +405,6 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         None,
         Some(Uuid::nil()),
-        Some(timestamp()),
         None,
     )
         .await.unwrap();

@@ -21,7 +21,6 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         entities,
         in_game,
         is_action,
-        order_date,
         media_id,
         whisper_to_users,
         pos,
@@ -53,7 +52,6 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         channel_member.is_master,
         whisper_to_users,
         media_id,
-        order_date,
         pos,
     )
     .await?;

@@ -19,9 +19,6 @@ INSERT INTO messages (
     is_master,
     whisper_to_users,
     media_id,
-    order_date,
-    created,
-    modified,
     pos
 )
 SELECT 
@@ -36,10 +33,7 @@ SELECT
     $9 AS is_master,
     $10 AS whisper_to_users,
     $11 AS media_id,
-    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS order_date,
-    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS created,
-    COALESCE(to_timestamp($12 / 1000.0) at time zone 'utc', now() at time zone 'utc')::timestamp AS modified,
-    COALESCE($13, pos)
+    COALESCE($12, pos)
 FROM last
 LIMIT 1
 RETURNING messages;
