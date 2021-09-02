@@ -25,12 +25,16 @@ use uuid::Uuid;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
-async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: Option<Uuid>) -> Result<(), AppError> {
+async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: &Result<Uuid, AppError>) -> Result<(), AppError> {
     if !space.allow_spectator {
-        if let Some(user_id) = user_id {
-            SpaceMember::get(db, &user_id, &space.id).await.or_no_permission()?;
-        } else {
-            return Err(AppError::Unauthenticated(format!("space do not allow spectator")));
+        match user_id {
+            Ok(user_id) => {
+                SpaceMember::get(db, &user_id, &space.id).await.or_no_permission()?;
+            },
+            Err(err) => {
+                log::warn!("Failed to verify session: {:?}", err);
+                return Err(AppError::Unauthenticated(format!("space do not allow spectator")));
+            }
         }
     }
     Ok(())
@@ -131,13 +135,13 @@ async fn connect(req: Request) -> Result<Response, anyhow::Error> {
     } = parse_query(req.uri())?;
 
 
-    let mut user_id = authenticate(&req).await.ok().map(|session| session.user_id);
-    if let (None, Some(token)) = (user_id, token) {
+    let mut user_id = authenticate(&req).await.map(|session| session.user_id);
+    if let (user_id @ Err(_), Some(token)) = (&mut user_id, token) {
         let mut redis = cache::conn().await;
         let key = make_key(b"token", &token, b"user_id");
         let data = redis.get(&*key).await?;
         if let Some(bytes) = data {
-            user_id = Some(
+            *user_id = Ok(
                 Uuid::from_bytes(
                     bytes
                         .try_into()
@@ -147,14 +151,13 @@ async fn connect(req: Request) -> Result<Response, anyhow::Error> {
         }
     }
 
-
-
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let space = Space::get_by_id(db, &mailbox).await?;
     if let Some(space) = space.as_ref() {
-        check_space_perms(db, space, user_id).await?;
+        check_space_perms(db, space, &user_id).await?;
     }
+    let user_id = user_id.ok();
     establish_web_socket(req, move |ws_stream| async move {
         let (mut outgoing, incoming) = ws_stream.split();
 

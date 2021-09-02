@@ -87,7 +87,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
         .secure(!is_developer && !debug())
         .http_only(true)
         .path("/api/")
-        .max_age(time::Duration::days(256))
+        .permanent()
         .finish()
         .to_string();
 

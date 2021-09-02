@@ -1,10 +1,11 @@
 use crate::cache;
-use crate::error::AppError::{self, BadRequest, Unauthenticated};
+use crate::error::AppError::{self, Unauthenticated};
 use crate::error::CacheError;
 use crate::utils::{self, sign};
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use uuid::Uuid;
+use anyhow::Context;
 
 pub fn token(session: &Uuid) -> String {
     // [body (base64)].[sign]
@@ -16,14 +17,14 @@ pub fn token(session: &Uuid) -> String {
     buffer
 }
 
-pub fn token_verify(token: &str) -> Result<Uuid, AppError> {
+pub fn token_verify(token: &str) -> Result<Uuid, anyhow::Error> {
     let mut iter = token.split('.');
-    let parse_failed = || BadRequest("Failed to parse token".to_string());
+    let parse_failed = || anyhow::anyhow!("Failed to parse token: {}", token);
     let session = iter.next().ok_or_else(parse_failed)?;
     let signature = iter.next().ok_or_else(parse_failed)?;
-    utils::verify(session, signature).ok_or_else(|| Unauthenticated(format!("failed to verify token {}", session)))?;
-    let session = base64::decode(session).map_err(error_unexpected!())?;
-    Uuid::from_slice(session.as_slice()).map_err(error_unexpected!())
+    utils::verify(session, signature).ok_or_else(|| anyhow::anyhow!("Failed to verify session {} with signature {}", session, signature))?;
+    let session = base64::decode(session).context("Failed to decode base64 in session.")?;
+    Uuid::from_slice(session.as_slice()).context("Failed to convert session bytes data to UUID.")
 }
 
 pub async fn revoke_session(id: &Uuid) -> Result<(), CacheError> {
@@ -62,11 +63,18 @@ pub async fn remove_session(id: Uuid) -> Result<(), CacheError> {
     Ok(())
 }
 
-fn get_cookie(value: &hyper::header::HeaderValue) -> Option<&str> {
+fn parse_cookie(value: &hyper::header::HeaderValue) -> Result<&str, anyhow::Error> {
     static COOKIE_PATTERN: OnceCell<Regex> = OnceCell::new();
     let cookie_pattern = COOKIE_PATTERN.get_or_init(|| Regex::new(r#"\bsession=([^;]+)"#).unwrap());
-    let value = value.to_str().ok()?;
-    cookie_pattern.captures(value)?.get(1).map(|m| m.as_str())
+    let value = value.to_str().with_context(|| format!("Failed to convert {:?} to string.", value))?;
+    let failed = || anyhow::anyhow!("Failed to parse cookie: {}", value);
+    let capture = cookie_pattern
+        .captures(value)
+        .ok_or_else(failed)?;
+    capture
+        .get(1)
+        .map(|m| m.as_str())
+        .ok_or_else(failed)
 }
 
 pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, AppError> {
@@ -75,17 +83,27 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     let headers = req.headers();
     let authorization = headers.get(AUTHORIZATION).map(HeaderValue::to_str);
 
-    let token;
-    if let Some(Ok(t)) = authorization {
-        token = t;
+    let token = if let Some(Ok(t)) = authorization {
+        t
     } else {
-        token = headers
+        let cookie = headers
             .get(COOKIE)
-            .and_then(get_cookie)
-            .ok_or(Unauthenticated(format!("unable to get cookie")))?;
-    }
+            .ok_or(Unauthenticated(format!("There is no cookie in header")))?;
+        let token = parse_cookie(cookie);
 
-    let id = token_verify(token)?;
+        token.map_err(|err| {
+            log::warn!("Failed to parse cookie: {}", err);
+            Unauthenticated(format!("Invalid cookie"))
+        })?
+    };
+
+    let id = match token_verify(token) {
+        Err(err) => {
+            log::warn!("{}", err);
+            return Err(AppError::Unauthenticated(format!("Invalid session")))
+        }
+        Ok(id) => id,
+    };
 
     let key = make_key(&id);
     let bytes: Vec<u8> = cache::conn()
@@ -93,7 +111,10 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
         .get(&*key)
         .await
         .map_err(error_unexpected!())?
-        .ok_or(Unauthenticated(format!("can't fetch session in cache")))?;
+        .ok_or_else(|| {
+            log::warn!("Session {} not found, token: {}", id, token);
+            Unauthenticated(format!("Session not found"))
+        })?;
 
     let user_id = Uuid::from_slice(&*bytes).map_err(error_unexpected!())?;
     Ok(Session { id, user_id })
