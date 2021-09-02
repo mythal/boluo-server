@@ -22,7 +22,7 @@ pub fn token_verify(token: &str) -> Result<Uuid, anyhow::Error> {
     let parse_failed = || anyhow::anyhow!("Failed to parse token: {}", token);
     let session = iter.next().ok_or_else(parse_failed)?;
     let signature = iter.next().ok_or_else(parse_failed)?;
-    utils::verify(session, signature).ok_or_else(|| anyhow::anyhow!("Failed to verify session {} with signature {}", session, signature))?;
+    utils::verify(session, signature)?;
     let session = base64::decode(session).context("Failed to decode base64 in session.")?;
     Uuid::from_slice(session.as_slice()).context("Failed to convert session bytes data to UUID.")
 }

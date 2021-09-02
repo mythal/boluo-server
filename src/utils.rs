@@ -3,6 +3,7 @@ use ring::hmac;
 use ring::rand::SecureRandom;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
+use anyhow::Context;
 
 macro_rules! regex {
     ($pattern: expr) => {{
@@ -55,9 +56,9 @@ pub fn sha1(data: &[u8]) -> ring::digest::Digest {
     ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, data)
 }
 
-pub fn verify(message: &str, signature: &str) -> Option<()> {
-    let signature = base64::decode(signature).ok()?;
-    hmac::verify(key(), message.as_bytes(), &*signature).ok()
+pub fn verify(message: &str, signature: &str) -> Result<(), anyhow::Error> {
+    let signature = base64::decode(signature.trim()).context("Failed to decode signature")?;
+    hmac::verify(key(), message.as_bytes(), &*signature).map_err(|_| anyhow::anyhow!("Failed to verify signature of message {}", message))
 }
 
 pub fn timestamp() -> i64 {
