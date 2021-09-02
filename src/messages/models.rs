@@ -125,12 +125,10 @@ impl Message {
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
         media_id: Option<Uuid>,
-        pos: Option<f64>,
+        pos: f64,
     ) -> Result<Message, ModelError> {
         use postgres_types::Type;
-        if let Some(pos) = pos {
-            check_pos(pos)?;
-        }
+        check_pos(pos)?;
         let mut name = merge_blank(&*name);
         if name.is_empty() {
             name = default_name.trim().to_string();
@@ -337,7 +335,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         Some(vec![]),
         Some(Uuid::nil()),
-        None,
+        42.0,
     )
     .await?;
     assert_eq!(message.text, "");
@@ -384,7 +382,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         None,
         Some(Uuid::nil()),
-        None,
+        43.0,
     )
     .await.unwrap();
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
@@ -405,7 +403,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         None,
         Some(Uuid::nil()),
-        None,
+        44.0,
     )
         .await.unwrap();
     let a = messages[1].pos;

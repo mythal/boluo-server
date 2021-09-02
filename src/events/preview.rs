@@ -62,20 +62,25 @@ impl PreviewPost {
         Ok(preview_start)
     }
 
-    async fn start<T: Querist>(db: &mut T, channel_id: &Uuid, message_id: &Uuid, new: bool) -> Result<i64, CacheError> {
+    pub async fn channel_start<T: Querist>(db: &mut T, cache: &mut cache::Connection, channel_id: &Uuid) -> Result<i64, CacheError> {
         let channel_start_key = make_key(b"channel", channel_id, b"start");
+        let channel_start: Option<i64> = cache.inner.get(&channel_start_key).await?;
+        if channel_start.is_none() {
+            let initial_pos = crate::messages::Message::max_pos(db, channel_id).await;
+            let _: () = cache.inner.set_nx(&channel_start_key, initial_pos.ceil() as i64).await?;
+        }
+        let channel_start: i64 = cache.inner.incr(&channel_start_key, 1).await?;
+        Ok(channel_start)
+    }
+
+    async fn start<T: Querist>(db: &mut T, channel_id: &Uuid, message_id: &Uuid, new: bool) -> Result<i64, CacheError> {
         let preview_start_key = make_key(b"preview", message_id, b"start");
         let mut cache = cache::conn().await;
         let preview_start: Option<i64> = cache.inner.get(&preview_start_key).await?;
         if let (false, Some(preview_start)) = (new, preview_start) {
             Ok(preview_start)
         } else {
-            let channel_start: Option<i64> = cache.inner.get(&channel_start_key).await?;
-            if channel_start.is_none() {
-                let initial_pos = crate::messages::Message::max_pos(db, channel_id).await;
-                let _: () = cache.inner.set_nx(&channel_start_key, initial_pos.ceil() as i64).await?;
-            }
-            let channel_start: i64 = cache.inner.incr(&channel_start_key, 1).await?;
+            let channel_start: i64 = PreviewPost::channel_start(db, &mut cache, channel_id).await?;
             cache.inner.set_ex(&preview_start_key, channel_start, 60 * 5).await?;
             Ok(channel_start)
         }

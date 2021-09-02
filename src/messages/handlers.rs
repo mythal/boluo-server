@@ -37,6 +37,12 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         }
         _ => None,
     };
+    let pos = if let Some(pos) = pos {
+        pos
+    } else {
+        let mut cache = crate::cache::conn().await;
+        PreviewPost::channel_start(db, &mut cache, &channel_id).await? as f64
+    };
 
     let message = Message::create(
         db,
