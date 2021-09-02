@@ -139,6 +139,8 @@ CREATE TABLE messages
 
 ALTER TABLE messages
     ADD CONSTRAINT pos_unique UNIQUE (channel_id, pos) DEFERRABLE INITIALLY IMMEDIATE;
+
+CREATE INDEX "message_pos" ON messages (pos);
 CREATE INDEX "message_tags" ON messages USING GIN (tags);
 CREATE INDEX "message_channel" ON messages USING btree (channel_id);
 
