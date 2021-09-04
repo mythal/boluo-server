@@ -170,7 +170,8 @@ impl From<DbError> for ModelError {
 pub fn log_error(e: &AppError, from: &str) {
     use crate::error::AppError::*;
     match e {
-        NotFound(_) | Conflict(_) => log::debug!("{} - {}", from, e),
+        NotFound(_) => log::debug!("{} - {}", from, e),
+        Conflict(e) => log::info!("[Conflict] {}", e),
         Validation(_) | BadRequest(_) | MethodNotAllowed => {
             log::info!("{} - {}", from, e)
         }

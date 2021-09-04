@@ -72,14 +72,15 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     if debug() {
         response = response.map(allow_origin);
     }
-    log::info!("{} {} {:?}", method, uri, start.elapsed());
-    match response {
-        Ok(response) => Ok(response),
+    let response = match response {
+        Ok(response) => response,
         Err(e) => {
             error::log_error(&e, uri.path());
-            return Ok(err_response(e));
+            err_response(e)
         }
-    }
+    };
+    log::info!("{} {} {:?}", method, uri, start.elapsed());
+    Ok(response)
 }
 
 static SENTRY: OnceCell<sentry::ClientInitGuard> = OnceCell::new();
