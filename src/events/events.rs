@@ -81,6 +81,7 @@ pub enum EventBody {
     SpaceUpdated {
         space_with_related: SpaceWithRelated,
     },
+    AppUpdated,
 }
 
 #[derive(Serialize, Debug)]
