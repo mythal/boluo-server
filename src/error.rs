@@ -171,9 +171,9 @@ pub fn log_error(e: &AppError, from: &str) {
     use crate::error::AppError::*;
     match e {
         NotFound(_) => log::debug!("{} - {}", from, e),
-        Conflict(e) => log::info!("[Conflict] {}", e),
+        Conflict(e) => log::warn!("[Conflict] {} {}", from, e),
         Validation(_) | BadRequest(_) | MethodNotAllowed => {
-            log::info!("{} - {}", from, e)
+            log::info!("[Bad Request] {} - {}", from, e)
         }
         e => {
             log::error!("{} - {}\n", from, e);
