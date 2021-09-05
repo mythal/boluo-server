@@ -197,15 +197,22 @@ impl ChannelMember {
     pub async fn get_by_space<T: Querist>(
         db: &mut T,
         space_id: &Uuid,
-    ) -> Result<HashMap<Uuid, ChannelMember>, DbError> {
+    ) -> Result<HashMap<Uuid, Vec<ChannelMember>>, DbError> {
         let rows = db
             .query(include_str!("sql/get_channel_member_list_by_space.sql"), &[space_id])
             .await?;
-        Ok(rows.into_iter().map(|row: Row| {
-            let member = row.get::<_, ChannelMember>(0);
-            let id = member.user_id;
-            (id, member)
-        }).collect())
+        let mut channel_member_map: HashMap<Uuid, Vec<ChannelMember>> = HashMap::new();
+        for row in rows {
+            let member: ChannelMember = row.try_get(0)?;
+            let id = member.channel_id;
+            if channel_member_map.contains_key(&id) {
+                let member_list = channel_member_map.get_mut(&id).unwrap();
+                member_list.push(member);
+            } else {
+                channel_member_map.insert(id, vec![member]);
+            }
+        }
+        Ok(channel_member_map)
     }
 
     pub async fn get_by_channel<T: Querist>(

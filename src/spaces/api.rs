@@ -57,7 +57,7 @@ pub struct SpaceWithRelated {
     pub space: super::Space,
     pub members: HashMap<Uuid, super::models::SpaceMemberWithUser>,
     pub channels: Vec<crate::channels::Channel>,
-    pub channel_members: HashMap<Uuid, crate::channels::ChannelMember>,
+    pub channel_members: HashMap<Uuid, Vec<crate::channels::ChannelMember>>,
     pub users_status: HashMap<Uuid, UserStatus>,
 }
 
