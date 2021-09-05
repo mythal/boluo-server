@@ -3,7 +3,6 @@ use super::Message;
 use crate::channels::{Channel, ChannelMember};
 use crate::csrf::authenticate;
 use crate::error::{AppError, Find};
-use crate::events::preview::PreviewPost;
 use crate::events::Event;
 use crate::interface::{missing, ok_response, parse_query, Response};
 use crate::messages::api::{ByChannel, MoveBetween};
@@ -23,29 +22,17 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         is_action,
         media_id,
         whisper_to_users,
-        pos,
+        pos: request_pos,
     } = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
     let (channel_member, space_member) = ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
         .await
         .or_no_permission()?;
-    let pos: Option<f64> = match (pos, message_id) {
-        (None, Some(id)) => {
-            let mut cache = crate::cache::conn().await;
-            PreviewPost::get_start(&mut cache, &id).await?.map(|x| x as f64)
-        }
-        _ => None,
-    };
-    let pos = if let Some(pos) = pos {
-        pos
-    } else {
-        let mut cache = crate::cache::conn().await;
-        PreviewPost::channel_start(db, &mut cache, &channel_id).await? as f64
-    };
-
+    let mut cache = crate::cache::conn().await;
     let message = Message::create(
         db,
+        &mut cache,
         message_id.as_ref(),
         &channel_id,
         &session.user_id,
@@ -58,7 +45,7 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
         channel_member.is_master,
         whisper_to_users,
         media_id,
-        pos,
+        request_pos,
     )
     .await?;
     Event::new_message(space_member.space_id, message.clone());

@@ -1,7 +1,6 @@
 use crate::channels::models::Member;
 use crate::channels::Channel;
 
-use crate::error::log_error;
 use crate::events::context;
 use crate::events::context::{SyncEvent};
 use crate::events::preview::{Preview, PreviewPost};
@@ -128,20 +127,19 @@ impl Event {
         let channel_id = preview.channel_id;
         Event::fire(EventBody::MessagePreview { preview, channel_id }, mailbox);
     }
-    pub async fn push_status(redis: &mut redis::aio::ConnectionManager, space_id: Uuid) -> Result<(), anyhow::Error> {
-        let status_map = space_users_status(redis, space_id).await?;
+    pub async fn push_status(cache: &mut crate::cache::Connection, space_id: Uuid) -> Result<(), anyhow::Error> {
+        let status_map = space_users_status(cache, space_id).await?;
         Event::transient(space_id, EventBody::StatusMap { status_map, space_id });
         Ok(())
     }
 
     pub async fn status(space_id: Uuid, user_id: Uuid, kind: StatusKind, timestamp: i64, focus: Vec<Uuid>) -> Result<(), anyhow::Error> {
-        let cache = cache::conn().await;
-        let mut redis = cache.inner;
+        let mut cache = cache::conn().await;
         let heartbeat = UserStatus { timestamp, kind, focus };
         let mut changed = true;
 
         let key = cache::make_key(b"space", &space_id, b"heartbeat");
-        let old_value: Option<Result<UserStatus, _>> = redis.hget::<_, _, Option<Vec<u8>>>(&*key, user_id.as_bytes())
+        let old_value: Option<Result<UserStatus, _>> = cache.inner.hget::<_, _, Option<Vec<u8>>>(&*key, user_id.as_bytes())
             .await?
             .as_deref()
             .map(serde_json::from_slice);
@@ -150,9 +148,9 @@ impl Event {
         }
         let value = serde_json::to_vec(&heartbeat)?;
     
-        let created: bool = redis.hset(&*key, user_id.as_bytes(), &*value).await?;
+        let created: bool = cache.inner.hset(&*key, user_id.as_bytes(), &*value).await?;
         if created || changed {
-            Event::push_status(&mut redis, space_id).await?;
+            Event::push_status(&mut cache, space_id).await?;
         }
         Ok(())
     }
@@ -198,7 +196,7 @@ impl Event {
                     let body = EventBody::SpaceUpdated { space_with_related };
                     Event::transient(space_id, body);
                 }
-                Err(e) => log_error(&e, "event"),
+                Err(e) => log::error!("There an error occurred while preparing the `space_updated` event: {}", e),
             }
         });
     }

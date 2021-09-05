@@ -30,7 +30,8 @@ pub struct UserStatus {
     pub focus: Vec<Uuid>,
 }
 
-pub async fn space_users_status(redis: &mut redis::aio::ConnectionManager, space_id: Uuid) -> Result<HashMap<Uuid, UserStatus>, AppError> {
+pub async fn space_users_status(cache: &mut crate::cache::Connection, space_id: Uuid) -> Result<HashMap<Uuid, UserStatus>, AppError> {
+    let redis = &mut cache.inner;
     let key = make_key(b"space", &space_id, b"heartbeat");
     let redis_result: HashMap<Vec<u8>, Vec<u8>> = redis.hgetall(&*key).await?;
     let mut table: HashMap<Uuid, UserStatus> = HashMap::new();
@@ -345,8 +346,8 @@ async fn space_test() -> Result<(), crate::error::AppError> {
     let mut client = Client::new().await?;
     let mut trans = client.transaction().await?;
     let db = &mut trans;
-    let email = "test@mythal.net";
-    let username = "test_user";
+    let email = "test-space@mythal.net";
+    let username = "space_test_user";
     let password = "no password";
     let nickname = "Test User";
     let space_name = "Pure Illusion";
@@ -417,7 +418,7 @@ async fn status_test() -> Result<(), anyhow::Error> {
     let now = timestamp();
     let kind = StatusKind::Online;
     crate::events::Event::status(space_id, user_id, kind, now, vec![]).await?;
-    let user_status = space_users_status(&mut cache.inner, space_id).await?;
+    let user_status = space_users_status(&mut cache, space_id).await?;
     let status = user_status.get(&user_id).unwrap();
     assert_eq!(status.kind, StatusKind::Online);
     Ok(())

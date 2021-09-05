@@ -86,7 +86,13 @@ pub trait Querist: Send {
 }
 
 pub fn get_postgres_url() -> String {
-    let key = "DATABASE_URL";
+
+    let key = if cfg!(test) {
+        "TEST_DATABASE_URL"
+    } else {
+        "DATABASE_URL"
+    };
+
     env::var(key).expect("Failed to load Postgres connect URL")
 }
 

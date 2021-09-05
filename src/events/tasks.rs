@@ -29,9 +29,9 @@ async fn push_status() {
                 _ => vec![],
             };
 
-            let mut redis = cache::conn().await;
+            let mut cache = cache::conn().await;
             for space_id in spaces {
-                Event::push_status(&mut redis.inner, space_id).await.ok();
+                Event::push_status(&mut cache, space_id).await.ok();
             }
         })
         .await;

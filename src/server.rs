@@ -72,23 +72,22 @@ async fn handler(req: Request<Body>) -> Result<Response, hyper::Error> {
     if debug() {
         response = response.map(allow_origin);
     }
-    let from = uri.path();
     let mut has_error = false;
     let response = match response {
         Ok(response) => response,
         Err(e) => {
             has_error = true;
-            error::log_error(&e, from);
+            error::log_error(&e, &uri);
             err_response(e)
         }
     };
 
     if has_error {
-        log::warn!("{} {} {:?}", method, from, start.elapsed());
-    } else if from.starts_with("/api/users/get_me") {
-        log::debug!("{} {} {:?}", method, from, start.elapsed());
+        log::warn!("{} {} {:?}", method, &uri, start.elapsed());
+    } else if uri.path().starts_with("/api/users/get_me") {
+        log::debug!("{} {} {:?}", method, &uri, start.elapsed());
     } else {
-        log::info!("{} {} {:?}", method, from, start.elapsed());
+        log::info!("{} {} {:?}", method, &uri, start.elapsed());
     }
     Ok(response)
 }

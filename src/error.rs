@@ -1,5 +1,5 @@
 use crate::pool::PoolError;
-use hyper::StatusCode;
+use hyper::{StatusCode, Uri};
 pub use redis::RedisError as CacheError;
 use std::backtrace::Backtrace;
 use std::error::Error;
@@ -167,16 +167,16 @@ impl From<DbError> for ModelError {
     }
 }
 
-pub fn log_error(e: &AppError, from: &str) {
+pub fn log_error(e: &AppError, uri: &Uri) {
     use crate::error::AppError::*;
     match e {
-        NotFound(_) => log::debug!("{} - {}", from, e),
-        Conflict(e) => log::warn!("[Conflict] {} {}", from, e),
+        NotFound(_) => log::debug!("{} - {}", uri, e),
+        Conflict(e) => log::warn!("[Conflict] {} {}", uri, e),
         Validation(_) | BadRequest(_) | MethodNotAllowed => {
-            log::info!("[Bad Request] {} - {}", from, e)
+            log::info!("[Bad Request] {} - {}", uri, e)
         }
         e => {
-            log::error!("{} - {}\n", from, e);
+            log::error!("{} - {}\n", uri, e);
             if let Some(backtrace) = e.backtrace() {
                 log::error!("{}", backtrace);
             }

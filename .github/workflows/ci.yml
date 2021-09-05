@@ -27,7 +27,7 @@ jobs:
       - name: Init Database
         run: cargo run --release --bin manage init
         env:
-          DATABASE_URL: postgresql://postgres:postgres@postgres/boluo
+          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres/boluo
 
       - name: Test
         run: cargo test --release

@@ -5,9 +5,11 @@ use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
 use crate::database::{Querist};
-use crate::error::{DbError, ModelError, ValidationFailed};
+use crate::error::{DbError, ModelError, ValidationFailed, AppError};
 use crate::utils::merge_blank;
 use crate::validators::CHARACTER_NAME;
+use tokio_postgres::error::SqlState;
+use crate::events::preview::PreviewPost;
 
 pub fn check_pos(pos: f64) -> Result<(), ValidationFailed> {
     if pos.is_nan() || pos.is_infinite() {
@@ -113,6 +115,7 @@ impl Message {
 
     pub async fn create<T: Querist>(
         db: &mut T,
+        cache: &mut crate::cache::Connection,
         message_id: Option<&Uuid>,
         channel_id: &Uuid,
         sender_id: &Uuid,
@@ -125,10 +128,23 @@ impl Message {
         is_master: bool,
         whisper_to: Option<Vec<Uuid>>,
         media_id: Option<Uuid>,
-        pos: f64,
-    ) -> Result<Message, ModelError> {
+        request_pos: Option<f64>,
+    ) -> Result<Message, AppError> {
         use postgres_types::Type;
+        let pos: Option<f64> = match (request_pos, message_id) {
+            (Some(pos), _) => Some(pos),
+            (None, Some(id)) => {
+                PreviewPost::get_start(cache, &id).await?.map(|x| x as f64)
+            }
+            _ => None,
+        };
+        let pos = if let Some(pos) = pos {
+            pos
+        } else {
+            PreviewPost::channel_start(db, cache, &channel_id, false).await? as f64
+        };
         check_pos(pos)?;
+
         let mut name = merge_blank(&*name);
         if name.is_empty() {
             name = default_name.trim().to_string();
@@ -139,23 +155,24 @@ impl Message {
         }
         let entities = JsonValue::Array(entities);
         let source = include_str!("sql/create.sql");
-        let row = db
+        let types = &[
+            Type::UUID,
+            Type::UUID,
+            Type::UUID,
+            Type::TEXT,
+            Type::TEXT,
+            Type::JSON,
+            Type::BOOL,
+            Type::BOOL,
+            Type::BOOL,
+            Type::UUID_ARRAY,
+            Type::UUID,
+            Type::FLOAT8,
+        ];
+        let mut row = db
             .query_exactly_one_typed(
                 source,
-                &[
-                    Type::UUID,
-                    Type::UUID,
-                    Type::UUID,
-                    Type::TEXT,
-                    Type::TEXT,
-                    Type::JSON,
-                    Type::BOOL,
-                    Type::BOOL,
-                    Type::BOOL,
-                    Type::UUID_ARRAY,
-                    Type::UUID,
-                    Type::FLOAT8,
-                ],
+                types,
                 &[
                     &message_id,
                     sender_id,
@@ -170,9 +187,33 @@ impl Message {
                     &media_id,
                     &pos,
                 ],
-            )
-            .await?;
-        let mut message: Message = row.try_get(0)?;
+            ).await;
+        if let Err(err) = &row {
+            if err.code() == Some(&SqlState::UNIQUE_VIOLATION) {
+                log::error!("message conflict! channel id {}, message id {:?}, position: {}", channel_id, message_id, pos);
+                let fallback_pos = PreviewPost::channel_start(db, cache, &channel_id, true).await? as f64;
+                row = db
+                    .query_exactly_one_typed(
+                        source,
+                        types,
+                        &[
+                            &message_id,
+                            sender_id,
+                            channel_id,
+                            &name,
+                            &text,
+                            &entities,
+                            &in_game,
+                            &is_action,
+                            &is_master,
+                            &whisper_to,
+                            &media_id,
+                            &fallback_pos,
+                        ],
+                    ).await;
+            }
+        }
+        let mut message: Message = row?.try_get(0)?;
         message.hide();
         Ok(message)
     }
@@ -252,12 +293,11 @@ impl Message {
         db: &mut T,
         channel_id: &Uuid,
     ) -> f64 {
-        let default = 42.0;
         db
             .query_exactly_one(include_str!("./sql/max_pos.sql"), &[channel_id])
             .await
-            .map(|row| row.try_get(0).unwrap_or(default))
-            .unwrap_or(default)
+            .and_then(|row| row.try_get(0))
+            .unwrap()
     }
     pub async fn edit<T: Querist>(
         db: &mut T,
@@ -303,11 +343,11 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     use crate::spaces::SpaceMember;
     use crate::users::User;
 
+    let mut cache = crate::cache::conn().await;
     let mut client = Client::new().await?;
-    let mut trans = client.transaction().await?;
-    let db = &mut trans;
-    let email = "test@mythal.net";
-    let username = "test_user";
+    let db = &mut client;
+    let email = "sayaka@mythal.net";
+    let username = "sayaka";
     let password = "no password";
     let nickname = "Test User";
     let space_name = "Test Space";
@@ -318,11 +358,13 @@ async fn message_test() -> Result<(), crate::error::AppError> {
 
     let channel_name = "Test Channel";
     let channel = Channel::create(db, &space.id, channel_name, true, None).await?;
+
     ChannelMember::add_user(db, &user.id, &channel.id, "", false).await?;
     ChannelMember::set_master(db, &user.id, &channel.id, true).await?;
     let text = "hello, world";
     let message = Message::create(
         db,
+        &mut cache,
         None,
         &channel.id,
         &user.id,
@@ -335,7 +377,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         Some(vec![]),
         Some(Uuid::nil()),
-        42.0,
+        None,
     )
     .await?;
     assert_eq!(message.text, "");
@@ -370,6 +412,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
 
     let b = Message::create(
         db,
+        &mut cache,
         None,
         &channel.id,
         &user.id,
@@ -382,7 +425,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         None,
         Some(Uuid::nil()),
-        43.0,
+        None,
     )
     .await.unwrap();
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
@@ -391,6 +434,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
 
     let c = Message::create(
         db,
+        &mut cache,
         None,
         &channel.id,
         &user.id,
@@ -403,7 +447,7 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         true,
         None,
         Some(Uuid::nil()),
-        44.0,
+        None,
     )
         .await.unwrap();
     let a = messages[1].pos;

@@ -1,15 +1,15 @@
 use crate::error::CacheError;
-pub use redis::aio::ConnectionManager;
+pub use redis::aio::MultiplexedConnection;
 pub use redis::AsyncCommands;
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct Connection {
-    pub inner: ConnectionManager,
+    pub inner: MultiplexedConnection,
 }
 
 impl Connection {
-    fn new(inner: ConnectionManager) -> Connection {
+    fn new(inner: MultiplexedConnection) -> Connection {
         Connection { inner }
     }
 
@@ -46,27 +46,17 @@ impl RedisFactory {
 
 /// Get cache database connection.
 pub async fn conn() -> Connection {
-    use once_cell::sync::OnceCell;
-    static FACTORY: OnceCell<Connection> = OnceCell::new();
-    if let Some(connection) = FACTORY.get() {
-        connection.clone()
-    } else {
-        use std::env::var;
-        let url = if let Ok(url) = var("REDIS_URL") { url } else {
-            log::warn!("Failed to load Redis URL, use default");
-            "redis://127.0.0.1/".to_string()
-        };
-        let connection_manager = redis::Client::open(&*url)
-            .expect("Unable to open redis")
-            .get_tokio_connection_manager()
-            .await
-            .expect("Unable to get tokio connection manager");
-        let connection = Connection::new(connection_manager);
-        if FACTORY.set(connection.clone()).is_err() {
-            panic!("Unable to set redis `FACTORY`.")
-        }
-        connection
-    }
+    use std::env::var;
+    let url = if let Ok(url) = var("REDIS_URL") { url } else {
+        log::warn!("Failed to load Redis URL, use default");
+        "redis://127.0.0.1/".to_string()
+    };
+    let connection_manager = redis::Client::open(&*url)
+        .expect("Unable to open redis")
+        .get_multiplexed_tokio_connection()
+        .await
+        .expect("Unable to get tokio connection manager");
+    Connection::new(connection_manager)
 }
 
 pub fn make_key(type_name: &[u8], id: &Uuid, field_name: &[u8]) -> Vec<u8> {
@@ -77,4 +67,12 @@ pub fn make_key(type_name: &[u8], id: &Uuid, field_name: &[u8]) -> Vec<u8> {
     buffer.push(b':');
     buffer.extend_from_slice(field_name);
     buffer
+}
+
+#[tokio::test]
+async fn cache_test() -> anyhow::Result<()> {
+    let mut cache = crate::cache::conn().await;
+
+    let _result: Option<String> = cache.inner.get("hello").await.unwrap();
+    Ok(())
 }
