@@ -27,12 +27,13 @@ jobs:
       - name: Init Database
         run: cargo run --release --bin manage init
         env:
-          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres/boluo
+          DATABASE_URL: postgresql://postgres:postgres@postgres/boluo
 
       - name: Test
         run: cargo test --release
         env:
           DATABASE_URL: postgresql://postgres:postgres@postgres/boluo
+          TEST_DATABASE_URL: postgresql://postgres:postgres@postgres/boluo
           SECRET: SOME_SECRET
           REDIS_URL: redis://redis/
           DEBUG: 1

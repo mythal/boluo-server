@@ -1,15 +1,12 @@
-use crate::cache::make_key;
 use crate::channels::{ChannelMember};
 use crate::database;
-use crate::error::{AppError, CacheError};
+use crate::error::{AppError};
 use crate::events::Event;
 use crate::{cache, error::Find};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
-use redis::AsyncCommands;
-use crate::database::Querist;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -52,40 +49,6 @@ pub struct PreviewPost {
 }
 
 impl PreviewPost {
-    pub fn start_key(id: Uuid) -> Vec<u8> {
-        make_key(b"preview", &id, b"start")
-    }
-
-    pub async fn get_start(cache: &mut cache::Connection, message_id: &Uuid) -> Result<Option<i64>, CacheError> {
-        let preview_start_key = make_key(b"preview", message_id, b"start");
-        let preview_start: Option<i64> = cache.inner.get(&preview_start_key).await?;
-        Ok(preview_start)
-    }
-
-    pub async fn channel_start<T: Querist>(db: &mut T, cache: &mut cache::Connection, channel_id: &Uuid, reset: bool) -> Result<i64, CacheError> {
-        let channel_start_key = make_key(b"channel", channel_id, b"start");
-        let channel_start: Option<i64> = cache.inner.get(&channel_start_key).await?;
-        if channel_start.is_none() || reset {
-            let initial_pos = crate::messages::Message::max_pos(db, channel_id).await.floor();
-            let _: () = cache.inner.set(&channel_start_key, initial_pos as i64 + 1).await?;
-        }
-        let channel_start: i64 = cache.inner.incr(&channel_start_key, 1).await?;
-        Ok(channel_start)
-    }
-
-    async fn start<T: Querist>(db: &mut T, channel_id: &Uuid, message_id: &Uuid, new: bool) -> Result<i64, CacheError> {
-        let preview_start_key = make_key(b"preview", message_id, b"start");
-        let mut cache = cache::conn().await;
-        let preview_start: Option<i64> = cache.inner.get(&preview_start_key).await?;
-        if let (false, Some(preview_start)) = (new, preview_start) {
-            Ok(preview_start)
-        } else {
-            let channel_start: i64 = PreviewPost::channel_start(db, &mut cache, channel_id, false).await?;
-            cache.inner.set_ex(&preview_start_key, channel_start, 60 * 5).await?;
-            Ok(channel_start)
-        }
-    }
-
     pub async fn broadcast(self, space_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
         let PreviewPost {
             id,
@@ -100,8 +63,13 @@ impl PreviewPost {
             clear,
         } = self;
         let mut conn = database::get().await?;
+        let mut cache = cache::conn().await;
+        let cache = &mut cache;
         let db = &mut *conn;
-        let start: f64 = PreviewPost::start(db, &channel_id, &id, text.is_none()).await? as f64;
+        if text.is_none() {
+            crate::pos::finished(cache, &id).await?;
+        }
+        let start: f64 = crate::pos::pos(db, cache, &channel_id, &id).await? as f64;
         let is_master = ChannelMember::get(db, &user_id, &channel_id)
             .await
             .or_no_permission()?

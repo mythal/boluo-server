@@ -9,7 +9,6 @@ use crate::error::{DbError, ModelError, ValidationFailed, AppError};
 use crate::utils::merge_blank;
 use crate::validators::CHARACTER_NAME;
 use tokio_postgres::error::SqlState;
-use crate::events::preview::PreviewPost;
 
 pub fn check_pos(pos: f64) -> Result<(), ValidationFailed> {
     if pos.is_nan() || pos.is_infinite() {
@@ -131,17 +130,10 @@ impl Message {
         request_pos: Option<f64>,
     ) -> Result<Message, AppError> {
         use postgres_types::Type;
-        let pos: Option<f64> = match (request_pos, message_id) {
-            (Some(pos), _) => Some(pos),
-            (None, Some(id)) => {
-                PreviewPost::get_start(cache, &id).await?.map(|x| x as f64)
-            }
-            _ => None,
-        };
-        let pos = if let Some(pos) = pos {
-            pos
-        } else {
-            PreviewPost::channel_start(db, cache, &channel_id, false).await? as f64
+        let pos: f64 = match (request_pos, message_id) {
+            (Some(pos), _) => pos,
+            (None, Some(id)) => crate::pos::pos(db, cache, channel_id, id).await? as f64,
+            (None, None) => crate::pos::alloc_new_pos(db, cache, channel_id).await? as f64,
         };
         check_pos(pos)?;
 
@@ -191,7 +183,13 @@ impl Message {
         if let Err(err) = &row {
             if err.code() == Some(&SqlState::UNIQUE_VIOLATION) {
                 log::error!("message conflict! channel id {}, message id {:?}, position: {}", channel_id, message_id, pos);
-                let fallback_pos = PreviewPost::channel_start(db, cache, &channel_id, true).await? as f64;
+                crate::pos::reset_channel_pos(cache, channel_id).await?;
+                let fallback_pos = if let Some(message_id) = message_id {
+                    crate::pos::finished(cache, message_id).await?;
+                    crate::pos::pos(db, cache, &channel_id, message_id).await? as f64
+                } else {
+                    return Err(unexpected!("conflict with new message id"));
+                };
                 row = db
                     .query_exactly_one_typed(
                         source,
@@ -214,6 +212,7 @@ impl Message {
             }
         }
         let mut message: Message = row?.try_get(0)?;
+        crate::pos::finished(cache, &message.id).await?;
         message.hide();
         Ok(message)
     }
