@@ -195,7 +195,7 @@ impl Message {
                         source,
                         types,
                         &[
-                            &message_id,
+                            &Option::<Uuid>::None,
                             sender_id,
                             channel_id,
                             &name,
