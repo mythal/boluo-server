@@ -13,9 +13,9 @@ fn create_pos_key(message_id: &Uuid) -> String {
 
 pub async fn alloc_new_pos<T: Querist>(db: &mut T, cache: &mut crate::cache::Connection, channel_id: &Uuid) -> Result<i64, CacheError> {
     let max_pos_key = create_max_pos_key(&channel_id);
-    let max_pos_present: bool = cache.inner.get::<_, Option<i64>>(&max_pos_key).await?.is_some();
+    let in_cache: bool = cache.inner.get::<_, Option<i64>>(&max_pos_key).await?.is_some();
 
-    if !max_pos_present {
+    if !in_cache {
         // if not present, initialize it
         let initial_pos = crate::messages::Message::max_pos(db, channel_id).await.ceil();
         let _: () = cache.inner.set_nx(&max_pos_key, initial_pos as i64 + 1).await?;

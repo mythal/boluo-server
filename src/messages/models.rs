@@ -68,6 +68,18 @@ impl Message {
         }
     }
 
+    pub async fn query_by_pos<T: Querist>(db: &mut T, channel_id: &Uuid, pos: f64) -> Result<Option<Message>, DbError> {
+        let row = db
+            .query_one(include_str!("sql/by_pos.sql"), &[channel_id, &pos])
+            .await?;
+        let maybe_message = if let Some(row) = row {
+            row.try_get(0)?
+        } else {
+            None
+        };
+        Ok(maybe_message)
+    }
+
     pub async fn get_by_channel<T: Querist>(
         db: &mut T,
         channel_id: &Uuid,
@@ -182,20 +194,41 @@ impl Message {
             ).await;
         if let Err(err) = &row {
             if err.code() == Some(&SqlState::UNIQUE_VIOLATION) {
-                log::error!("message conflict! channel id {}, message id {:?}, position: {}", channel_id, message_id, pos);
-                crate::pos::reset_channel_pos(cache, channel_id).await?;
-                let fallback_pos = if let Some(message_id) = message_id {
-                    crate::pos::finished(cache, message_id).await?;
-                    crate::pos::pos(db, cache, &channel_id, message_id).await? as f64
+                log::warn!("A conflict occurred while creating a new message at channel {}", channel_id);
+                let mut message_id = message_id;
+                if let Some(id) = message_id {
+                    let conflicted = Message::get(db, id, None).await?;
+                    if let Some(conflicted) = conflicted {
+                        log::warn!("message id conflicted: {}", conflicted.id);
+                        if text == conflicted.text {
+                            log::warn!("duplicate message: {}", text);
+                            return Err(AppError::Conflict("duplicated message".to_string()));
+                        } else {
+                            message_id = None;
+                        }
+                    }
+                }
+                let conflicted = Message::query_by_pos(db, channel_id, pos).await?;
+                let reset_pos = if let Some(conflicted) = conflicted {
+                    if conflicted.text == text {
+                        log::warn!("duplicate message: {}", text);
+                        return Err(AppError::Conflict("duplicated message".to_string())); 
+                    }
+                    log::info!("conflict at position {}", pos);
+                    crate::pos::reset_channel_pos(cache, channel_id).await?;
+                    if let Some(message_id) = message_id {
+                        crate::pos::finished(cache, message_id).await?;
+                    }
+                    crate::pos::alloc_new_pos(db, cache, channel_id).await?
                 } else {
-                    return Err(unexpected!("conflict with new message id"));
+                    return Err(unexpected!("unexpected conflict"));
                 };
                 row = db
                     .query_exactly_one_typed(
                         source,
                         types,
                         &[
-                            &Option::<Uuid>::None,
+                            &message_id,
                             sender_id,
                             channel_id,
                             &name,
@@ -206,7 +239,7 @@ impl Message {
                             &is_master,
                             &whisper_to,
                             &media_id,
-                            &fallback_pos,
+                            &reset_pos,
                         ],
                     ).await;
             }
@@ -402,6 +435,8 @@ async fn message_test() -> Result<(), crate::error::AppError> {
 
     let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, new_text);
+    let message_by_pos = Message::query_by_pos(db, &message.channel_id, message.pos).await?.unwrap();
+    assert_eq!(message_by_pos.id, message.id);
     ChannelMember::set_master(db, &user.id, &channel.id, false).await?;
     let a = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(a.text, "");
