@@ -219,7 +219,7 @@ impl Message {
                     if let Some(message_id) = message_id {
                         crate::pos::finished(cache, message_id).await?;
                     }
-                    crate::pos::alloc_new_pos(db, cache, channel_id).await?
+                    crate::pos::alloc_new_pos(db, cache, channel_id).await? as f64
                 } else {
                     return Err(unexpected!("unexpected conflict"));
                 };
