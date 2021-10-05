@@ -36,7 +36,6 @@ pub enum MoveToMode {
     Bottom,
 }
 
-
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MoveBetween {

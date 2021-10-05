@@ -2,10 +2,10 @@ use crate::cache;
 use crate::error::AppError::{self, Unauthenticated};
 use crate::error::CacheError;
 use crate::utils::{self, sign};
+use anyhow::Context;
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use uuid::Uuid;
-use anyhow::Context;
 
 pub fn token(session: &Uuid) -> String {
     // [body (base64)].[sign]
@@ -66,15 +66,12 @@ pub async fn remove_session(id: Uuid) -> Result<(), CacheError> {
 fn parse_cookie(value: &hyper::header::HeaderValue) -> Result<&str, anyhow::Error> {
     static COOKIE_PATTERN: OnceCell<Regex> = OnceCell::new();
     let cookie_pattern = COOKIE_PATTERN.get_or_init(|| Regex::new(r#"\bsession=([^;]+)"#).unwrap());
-    let value = value.to_str().with_context(|| format!("Failed to convert {:?} to string.", value))?;
+    let value = value
+        .to_str()
+        .with_context(|| format!("Failed to convert {:?} to string.", value))?;
     let failed = || anyhow::anyhow!("Failed to parse cookie: {}", value);
-    let capture = cookie_pattern
-        .captures(value)
-        .ok_or_else(failed)?;
-    capture
-        .get(1)
-        .map(|m| m.as_str())
-        .ok_or_else(failed)
+    let capture = cookie_pattern.captures(value).ok_or_else(failed)?;
+    capture.get(1).map(|m| m.as_str()).ok_or_else(failed)
 }
 
 pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, AppError> {
@@ -100,7 +97,7 @@ pub async fn authenticate(req: &hyper::Request<hyper::Body>) -> Result<Session, 
     let id = match token_verify(token) {
         Err(err) => {
             log::warn!("{}", err);
-            return Err(AppError::Unauthenticated(format!("Invalid session")))
+            return Err(AppError::Unauthenticated(format!("Invalid session")));
         }
         Ok(id) => id,
     };

@@ -8,7 +8,7 @@ use crate::database::Querist;
 use crate::error::{DbError, ModelError};
 use crate::spaces::{Space, SpaceMember};
 use crate::users::User;
-use crate::utils::{merge_blank, inner_result_map};
+use crate::utils::{inner_result_map, merge_blank};
 use std::collections::HashMap;
 use tokio_postgres::Row;
 
@@ -130,10 +130,7 @@ impl Channel {
 
     pub async fn max_pos<T: Querist>(db: &mut T) -> Result<Vec<(Uuid, f64)>, DbError> {
         let rows = db.query(include_str!("sql/channel_max_pos.sql"), &[]).await?;
-        let result: Vec<(Uuid, f64)> = rows
-            .into_iter()
-            .map(|row| (row.get(0), row.get(1)))
-            .collect();
+        let result: Vec<(Uuid, f64)> = rows.into_iter().map(|row| (row.get(0), row.get(1))).collect();
         Ok(result)
     }
 
@@ -181,7 +178,8 @@ impl ChannelMember {
         if !character_name.is_empty() {
             validators::CHARACTER_NAME.run(character_name)?;
         }
-        let row = db.query_exactly_one(
+        let row = db
+            .query_exactly_one(
                 include_str!("sql/add_user_to_channel.sql"),
                 &[user_id, channel_id, &character_name, &is_master],
             )

@@ -11,9 +11,7 @@ pub struct PostgresFactory {
 
 impl PostgresFactory {
     pub fn new() -> PostgresFactory {
-        let config = super::get_postgres_url()
-            .parse()
-            .unwrap();
+        let config = super::get_postgres_url().parse().unwrap();
         PostgresFactory { config }
     }
 }

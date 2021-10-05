@@ -47,7 +47,9 @@ impl RedisFactory {
 /// Get cache database connection.
 pub async fn conn() -> Connection {
     use std::env::var;
-    let url = if let Ok(url) = var("REDIS_URL") { url } else {
+    let url = if let Ok(url) = var("REDIS_URL") {
+        url
+    } else {
         log::warn!("Failed to load Redis URL, use default");
         "redis://127.0.0.1/".to_string()
     };

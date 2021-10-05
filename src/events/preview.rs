@@ -1,6 +1,6 @@
-use crate::channels::{ChannelMember};
+use crate::channels::ChannelMember;
 use crate::database;
-use crate::error::{AppError};
+use crate::error::AppError;
 use crate::events::Event;
 use crate::{cache, error::Find};
 use chrono::NaiveDateTime;

@@ -4,17 +4,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
-use crate::database::{Querist};
-use crate::error::{DbError, ModelError, ValidationFailed, AppError};
+use crate::database::Querist;
+use crate::error::{AppError, DbError, ModelError, ValidationFailed};
 use crate::utils::merge_blank;
 use crate::validators::CHARACTER_NAME;
 use tokio_postgres::error::SqlState;
 
 pub fn check_pos(pos: f64) -> Result<(), ValidationFailed> {
     if pos.is_nan() || pos.is_infinite() {
-        return Err(ValidationFailed("The wrong floating point value was used for the position value"))
+        return Err(ValidationFailed(
+            "The wrong floating point value was used for the position value",
+        ));
     } else if pos < 0.0 {
-        return Err(ValidationFailed("The position value cannot be less than zero"))
+        return Err(ValidationFailed("The position value cannot be less than zero"));
     }
     Ok(())
 }
@@ -53,9 +55,7 @@ pub struct Message {
 
 impl Message {
     pub async fn get<T: Querist>(db: &mut T, id: &Uuid, user_id: Option<&Uuid>) -> Result<Option<Message>, DbError> {
-        let row = db
-            .query_one(include_str!("sql/get.sql"), &[id, &user_id])
-            .await?;
+        let row = db.query_one(include_str!("sql/get.sql"), &[id, &user_id]).await?;
         if let Some(row) = row {
             let mut message: Message = row.try_get(0)?;
             let should_hide: Option<bool> = row.try_get(1)?;
@@ -72,11 +72,7 @@ impl Message {
         let row = db
             .query_one(include_str!("sql/by_pos.sql"), &[channel_id, &pos])
             .await?;
-        let maybe_message = if let Some(row) = row {
-            row.try_get(0)?
-        } else {
-            None
-        };
+        let maybe_message = if let Some(row) = row { row.try_get(0)? } else { None };
         Ok(maybe_message)
     }
 
@@ -191,10 +187,14 @@ impl Message {
                     &media_id,
                     &pos,
                 ],
-            ).await;
+            )
+            .await;
         if let Err(err) = &row {
             if err.code() == Some(&SqlState::UNIQUE_VIOLATION) {
-                log::warn!("A conflict occurred while creating a new message at channel {}", channel_id);
+                log::warn!(
+                    "A conflict occurred while creating a new message at channel {}",
+                    channel_id
+                );
                 let mut message_id = message_id;
                 if let Some(id) = message_id {
                     let conflicted = Message::get(db, id, None).await?;
@@ -212,7 +212,7 @@ impl Message {
                 let reset_pos = if let Some(conflicted) = conflicted {
                     if conflicted.text == text {
                         log::warn!("duplicate message: {}", text);
-                        return Err(AppError::Conflict("duplicated message".to_string())); 
+                        return Err(AppError::Conflict("duplicated message".to_string()));
                     }
                     log::info!("conflict at position {}", pos);
                     crate::pos::reset_channel_pos(cache, channel_id).await?;
@@ -241,7 +241,8 @@ impl Message {
                             &media_id,
                             &reset_pos,
                         ],
-                    ).await;
+                    )
+                    .await;
             }
         }
         let mut message: Message = row?.try_get(0)?;
@@ -269,7 +270,11 @@ impl Message {
         check_pos(*pos)?;
 
         let row = db
-            .query_one_typed(include_str!("sql/move_above.sql"), &[Type::UUID, Type::UUID, Type::FLOAT8], &[channel_id, message_id, pos])
+            .query_one_typed(
+                include_str!("sql/move_above.sql"),
+                &[Type::UUID, Type::UUID, Type::FLOAT8],
+                &[channel_id, message_id, pos],
+            )
             .await?;
         if let Some(row) = row {
             Ok(row.try_get(0)?)
@@ -288,7 +293,11 @@ impl Message {
         check_pos(*pos)?;
 
         let row = db
-            .query_one_typed(include_str!("sql/move_bottom.sql"), &[Type::UUID, Type::UUID, Type::FLOAT8], &[channel_id, message_id, pos])
+            .query_one_typed(
+                include_str!("sql/move_bottom.sql"),
+                &[Type::UUID, Type::UUID, Type::FLOAT8],
+                &[channel_id, message_id, pos],
+            )
             .await?;
         if let Some(row) = row {
             Ok(Some(row.try_get(0)?))
@@ -307,13 +316,19 @@ impl Message {
         check_pos(*a)?;
         check_pos(*b)?;
         let row = if *a == *b {
-            db
-                .query_one_typed(include_str!("sql/set_position.sql"), &[Type::UUID, Type::FLOAT8], &[id, a])
-                .await?
+            db.query_one_typed(
+                include_str!("sql/set_position.sql"),
+                &[Type::UUID, Type::FLOAT8],
+                &[id, a],
+            )
+            .await?
         } else {
-            db
-                .query_one_typed(include_str!("sql/move_between.sql"), &[Type::UUID, Type::FLOAT8, Type::FLOAT8], &[id, a, b])
-                .await?
+            db.query_one_typed(
+                include_str!("sql/move_between.sql"),
+                &[Type::UUID, Type::FLOAT8, Type::FLOAT8],
+                &[id, a, b],
+            )
+            .await?
         };
         if let Some(row) = row {
             Ok(Some(row.try_get(0)?))
@@ -321,12 +336,8 @@ impl Message {
             Ok(None)
         }
     }
-    pub async fn max_pos<T: Querist>(
-        db: &mut T,
-        channel_id: &Uuid,
-    ) -> f64 {
-        db
-            .query_exactly_one(include_str!("./sql/max_pos.sql"), &[channel_id])
+    pub async fn max_pos<T: Querist>(db: &mut T, channel_id: &Uuid) -> f64 {
+        db.query_exactly_one(include_str!("./sql/max_pos.sql"), &[channel_id])
             .await
             .and_then(|row| row.try_get(0))
             .unwrap()
@@ -435,7 +446,9 @@ async fn message_test() -> Result<(), crate::error::AppError> {
 
     let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
     assert_eq!(message.text, new_text);
-    let message_by_pos = Message::query_by_pos(db, &message.channel_id, message.pos).await?.unwrap();
+    let message_by_pos = Message::query_by_pos(db, &message.channel_id, message.pos)
+        .await?
+        .unwrap();
     assert_eq!(message_by_pos.id, message.id);
     ChannelMember::set_master(db, &user.id, &channel.id, false).await?;
     let a = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
@@ -461,7 +474,8 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         Some(Uuid::nil()),
         None,
     )
-    .await.unwrap();
+    .await
+    .unwrap();
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].text, b.text);
@@ -483,7 +497,8 @@ async fn message_test() -> Result<(), crate::error::AppError> {
         Some(Uuid::nil()),
         None,
     )
-        .await.unwrap();
+    .await
+    .unwrap();
     let a = messages[1].pos;
     let b = messages[0].pos;
     Message::move_between(db, &c.id, &a, &b).await.unwrap().unwrap();

@@ -1,7 +1,7 @@
 use crate::database::Querist;
-use uuid::Uuid;
 use crate::error::CacheError;
 use redis::AsyncCommands;
+use uuid::Uuid;
 
 fn create_max_pos_key(channel_id: &Uuid) -> String {
     format!("channel:{}:max_pos", channel_id)
@@ -11,7 +11,11 @@ fn create_pos_key(message_id: &Uuid) -> String {
     format!("preview:{}:pos", message_id)
 }
 
-pub async fn alloc_new_pos<T: Querist>(db: &mut T, cache: &mut crate::cache::Connection, channel_id: &Uuid) -> Result<i64, CacheError> {
+pub async fn alloc_new_pos<T: Querist>(
+    db: &mut T,
+    cache: &mut crate::cache::Connection,
+    channel_id: &Uuid,
+) -> Result<i64, CacheError> {
     let max_pos_key = create_max_pos_key(&channel_id);
     let in_cache: bool = cache.inner.get::<_, Option<i64>>(&max_pos_key).await?.is_some();
 
@@ -23,7 +27,12 @@ pub async fn alloc_new_pos<T: Querist>(db: &mut T, cache: &mut crate::cache::Con
     cache.inner.incr(&max_pos_key, 1).await
 }
 
-pub async fn pos<T: Querist>(db: &mut T, cache: &mut crate::cache::Connection, channel_id: &Uuid, message_id: &Uuid) -> Result<i64, CacheError> {
+pub async fn pos<T: Querist>(
+    db: &mut T,
+    cache: &mut crate::cache::Connection,
+    channel_id: &Uuid,
+    message_id: &Uuid,
+) -> Result<i64, CacheError> {
     let pos_key = create_pos_key(&message_id);
     let pos: Option<i64> = cache.inner.get(&pos_key).await?;
     if let Some(pos) = pos {

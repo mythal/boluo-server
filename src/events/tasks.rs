@@ -1,8 +1,8 @@
-use crate::events::Event;
-use crate::{cache, database};
 use crate::events::context::{get_broadcast_table, get_heartbeat_map};
+use crate::events::Event;
 use crate::spaces::Space;
 use crate::utils::timestamp;
+use crate::{cache, database};
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::mem::swap;
@@ -25,7 +25,7 @@ async fn push_status() {
                 Ok(mut db) => match Space::all(&mut *db).await {
                     Ok(all_space) => all_space.into_iter().map(|space| space.id).collect(),
                     _ => vec![],
-                }
+                },
                 _ => vec![],
             };
 

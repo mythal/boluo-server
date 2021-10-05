@@ -1,5 +1,5 @@
 use crate::error::DbError;
-use crate::utils::{inner_result_map};
+use crate::utils::inner_result_map;
 use crate::{context::media_path, database::Querist};
 use chrono::naive::NaiveDateTime;
 use postgres_types::FromSql;

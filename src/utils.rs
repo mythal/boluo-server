@@ -1,9 +1,9 @@
+use anyhow::Context;
 use once_cell::sync::OnceCell;
 use ring::hmac;
 use ring::rand::SecureRandom;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
-use anyhow::Context;
 
 macro_rules! regex {
     ($pattern: expr) => {{
@@ -58,7 +58,8 @@ pub fn sha1(data: &[u8]) -> ring::digest::Digest {
 
 pub fn verify(message: &str, signature: &str) -> Result<(), anyhow::Error> {
     let signature = base64::decode(signature.trim()).context("Failed to decode signature")?;
-    hmac::verify(key(), message.as_bytes(), &*signature).map_err(|_| anyhow::anyhow!("Failed to verify signature of message {}", message))
+    hmac::verify(key(), message.as_bytes(), &*signature)
+        .map_err(|_| anyhow::anyhow!("Failed to verify signature of message {}", message))
 }
 
 pub fn timestamp() -> i64 {

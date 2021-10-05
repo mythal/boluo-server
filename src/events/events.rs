@@ -2,11 +2,11 @@ use crate::channels::models::Member;
 use crate::channels::Channel;
 
 use crate::events::context;
-use crate::events::context::{SyncEvent};
+use crate::events::context::SyncEvent;
 use crate::events::preview::{Preview, PreviewPost};
-use crate::messages::{Message};
+use crate::messages::Message;
 use crate::spaces::api::SpaceWithRelated;
-use crate::spaces::models::{StatusKind, UserStatus, space_users_status};
+use crate::spaces::models::{space_users_status, StatusKind, UserStatus};
 use crate::utils::timestamp;
 use crate::{cache, database};
 use redis::AsyncCommands;
@@ -24,14 +24,13 @@ pub struct EventQuery {
     pub token: Option<Uuid>,
 }
 
-
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE", tag = "type")]
 pub enum ClientEvent {
     #[serde(rename_all = "camelCase")]
     Preview { preview: PreviewPost },
     #[serde(rename_all = "camelCase")]
-    Status { kind: StatusKind, focus: Vec<Uuid>, },
+    Status { kind: StatusKind, focus: Vec<Uuid> },
 }
 
 #[derive(Serialize, Debug)]
@@ -59,7 +58,9 @@ pub enum EventBody {
         preview: Box<Preview>,
     },
     #[serde(rename_all = "camelCase")]
-    ChannelDeleted { channel_id: Uuid },
+    ChannelDeleted {
+        channel_id: Uuid,
+    },
     #[serde(rename_all = "camelCase")]
     ChannelEdited {
         channel_id: Uuid,
@@ -107,10 +108,7 @@ impl Event {
     }
 
     pub fn message_deleted(mailbox: Uuid, channel_id: Uuid, message_id: Uuid) {
-        Event::fire(
-            EventBody::MessageDeleted { message_id, channel_id },
-            mailbox,
-        )
+        Event::fire(EventBody::MessageDeleted { message_id, channel_id }, mailbox)
     }
 
     pub fn message_edited(mailbox: Uuid, message: Message) {
@@ -133,13 +131,21 @@ impl Event {
         Ok(())
     }
 
-    pub async fn status(space_id: Uuid, user_id: Uuid, kind: StatusKind, timestamp: i64, focus: Vec<Uuid>) -> Result<(), anyhow::Error> {
+    pub async fn status(
+        space_id: Uuid,
+        user_id: Uuid,
+        kind: StatusKind,
+        timestamp: i64,
+        focus: Vec<Uuid>,
+    ) -> Result<(), anyhow::Error> {
         let mut cache = cache::conn().await;
         let heartbeat = UserStatus { timestamp, kind, focus };
         let mut changed = true;
 
         let key = cache::make_key(b"space", &space_id, b"heartbeat");
-        let old_value: Option<Result<UserStatus, _>> = cache.inner.hget::<_, _, Option<Vec<u8>>>(&*key, user_id.as_bytes())
+        let old_value: Option<Result<UserStatus, _>> = cache
+            .inner
+            .hget::<_, _, Option<Vec<u8>>>(&*key, user_id.as_bytes())
             .await?
             .as_deref()
             .map(serde_json::from_slice);
@@ -147,7 +153,7 @@ impl Event {
             changed = old_value.kind != kind;
         }
         let value = serde_json::to_vec(&heartbeat)?;
-    
+
         let created: bool = cache.inner.hset(&*key, user_id.as_bytes(), &*value).await?;
         if created || changed {
             Event::push_status(&mut cache, space_id).await?;
@@ -196,7 +202,10 @@ impl Event {
                     let body = EventBody::SpaceUpdated { space_with_related };
                     Event::transient(space_id, body);
                 }
-                Err(e) => log::error!("There an error occurred while preparing the `space_updated` event: {}", e),
+                Err(e) => log::error!(
+                    "There an error occurred while preparing the `space_updated` event: {}",
+                    e
+                ),
             }
         });
     }
@@ -274,10 +283,7 @@ impl Event {
 
     pub fn transient(mailbox: Uuid, body: EventBody) {
         spawn(async move {
-            let event = Event::build(
-                body,
-                mailbox,
-            );
+            let event = Event::build(body, mailbox);
             Event::send(mailbox, event).await;
         });
     }

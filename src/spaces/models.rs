@@ -7,13 +7,13 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::cache::{make_key};
+use crate::cache::make_key;
 use crate::channels::ChannelMember;
 use crate::database::Querist;
 use crate::error::{AppError, DbError, ModelError};
 use crate::spaces::api::SpaceWithMember;
 use crate::users::User;
-use crate::utils::{merge_blank, inner_result_map};
+use crate::utils::{inner_result_map, merge_blank};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -30,7 +30,10 @@ pub struct UserStatus {
     pub focus: Vec<Uuid>,
 }
 
-pub async fn space_users_status(cache: &mut crate::cache::Connection, space_id: Uuid) -> Result<HashMap<Uuid, UserStatus>, AppError> {
+pub async fn space_users_status(
+    cache: &mut crate::cache::Connection,
+    space_id: Uuid,
+) -> Result<HashMap<Uuid, UserStatus>, AppError> {
     let redis = &mut cache.inner;
     let key = make_key(b"space", &space_id, b"heartbeat");
     let redis_result: HashMap<Vec<u8>, Vec<u8>> = redis.hgetall(&*key).await?;
@@ -260,7 +263,6 @@ impl SpaceMember {
             )
             .await;
         inner_result_map(row, |row| row.try_get(0))
-
     }
 
     pub async fn remove_user<T: Querist>(db: &mut T, user_id: &Uuid, space_id: &Uuid) -> Result<Vec<Uuid>, DbError> {
@@ -308,7 +310,10 @@ pub struct SpaceMemberWithUser {
 }
 
 impl SpaceMemberWithUser {
-    pub async fn get_by_space<T: Querist>(db: &mut T, space_id: &Uuid) -> Result<HashMap<Uuid, SpaceMemberWithUser>, DbError> {
+    pub async fn get_by_space<T: Querist>(
+        db: &mut T,
+        space_id: &Uuid,
+    ) -> Result<HashMap<Uuid, SpaceMemberWithUser>, DbError> {
         let members = db
             .query(include_str!("sql/get_members_by_spaces.sql"), &[space_id])
             .await?

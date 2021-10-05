@@ -26,12 +26,12 @@ mod logger;
 mod media;
 mod messages;
 mod pool;
+mod pos;
 mod session;
 mod spaces;
 mod users;
 mod validators;
 mod websocket;
-mod pos;
 
 use crate::cors::allow_origin;
 use crate::error::AppError;

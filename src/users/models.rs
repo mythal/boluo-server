@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::database::Querist;
 use crate::error::{DbError, ModelError};
-use crate::utils::{merge_blank, inner_result_map};
+use crate::utils::{inner_result_map, merge_blank};
 
 #[derive(Debug, Serialize, FromSql, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -127,7 +127,8 @@ impl User {
         if let Some(bio) = bio {
             BIO.run(bio)?;
         }
-        let row = db.query_exactly_one(include_str!("sql/edit.sql"), &[id, &nickname, &bio, &avatar])
+        let row = db
+            .query_exactly_one(include_str!("sql/edit.sql"), &[id, &nickname, &bio, &avatar])
             .await?;
         row.try_get(0).map_err(Into::into)
     }
@@ -155,7 +156,8 @@ impl UserExt {
         user_id: Uuid,
         settings: serde_json::Value,
     ) -> Result<serde_json::Value, DbError> {
-        let row = db.query_exactly_one(include_str!("sql/set_settings.sql"), &[&user_id, &settings])
+        let row = db
+            .query_exactly_one(include_str!("sql/set_settings.sql"), &[&user_id, &settings])
             .await?;
         row.try_get(0).map_err(Into::into)
     }

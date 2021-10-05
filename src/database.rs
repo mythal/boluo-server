@@ -86,7 +86,6 @@ pub trait Querist: Send {
 }
 
 pub fn get_postgres_url() -> String {
-
     let key = if cfg!(test) {
         "TEST_DATABASE_URL"
     } else {

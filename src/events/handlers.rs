@@ -1,18 +1,18 @@
+use super::api::Token;
 use super::events::EventQuery;
 use super::Event;
 use crate::cache::make_key;
 use crate::csrf::authenticate;
-use crate::{cache, database};
 use crate::database::Querist;
 use crate::error::{AppError, Find};
 use crate::events::context::get_mailbox_broadcast_rx;
-use crate::events::events::{ClientEvent};
-use crate::interface::{Request, Response, missing, ok_response, parse_query};
-use crate::spaces::models::{StatusKind};
+use crate::events::events::ClientEvent;
+use crate::interface::{missing, ok_response, parse_query, Request, Response};
+use crate::spaces::models::StatusKind;
 use crate::spaces::{Space, SpaceMember};
 use crate::utils::timestamp;
 use crate::websocket::{establish_web_socket, WsError, WsMessage};
-use super::api::Token;
+use crate::{cache, database};
 use anyhow::anyhow;
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt, TryStreamExt};
@@ -25,12 +25,16 @@ use uuid::Uuid;
 
 type Sender = SplitSink<WebSocketStream<Upgraded>, tungstenite::Message>;
 
-async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: &Result<Uuid, AppError>) -> Result<(), AppError> {
+async fn check_space_perms<T: Querist>(
+    db: &mut T,
+    space: &Space,
+    user_id: &Result<Uuid, AppError>,
+) -> Result<(), AppError> {
     if !space.allow_spectator {
         match user_id {
             Ok(user_id) => {
                 SpaceMember::get(db, &user_id, &space.id).await.or_no_permission()?;
-            },
+            }
             Err(err) => {
                 log::warn!("Failed to verify session: {:?}", err);
                 return Err(AppError::Unauthenticated(format!("space do not allow spectator")));
@@ -40,10 +44,7 @@ async fn check_space_perms<T: Querist>(db: &mut T, space: &Space, user_id: &Resu
     Ok(())
 }
 
-async fn push_events(
-    mailbox: Uuid,
-    outgoing: &mut Sender,
-) -> Result<(), anyhow::Error> {
+async fn push_events(mailbox: Uuid, outgoing: &mut Sender) -> Result<(), anyhow::Error> {
     use futures::channel::mpsc::channel;
     use tokio::sync::broadcast::error::RecvError;
     use tokio::time::interval;
@@ -69,7 +70,11 @@ async fn push_events(
         for e in cached_events.into_iter() {
             tx.send(WsMessage::Text(e)).await.ok();
         }
-        tx.send(WsMessage::Text(serde_json::to_string(&Event::initialized(mailbox)).unwrap())).await.ok();
+        tx.send(WsMessage::Text(
+            serde_json::to_string(&Event::initialized(mailbox)).unwrap(),
+        ))
+        .await
+        .ok();
 
         loop {
             let message = match mailbox_rx.recv().await {
@@ -100,11 +105,7 @@ async fn push_events(
     Ok(())
 }
 
-async fn handle_client_event(
-    mailbox: Uuid,
-    user_id: Option<Uuid>,
-    message: String,
-) -> Result<(), anyhow::Error> {
+async fn handle_client_event(mailbox: Uuid, user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
     let event: Result<ClientEvent, _> = serde_json::from_str(&*message);
     if let Err(event) = event {
         log::debug!("failed to parse event from client: {}", event);
@@ -126,14 +127,10 @@ async fn handle_client_event(
 }
 
 async fn connect(req: Request) -> Result<Response, anyhow::Error> {
-    use std::convert::TryInto;
     use futures::future;
+    use std::convert::TryInto;
 
-    let EventQuery {
-        mailbox,
-        token
-    } = parse_query(req.uri())?;
-
+    let EventQuery { mailbox, token } = parse_query(req.uri())?;
 
     let mut user_id = authenticate(&req).await.map(|session| session.user_id);
     if let (user_id @ Err(_), Some(token)) = (&mut user_id, token) {
@@ -141,13 +138,11 @@ async fn connect(req: Request) -> Result<Response, anyhow::Error> {
         let key = make_key(b"token", &token, b"user_id");
         let data = redis.get(&*key).await?;
         if let Some(bytes) = data {
-            *user_id = Ok(
-                Uuid::from_bytes(
-                    bytes
-                        .try_into()
-                        .map_err(|_| anyhow!("can't convert user id in cache to UUID type"))?
-                )
-            )
+            *user_id = Ok(Uuid::from_bytes(
+                bytes
+                    .try_into()
+                    .map_err(|_| anyhow!("can't convert user id in cache to UUID type"))?,
+            ))
         }
     }
 
@@ -191,14 +186,15 @@ async fn connect(req: Request) -> Result<Response, anyhow::Error> {
     })
 }
 
-
 pub async fn token(req: Request) -> Result<Token, AppError> {
     if let Ok(session) = authenticate(&req).await {
         let mut redis = cache::conn().await;
         let token = Uuid::new_v4();
         let key = make_key(b"token", &token, b"user_id");
         redis.set_with_expiration(&*key, session.user_id.as_bytes(), 10).await?;
-        Ok(Token { token: Some(token.to_string()) })
+        Ok(Token {
+            token: Some(token.to_string()),
+        })
     } else {
         Ok(Token { token: None })
     }
@@ -208,10 +204,12 @@ pub async fn router(req: Request, path: &str) -> Result<Response, AppError> {
     use hyper::Method;
 
     match (path, req.method().clone()) {
-        ("/connect", Method::GET) => connect(req).await.map_err(|e| e.downcast().unwrap_or_else(|e| {
-            log::error!("{}", &e);
-            AppError::Unexpected(e)
-        })),
+        ("/connect", Method::GET) => connect(req).await.map_err(|e| {
+            e.downcast().unwrap_or_else(|e| {
+                log::error!("{}", &e);
+                AppError::Unexpected(e)
+            })
+        }),
         ("/token", Method::GET) => token(req).await.map(ok_response),
         _ => missing(),
     }
