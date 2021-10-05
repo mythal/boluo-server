@@ -19,6 +19,9 @@
       rustc = rust-bin.default;
     };
   in rec {
+    overlay = prev: self: {
+      boluo-server = defaultPackage;
+    };
     packages.boluo-server = naersk-lib.buildPackage {
       pname = "boluo-server";
       nativeBuildInputs = [
