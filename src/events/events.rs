@@ -249,7 +249,7 @@ impl Event {
         let mut cache = cache.lock().await;
 
         enum Kind {
-            Preview(Uuid),
+            Preview { sender_id: Uuid, channel_id: Uuid },
             Edition(Uuid),
             Other,
         }
@@ -259,7 +259,10 @@ impl Event {
                 if preview.edit_for.is_some() {
                     Kind::Edition(preview.id)
                 } else {
-                    Kind::Preview(preview.sender_id)
+                    Kind::Preview {
+                        sender_id: preview.sender_id,
+                        channel_id: preview.channel_id,
+                    }
                 }
             }
             _ => Kind::Other,
@@ -270,8 +273,8 @@ impl Event {
             Kind::Edition(id) => {
                 cache.edition_map.insert(id, event.clone());
             }
-            Kind::Preview(id) => {
-                cache.preview_map.insert(id, event.clone());
+            Kind::Preview { sender_id, channel_id } => {
+                cache.preview_map.insert((sender_id, channel_id), event.clone());
             }
             Kind::Other => {
                 cache.events.push_back(event.clone());

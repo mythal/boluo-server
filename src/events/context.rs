@@ -53,8 +53,8 @@ pub async fn get_mailbox_broadcast_rx(id: &Uuid) -> broadcast::Receiver<Arc<Sync
 pub struct MailBoxCache {
     pub start_at: i64,
     pub events: VecDeque<Arc<SyncEvent>>,
-    pub preview_map: HashMap<Uuid, Arc<SyncEvent>>,
-    pub edition_map: HashMap<Uuid, Arc<SyncEvent>>,
+    pub preview_map: HashMap<(Uuid, Uuid), Arc<SyncEvent>>, // (sender id, channel id)
+    pub edition_map: HashMap<Uuid, Arc<SyncEvent>>,         // the key is message id
 }
 
 pub struct Cache {
