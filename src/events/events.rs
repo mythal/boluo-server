@@ -184,9 +184,8 @@ impl Event {
         if let Some(cache) = cache {
             let cache = cache.lock().await;
             cache
-                .edition_map
-                .values()
-                .chain(cache.events.iter())
+                .events
+                .iter()
                 .chain(cache.preview_map.values())
                 .map(|event| event.encoded.clone())
                 .collect()
@@ -250,19 +249,14 @@ impl Event {
 
         enum Kind {
             Preview { sender_id: Uuid, channel_id: Uuid },
-            Edition(Uuid),
             Other,
         }
 
         let kind = match &body {
             EventBody::MessagePreview { preview, channel_id: _ } => {
-                if preview.edit_for.is_some() {
-                    Kind::Edition(preview.id)
-                } else {
-                    Kind::Preview {
-                        sender_id: preview.sender_id,
-                        channel_id: preview.channel_id,
-                    }
+                Kind::Preview {
+                    sender_id: preview.sender_id,
+                    channel_id: preview.channel_id,
                 }
             }
             _ => Kind::Other,
@@ -270,9 +264,6 @@ impl Event {
 
         let event = Event::build(body, mailbox);
         match kind {
-            Kind::Edition(id) => {
-                cache.edition_map.insert(id, event.clone());
-            }
             Kind::Preview { sender_id, channel_id } => {
                 cache.preview_map.insert((sender_id, channel_id), event.clone());
             }
