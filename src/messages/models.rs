@@ -221,7 +221,7 @@ impl Message {
                     }
                     crate::pos::alloc_new_pos(db, cache, channel_id).await? as f64
                 } else {
-                    return Err(unexpected!("unexpected conflict"));
+                    pos
                 };
                 row = db
                     .query_exactly_one_typed(
