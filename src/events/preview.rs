@@ -66,8 +66,11 @@ impl PreviewPost {
         let mut cache = cache::conn().await;
         let cache = &mut cache;
         let db = &mut *conn;
-        if text.is_none() {
-            crate::pos::finished(cache, &id).await?;
+        let mut should_finish = false;
+        if let Some(text) = text.as_ref() {
+            if text.trim().is_empty() {
+                should_finish = true;
+            }
         }
         let start: f64 = crate::pos::pos(db, cache, &channel_id, &id).await? as f64;
         let is_master = ChannelMember::get(db, &user_id, &channel_id)
@@ -93,6 +96,10 @@ impl PreviewPost {
             clear,
             pos: start,
         });
+
+        if should_finish {
+            crate::pos::finished(cache, &id).await?;
+        }
         Event::message_preview(space_id, preview);
         Ok(())
     }

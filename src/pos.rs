@@ -48,6 +48,6 @@ pub async fn reset_channel_pos(cache: &mut crate::cache::Connection, channel_id:
     cache.inner.del(create_max_pos_key(&channel_id)).await
 }
 
-pub async fn finished(cache: &mut crate::cache::Connection, message_id: &Uuid) -> Result<(), CacheError> {
+pub async fn finished(cache: &mut crate::cache::Connection, message_id: &Uuid) -> Result<i32, CacheError> {
     cache.inner.del(create_pos_key(&message_id)).await
 }
