@@ -140,8 +140,8 @@ impl Message {
         use postgres_types::Type;
         let pos: f64 = match (request_pos, message_id) {
             (Some(pos), _) => pos,
-            (None, Some(id)) => crate::pos::pos(db, cache, channel_id, id).await? as f64,
-            (None, None) => crate::pos::alloc_new_pos(db, cache, channel_id).await? as f64,
+            (None, Some(id)) => crate::pos::pos(db, cache, *channel_id, *id).await? as f64,
+            (None, None) => crate::pos::alloc_new_pos(db, cache, *channel_id).await? as f64,
         };
         check_pos(pos)?;
 
@@ -217,9 +217,9 @@ impl Message {
                     log::info!("conflict at position {}", pos);
                     crate::pos::reset_channel_pos(cache, channel_id).await?;
                     if let Some(message_id) = message_id {
-                        crate::pos::finished(cache, message_id).await?;
+                        crate::pos::finished(cache, *channel_id, *message_id).await?;
                     }
-                    crate::pos::alloc_new_pos(db, cache, channel_id).await? as f64
+                    crate::pos::alloc_new_pos(db, cache, *channel_id).await? as f64
                 } else {
                     pos
                 };
@@ -246,7 +246,7 @@ impl Message {
             }
         }
         let mut message: Message = row?.try_get(0)?;
-        crate::pos::finished(cache, &message.id).await?;
+        crate::pos::finished(cache, *channel_id, message.id).await?;
         message.hide();
         Ok(message)
     }

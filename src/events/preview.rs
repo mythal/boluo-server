@@ -72,7 +72,7 @@ impl PreviewPost {
                 should_finish = true;
             }
         }
-        let start: f64 = crate::pos::pos(db, cache, &channel_id, &id).await? as f64;
+        let start: f64 = crate::pos::pos(db, cache, channel_id, id).await? as f64;
         let is_master = ChannelMember::get(db, &user_id, &channel_id)
             .await
             .or_no_permission()?
@@ -98,7 +98,7 @@ impl PreviewPost {
         });
 
         if should_finish {
-            crate::pos::finished(cache, &id).await?;
+            crate::pos::finished(cache, channel_id, id).await?;
         }
         Event::message_preview(space_id, preview);
         Ok(())
