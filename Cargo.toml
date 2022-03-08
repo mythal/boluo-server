@@ -9,6 +9,10 @@ default-run = "server"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
+name = "manage"
+path = "src/manage.rs"
+
+[[bin]]
 name = "server"
 path = "src/server.rs"
 
