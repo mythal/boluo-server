@@ -1,19 +1,19 @@
-use clap::Clap;
+use clap::Parser;
 use postgres::{Client, NoTls};
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = "0.1", author = "Coppa <sortal@protonmail.com>")]
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum SubCommand {
     Init(Init),
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct Init {
     database_url: Option<String>,
 }
