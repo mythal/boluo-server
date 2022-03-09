@@ -63,3 +63,22 @@ pub struct Edit {
     pub bio: Option<String>,
     pub avatar: Option<Uuid>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPassword {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPasswordConfirm {
+    pub token: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPasswordTokenCheck {
+    pub token: String,
+}

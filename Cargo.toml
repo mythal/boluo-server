@@ -30,7 +30,6 @@ futures = "0.3"
 regex = "1"
 serde_urlencoded = "0.7"
 cookie = "0.15"
-time = { version = "0.2", default-features = false, features = [ "std" ] }
 ring = "0.16"
 base64 = "0.13"
 log = "0.4"
@@ -43,6 +42,15 @@ postgres = "0.19"
 tokio-stream = "0.1"
 itertools = "0.10.1"
 serde_repr = "0.1"
+
+[dependencies.reqwest]
+version = "0.11"
+features = ["json"]
+
+[dependencies.time]
+version = "0.2"
+default-features = false
+features = [ "std" ]
 
 [dependencies.clap]
 version = "3.1"

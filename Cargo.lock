@@ -169,6 +169,7 @@ dependencies = [
  "postgres-types",
  "redis",
  "regex",
+ "reqwest",
  "ring",
  "sentry",
  "serde",

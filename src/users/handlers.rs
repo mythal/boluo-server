@@ -1,6 +1,6 @@
-use super::api::{Login, LoginReturn, Register};
+use super::api::{Login, LoginReturn, Register, ResetPassword, ResetPasswordConfirm, ResetPasswordTokenCheck};
 use super::models::User;
-use crate::database;
+use crate::{database, cache, mail};
 use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::session::{remove_session, revoke_session};
 
@@ -190,6 +190,59 @@ pub async fn check_username_exists(req: Request<Body>) -> Result<bool, AppError>
     Ok(user.is_some())
 }
 
+pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
+    let ResetPassword { email } = parse_body(req).await?;
+    let mut db = database::get().await?;
+    User::get_by_email(&mut *db, &email)
+        .await?
+        .ok_or(AppError::NotFound("email"))?;
+    let mut cache = cache::conn().await;
+    let token = uuid::Uuid::new_v4().to_string();
+    cache.set_with_expiration(token.as_bytes(), email.as_bytes(), 60 * 60).await?;
+    mail::send(&email, "Boluo password reset", &format!(
+        "
+            <p>
+                You have requested to reset your password.
+                <a href=\"https://boluo.chat/confirm-password-reset/{}\">Click here</a> to reset your password.
+            </p>
+            <p>If you did not request to reset your password, please ignore this email.</p>
+        ", token)
+    ).await.map_err(|e| AppError::Unexpected(e))?;
+    Ok(())
+}
+
+
+pub async fn reset_password_token_check(req: Request<Body>) -> Result<bool, AppError> {
+    let ResetPasswordTokenCheck { token } = parse_query(req.uri())?;
+    let email = cache::conn()
+        .await
+        .get(token.as_bytes())
+        .await?
+        .map(String::from_utf8);
+    if let Some(Ok(_)) = email {
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+pub async fn reset_password_confirm(req: Request<Body>) -> Result<(), AppError> {
+    let ResetPasswordConfirm { token, password } = parse_body(req).await?;
+    let mut db = database::get().await?;
+    let email = cache::conn()
+        .await
+        .get(token.as_bytes())
+        .await?
+        .map(String::from_utf8)
+        .ok_or_else(|| AppError::NotFound("token"))?
+        .map_err(|e| AppError::Unexpected(e.into()))?;
+    let user = User::get_by_email(&mut *db, &email)
+        .await?
+        .ok_or_else(|| AppError::NotFound("user"))?;
+    User::reset_password(&mut *db, user.id, &password).await?;
+    Ok(())
+}
+
 pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError> {
     match (path, req.method().clone()) {
         ("/login", Method::POST) => login(req).await,
@@ -202,6 +255,9 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/update_settings", Method::POST) => update_settings(req).await.map(ok_response),
         ("/check_username", Method::GET) => check_username_exists(req).await.map(ok_response),
         ("/check_email", Method::GET) => check_email_exists(req).await.map(ok_response),
+        ("/reset_password", Method::POST) => reset_password(req).await.map(ok_response),
+        ("/reset_password_token_check", Method::GET) => reset_password_token_check(req).await.map(ok_response),
+        ("/reset_password_confirm", Method::POST) => reset_password_confirm(req).await.map(ok_response),
         _ => missing(),
     }
 }

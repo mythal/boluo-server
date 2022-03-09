@@ -24,6 +24,7 @@ mod events;
 mod interface;
 mod logger;
 mod media;
+mod mail;
 mod messages;
 mod pool;
 mod pos;

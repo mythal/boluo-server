@@ -107,6 +107,22 @@ impl User {
         User::get(db, None, None, Some(username)).await
     }
 
+    pub async fn reset_password<T: Querist>(db: &mut T, id: Uuid, password: &str) -> Result<(), ModelError> {
+        use postgres_types::Type;
+        use crate::validators::PASSWORD;
+
+        PASSWORD.run(&password)?;
+
+        db
+            .execute_typed(
+                include_str!("sql/reset_password.sql"),
+                &[Type::UUID, Type::TEXT],
+                &[&id, &password],
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn deactivated<T: Querist>(db: &mut T, id: &Uuid) -> Result<u64, DbError> {
         db.execute(include_str!("sql/deactivated.sql"), &[id]).await
     }
@@ -205,6 +221,7 @@ async fn user_test() -> Result<(), crate::error::AppError> {
     assert_eq!(user_altered.nickname, new_nickname);
     assert_eq!(user_altered.bio, bio);
     assert_eq!(user_altered.avatar_id, Some(avatar.id));
+    User::reset_password(db, user.id, "hahahahha").await.unwrap();
     let settings = UserExt::update_settings(db, user.id, serde_json::json!({"madoka": "homura"})).await?;
     assert_eq!(
         *settings.get("madoka").unwrap(),
