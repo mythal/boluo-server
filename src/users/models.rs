@@ -108,18 +108,17 @@ impl User {
     }
 
     pub async fn reset_password<T: Querist>(db: &mut T, id: Uuid, password: &str) -> Result<(), ModelError> {
-        use postgres_types::Type;
         use crate::validators::PASSWORD;
+        use postgres_types::Type;
 
         PASSWORD.run(&password)?;
 
-        db
-            .execute_typed(
-                include_str!("sql/reset_password.sql"),
-                &[Type::UUID, Type::TEXT],
-                &[&id, &password],
-            )
-            .await?;
+        db.execute_typed(
+            include_str!("sql/reset_password.sql"),
+            &[Type::UUID, Type::TEXT],
+            &[&id, &password],
+        )
+        .await?;
         Ok(())
     }
 
