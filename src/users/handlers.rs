@@ -1,8 +1,8 @@
 use super::api::{Login, LoginReturn, Register, ResetPassword, ResetPasswordConfirm, ResetPasswordTokenCheck};
 use super::models::User;
-use crate::{database, cache, mail};
 use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::session::{remove_session, revoke_session};
+use crate::{cache, database, mail};
 
 use crate::channels::Channel;
 use crate::context::debug;
@@ -198,27 +198,31 @@ pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
         .ok_or(AppError::NotFound("email"))?;
     let mut cache = cache::conn().await;
     let token = uuid::Uuid::new_v4().to_string();
-    cache.set_with_expiration(token.as_bytes(), email.as_bytes(), 60 * 60).await?;
-    mail::send(&email, "Boluo password reset", &format!(
-        "
+    cache
+        .set_with_expiration(token.as_bytes(), email.as_bytes(), 60 * 60)
+        .await?;
+    mail::send(
+        &email,
+        "Boluo password reset",
+        &format!(
+            "
             <p>
                 You have requested to reset your password.
                 <a href=\"https://boluo.chat/confirm-password-reset/{}\">Click here</a> to reset your password.
             </p>
             <p>If you did not request to reset your password, please ignore this email.</p>
-        ", token)
-    ).await.map_err(|e| AppError::Unexpected(e))?;
+        ",
+            token
+        ),
+    )
+    .await
+    .map_err(|e| AppError::Unexpected(e))?;
     Ok(())
 }
 
-
 pub async fn reset_password_token_check(req: Request<Body>) -> Result<bool, AppError> {
     let ResetPasswordTokenCheck { token } = parse_query(req.uri())?;
-    let email = cache::conn()
-        .await
-        .get(token.as_bytes())
-        .await?
-        .map(String::from_utf8);
+    let email = cache::conn().await.get(token.as_bytes()).await?.map(String::from_utf8);
     if let Some(Ok(_)) = email {
         Ok(true)
     } else {

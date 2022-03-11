@@ -253,12 +253,10 @@ impl Event {
         }
 
         let kind = match &body {
-            EventBody::MessagePreview { preview, channel_id: _ } => {
-                Kind::Preview {
-                    sender_id: preview.sender_id,
-                    channel_id: preview.channel_id,
-                }
-            }
+            EventBody::MessagePreview { preview, channel_id: _ } => Kind::Preview {
+                sender_id: preview.sender_id,
+                channel_id: preview.channel_id,
+            },
             _ => Kind::Other,
         };
 
