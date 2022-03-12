@@ -40,7 +40,7 @@ pub fn ok_response<T: Serialize>(value: T) -> Response {
 pub struct WebError {
     code: &'static str,
     message: String,
-    table: Option<String>,
+    context: serde_json::Value,
 }
 
 impl WebError {
@@ -48,7 +48,7 @@ impl WebError {
         WebError {
             code: e.error_code(),
             message: e.to_string(),
-            table: e.table(),
+            context: e.context(),
         }
     }
 }

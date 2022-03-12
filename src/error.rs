@@ -18,7 +18,7 @@ pub enum AppError {
     },
     #[error("Authentication failed: {0}")]
     Unauthenticated(String),
-    #[error("\"{0}\" not found")]
+    #[error("Resource not found")]
     NotFound(&'static str),
     #[error("Permission denied: {0}")]
     NoPermission(String),
@@ -28,13 +28,13 @@ pub enum AppError {
     Unexpected(anyhow::Error),
     #[error("An unexpected serialize error occurred")]
     Serialize(serde_json::Error),
-    #[error("Wrong request format: {0}")]
+    #[error("Bad request: {0}")]
     BadRequest(String),
     #[error("Method not allowed")]
     MethodNotAllowed,
-    #[error("\"{0}\" already exists")]
+    #[error("Resource already exists")]
     Conflict(String),
-    #[error("\"{0}\" exceeds the limit")]
+    #[error("Limit exceed")]
     LimitExceeded(&'static str),
     #[error("An I/O error occurred")]
     Hyper {
@@ -77,6 +77,17 @@ impl AppError {
             LimitExceeded(_) => "LIMIT_EXCEEDED",
             Conflict(_) => "CONFLICT",
             _ => "UNEXPECTED",
+        }
+    }
+
+    pub fn context(&self) -> serde_json::Value {
+        use serde_json::Value;
+        use AppError::*;
+        match self {
+            NotFound(something) => Value::String(something.to_string()),
+            Conflict(something) => Value::String(something.clone()),
+            LimitExceeded(what) => Value::String(what.to_string()),
+            _ => Value::Null,
         }
     }
 
