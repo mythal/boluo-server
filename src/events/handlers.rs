@@ -128,7 +128,6 @@ async fn handle_client_event(mailbox: Uuid, user_id: Option<Uuid>, message: Stri
 
 async fn connect(req: Request) -> Result<Response, anyhow::Error> {
     use futures::future;
-    use std::convert::TryInto;
 
     let EventQuery { mailbox, token } = parse_query(req.uri())?;
 

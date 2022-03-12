@@ -3,7 +3,7 @@ name = "boluo_server"
 version = "0.1.0"
 authors = ["Quan Brew <t@ioover.net>"]
 default-run = "server"
-edition = "2018"
+edition = "2021"
 resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
