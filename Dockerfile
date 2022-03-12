@@ -1,5 +1,8 @@
-FROM rustlang/rust:nightly
+FROM rustlang/rust:nightly-buster AS builder
 RUN cargo --version
 ADD . /boluo
-RUN cd /boluo && cargo build --release && cp /boluo/target/release/server /bin && cp /boluo/target/release/manage /bin && rm -rf /boluo
-WORKDIR /
+RUN cd /boluo && cargo build --release
+
+FROM debian:buster AS server
+COPY --from=builder /boluo/target/release/server /bin/server
+COPY --from=builder /boluo/target/release/manage /bin/manage
