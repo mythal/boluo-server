@@ -3,6 +3,8 @@ use once_cell::sync::OnceCell;
 use ring::hmac;
 use ring::rand::SecureRandom;
 use std::time::{Duration, SystemTime};
+use hyper::{Body, Request};
+use hyper::header::HeaderName;
 use uuid::Uuid;
 
 macro_rules! regex {
@@ -93,6 +95,18 @@ fn test_sign() {
 
 pub struct MessageRng {
     x: f64,
+}
+
+pub fn get_ip(req: &Request<Body>) -> Option<&str> {
+    let real_ip = HeaderName::from_lowercase(b"x-real-ip").unwrap();
+    let forwarded_for = HeaderName::from_lowercase(b"x-forwarded-for").unwrap();
+    let headers = req.headers();
+    if headers.contains_key(&real_ip) {
+        headers.get(&real_ip)?.to_str().ok()
+    } else {
+        let value = headers.get(forwarded_for)?.to_str().ok()?;
+        Some(value.split(",").next()?.trim())
+    }
 }
 
 impl MessageRng {

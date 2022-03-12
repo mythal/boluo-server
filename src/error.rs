@@ -34,6 +34,8 @@ pub enum AppError {
     MethodNotAllowed,
     #[error("\"{0}\" already exists")]
     Conflict(String),
+    #[error("\"{0}\" exceeds the limit")]
+    LimitExceeded(&'static str),
     #[error("An I/O error occurred")]
     Hyper {
         #[from]
@@ -58,6 +60,7 @@ impl AppError {
             Validation(_) | BadRequest(_) => StatusCode::BAD_REQUEST,
             MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Conflict(_) => StatusCode::CONFLICT,
+            LimitExceeded(_) => StatusCode::TOO_MANY_REQUESTS,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -71,6 +74,7 @@ impl AppError {
             Validation(_) => "VALIDATION_FAIL",
             BadRequest(_) => "BAD_REQUEST",
             MethodNotAllowed => "METHOD_NOT_ALLOWED",
+            LimitExceeded(_) => "LIMIT_EXCEEDED",
             Conflict(_) => "CONFLICT",
             _ => "UNEXPECTED",
         }

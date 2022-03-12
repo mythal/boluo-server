@@ -14,6 +14,7 @@ use crate::users::api::{CheckEmailExists, CheckUsernameExists, Edit, GetMe, Quer
 use crate::users::models::UserExt;
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
+use crate::utils::get_ip;
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -190,16 +191,43 @@ pub async fn check_username_exists(req: Request<Body>) -> Result<bool, AppError>
     Ok(user.is_some())
 }
 
+pub fn token_key(token: &str) -> Vec<u8> {
+    let mut key = b"reset_password:".to_vec();
+    key.extend_from_slice(token.as_bytes());
+    return key;
+}
+
+pub async fn ip_limit(cache: &mut cache::Connection, req: &Request<Body>) -> Result<(), AppError> {
+    use redis::AsyncCommands;
+
+    let ip = get_ip(req).ok_or_else(|| AppError::BadRequest(format!("failed to get client IP")))?;
+    let mut key = b"reset_password_ip:".to_vec();
+    key.extend_from_slice(ip.as_bytes());
+    let counter: i32 = cache.inner.incr(&key, 1).await?;
+    cache.inner.expire(&key, 60 * 2).await?;
+    if counter > 3 {
+        return Err(AppError::LimitExceeded("IP"));
+    }
+    Ok(())
+}
+
 pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
+    let mut cache = cache::conn().await;
+    ip_limit(&mut cache, &req).await?;
     let ResetPassword { email } = parse_body(req).await?;
+
     let mut db = database::get().await?;
     User::get_by_email(&mut *db, &email)
         .await?
         .ok_or(AppError::NotFound("email"))?;
-    let mut cache = cache::conn().await;
     let token = uuid::Uuid::new_v4().to_string();
+    let key = token_key(&token);
+    if let Some(_) = cache.get(key.as_slice()).await? {
+        return Err(AppError::LimitExceeded("email"));
+    }
+
     cache
-        .set_with_expiration(token.as_bytes(), email.as_bytes(), 60 * 60)
+        .set_with_expiration(key.as_slice(), email.as_bytes(), 60 * 60)
         .await?;
     mail::send(
         &email,
@@ -222,7 +250,7 @@ pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
 
 pub async fn reset_password_token_check(req: Request<Body>) -> Result<bool, AppError> {
     let ResetPasswordTokenCheck { token } = parse_query(req.uri())?;
-    let email = cache::conn().await.get(token.as_bytes()).await?.map(String::from_utf8);
+    let email = cache::conn().await.get(token_key(&token).as_slice()).await?.map(String::from_utf8);
     if let Some(Ok(_)) = email {
         Ok(true)
     } else {
@@ -235,7 +263,7 @@ pub async fn reset_password_confirm(req: Request<Body>) -> Result<(), AppError> 
     let mut db = database::get().await?;
     let email = cache::conn()
         .await
-        .get(token.as_bytes())
+        .get(token_key(&token).as_slice())
         .await?
         .map(String::from_utf8)
         .ok_or_else(|| AppError::NotFound("token"))?
