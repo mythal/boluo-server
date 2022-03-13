@@ -66,7 +66,10 @@ async fn events_clean() {
                         .filter(|(_, edition)| edition.event.timestamp > before)
                         .collect();
                     mailbox.start_at = before;
-                    if mailbox.events.is_empty() && mailbox.edition_map.is_empty() && mailbox.preview_map.is_empty() {
+                    if mailbox.events.is_empty()
+                        && mailbox.edition_map.is_empty()
+                        && mailbox.preview_map.is_empty()
+                    {
                         empty = true;
                     }
                 }

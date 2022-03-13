@@ -21,7 +21,12 @@ impl Connection {
         self.inner.set(key, value).await
     }
 
-    pub async fn set_with_expiration(&mut self, key: &[u8], value: &[u8], seconds: usize) -> Result<(), CacheError> {
+    pub async fn set_with_expiration(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        seconds: usize,
+    ) -> Result<(), CacheError> {
         self.inner.set_ex(key, value, seconds).await
     }
 

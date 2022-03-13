@@ -26,9 +26,10 @@ async fn send(req: Request<Body>) -> Result<Message, AppError> {
     } = interface::parse_body(req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let (channel_member, space_member) = ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
-        .await
-        .or_no_permission()?;
+    let (channel_member, space_member) =
+        ChannelMember::get_with_space_member(db, &session.user_id, &channel_id)
+            .await
+            .or_no_permission()?;
     let mut cache = crate::cache::conn().await;
     let message = Message::create(
         db,
@@ -69,14 +70,22 @@ async fn edit(req: Request<Body>) -> Result<Message, AppError> {
     let mut message = Message::get(db, &message_id, Some(&session.user_id))
         .await?
         .or_not_found()?;
-    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
-    let (_, space_member) = ChannelMember::get_with_space_member(db, &session.user_id, &message.channel_id)
+    let channel = Channel::get_by_id(db, &message.channel_id)
         .await
-        .or_no_permission()?;
+        .or_not_found()?;
+    let (_, space_member) =
+        ChannelMember::get_with_space_member(db, &session.user_id, &message.channel_id)
+            .await
+            .or_no_permission()?;
     if !channel.is_document && message.sender_id != session.user_id {
         return Err(AppError::NoPermission(format!("user id dismatch")));
     }
-    if name.is_some() || text.is_some() || entities.is_some() || in_game.is_some() || is_action.is_some() {
+    if name.is_some()
+        || text.is_some()
+        || entities.is_some()
+        || in_game.is_some()
+        || is_action.is_some()
+    {
         let text = text.as_deref();
         let name = name.as_deref();
         message = Message::edit(
@@ -112,7 +121,9 @@ async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
     let message = Message::get(db, &message_id, Some(&session.user_id))
         .await
         .or_not_found()?;
-    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
+    let channel = Channel::get_by_id(db, &message.channel_id)
+        .await
+        .or_not_found()?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await
         .or_no_permission()?;
@@ -125,12 +136,20 @@ async fn move_between(req: Request<Body>) -> Result<bool, AppError> {
     }
 
     let message = match range {
-        (None, None) => return Err(AppError::BadRequest("a and b cannot both be null".to_string())),
+        (None, None) => {
+            return Err(AppError::BadRequest(
+                "a and b cannot both be null".to_string(),
+            ))
+        }
         (Some(a), Some(b)) => {
             if a < b {
-                Message::move_between(db, &message_id, &a, &b).await?.or_not_found()?
+                Message::move_between(db, &message_id, &a, &b)
+                    .await?
+                    .or_not_found()?
             } else {
-                Message::move_between(db, &message_id, &b, &a).await?.or_not_found()?
+                Message::move_between(db, &message_id, &b, &a)
+                    .await?
+                    .or_not_found()?
             }
         }
         (None, Some(b)) => Message::move_above(db, &channel_id, &message_id, &b)
@@ -159,7 +178,9 @@ async fn delete(req: Request<Body>) -> Result<Message, AppError> {
     let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let message = Message::get(db, &id, Some(&session.user_id)).await.or_not_found()?;
+    let message = Message::get(db, &id, Some(&session.user_id))
+        .await
+        .or_not_found()?;
     let space_member = SpaceMember::get_by_channel(db, &session.user_id, &message.channel_id)
         .await
         .or_no_permission()?;
@@ -176,8 +197,12 @@ async fn toggle_fold(req: Request<Body>) -> Result<Message, AppError> {
     let interface::IdQuery { id } = interface::parse_query(req.uri())?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    let message = Message::get(db, &id, Some(&session.user_id)).await.or_not_found()?;
-    let channel = Channel::get_by_id(db, &message.channel_id).await.or_not_found()?;
+    let message = Message::get(db, &id, Some(&session.user_id))
+        .await
+        .or_not_found()?;
+    let channel = Channel::get_by_id(db, &message.channel_id)
+        .await
+        .or_not_found()?;
     let channel_member = ChannelMember::get(db, &session.user_id, &message.channel_id)
         .await
         .or_no_permission()?;

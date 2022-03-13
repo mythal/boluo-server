@@ -59,7 +59,9 @@ async fn token(req: Request<Body>) -> Result<Uuid, AppError> {
         .map(|space_member| space_member.is_admin)
         .unwrap_or(false);
     if !is_admin {
-        return Err(AppError::NoPermission(format!("A non-admin tries to get join token")));
+        return Err(AppError::NoPermission(format!(
+            "A non-admin tries to get join token"
+        )));
     }
     Space::get_token(db, &id).await.map_err(Into::into)
 }
@@ -85,7 +87,9 @@ async fn my_spaces(req: Request<Body>) -> Result<Vec<SpaceWithMember>, AppError>
     let session = authenticate(&req).await?;
     let mut conn = database::get().await?;
     let db = &mut *conn;
-    Space::get_by_user(db, &session.user_id).await.map_err(Into::into)
+    Space::get_by_user(db, &session.user_id)
+        .await
+        .map_err(Into::into)
 }
 
 async fn search(req: Request<Body>) -> Result<Vec<Space>, AppError> {
@@ -109,9 +113,18 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
     let default_dice_type = default_dice_type.as_deref();
-    let space = Space::create(db, name, &session.user_id, description, password, default_dice_type).await?;
+    let space = Space::create(
+        db,
+        name,
+        &session.user_id,
+        description,
+        password,
+        default_dice_type,
+    )
+    .await?;
     let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
-    let channel = Channel::create(db, &space.id, &*first_channel_name, true, default_dice_type).await?;
+    let channel =
+        Channel::create(db, &space.id, &*first_channel_name, true, default_dice_type).await?;
     ChannelMember::add_user(db, &session.user_id, &channel.id, "", true).await?;
     trans.commit().await?;
     log::info!("a space ({}) was just created", space.id);
@@ -140,7 +153,9 @@ async fn edit(req: Request<Body>) -> Result<Space, AppError> {
         .await
         .or_no_permission()?;
     if !space_member.is_admin {
-        return Err(AppError::NoPermission(format!("A non-admin tries to edit space")));
+        return Err(AppError::NoPermission(format!(
+            "A non-admin tries to edit space"
+        )));
     }
     let space = Space::edit(
         db,
@@ -218,8 +233,12 @@ async fn kick(req: Request<Body>) -> Result<bool, AppError> {
     let mut conn = database::get().await?;
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
-    let my_member = SpaceMember::get(db, &session.user_id, &space_id).await.or_not_found()?;
-    let kick_member = SpaceMember::get(db, &user_id, &space_id).await.or_not_found()?;
+    let my_member = SpaceMember::get(db, &session.user_id, &space_id)
+        .await
+        .or_not_found()?;
+    let kick_member = SpaceMember::get(db, &user_id, &space_id)
+        .await
+        .or_not_found()?;
     if kick_member.is_admin {
         return Err(AppError::BadRequest("Can't kick admin".to_string()));
     }
@@ -256,7 +275,11 @@ async fn delete(req: Request<Body>) -> Result<Space, AppError> {
         log::info!("A space ({}) was deleted", space.id);
         return Ok(space);
     }
-    log::warn!("The user {} failed to try delete a space {}", session.user_id, space.id);
+    log::warn!(
+        "The user {} failed to try delete a space {}",
+        session.user_id,
+        space.id
+    );
     Err(AppError::NoPermission(format!("failed to delete")))
 }
 

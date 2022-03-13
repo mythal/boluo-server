@@ -115,10 +115,14 @@ async fn main() {
             .ok();
     };
 
-    let addr: Ipv4Addr = env::var("HOST").unwrap_or("127.0.0.1".to_string()).parse().unwrap();
+    let addr: Ipv4Addr = env::var("HOST")
+        .unwrap_or("127.0.0.1".to_string())
+        .parse()
+        .unwrap();
     let addr = SocketAddr::new(IpAddr::V4(addr), port);
 
-    let make_svc = make_service_fn(|_: &AddrStream| async { Ok::<_, hyper::Error>(service_fn(handler)) });
+    let make_svc =
+        make_service_fn(|_: &AddrStream| async { Ok::<_, hyper::Error>(service_fn(handler)) });
 
     let server = Server::bind(&addr).serve(make_svc);
     events::tasks::start();

@@ -47,7 +47,12 @@ where
     tokio::spawn(async {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
-                let ws_stream = tokio_tungstenite::WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await;
+                let ws_stream = tokio_tungstenite::WebSocketStream::from_raw_socket(
+                    upgraded,
+                    Role::Server,
+                    None,
+                )
+                .await;
                 log::debug!("WebSocket connection established");
                 if let Err(err) = handler(ws_stream).await {
                     log::error!("error in websocket connection: {}", err);

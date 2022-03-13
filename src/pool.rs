@@ -92,11 +92,20 @@ pub struct Pool<F: Factory> {
 }
 
 impl<F: Factory> Pool<F> {
-    async fn recycle(shared_pool_weak: Weak<SharedPool<F>>, mut rx: mpsc::Receiver<Option<F::Output>>) {
+    async fn recycle(
+        shared_pool_weak: Weak<SharedPool<F>>,
+        mut rx: mpsc::Receiver<Option<F::Output>>,
+    ) {
         use futures::stream::StreamExt;
         while let Some(conn) = StreamExt::next(&mut rx).await {
             if let Some(shared_pool) = shared_pool_weak.upgrade() {
-                let conn = conn.and_then(|conn| if F::is_broken(&conn) { None } else { Some(conn) });
+                let conn = conn.and_then(|conn| {
+                    if F::is_broken(&conn) {
+                        None
+                    } else {
+                        Some(conn)
+                    }
+                });
                 let mut pool = shared_pool.inner.lock().await;
                 pool.put_back(conn);
             } else {
@@ -113,7 +122,11 @@ impl<F: Factory> Pool<F> {
             conns.push_back(factory.make().await.ok());
         }
         let waiters = VecDeque::new();
-        let internal_pool = InternalPool { waiters, conns, num };
+        let internal_pool = InternalPool {
+            waiters,
+            conns,
+            num,
+        };
 
         let (tx, rx) = mpsc::channel::<Option<F::Output>>(num);
 

@@ -28,16 +28,29 @@ fn filename_sanitizer(filename: String) -> String {
 }
 
 pub fn upload_params(uri: &Uri) -> Result<Upload, AppError> {
-    let Upload { filename, mime_type } = parse_query(uri)?;
+    let Upload {
+        filename,
+        mime_type,
+    } = parse_query(uri)?;
     if filename.len() > 200 {
         return Err(ValidationFailed("File Name is too long").into());
     }
     let filename = filename_sanitizer(filename);
-    Ok(Upload { filename, mime_type })
+    Ok(Upload {
+        filename,
+        mime_type,
+    })
 }
 
-pub async fn upload(req: Request<Body>, params: Upload, max_size: usize) -> Result<MediaFile, AppError> {
-    let Upload { filename, mime_type } = params;
+pub async fn upload(
+    req: Request<Body>,
+    params: Upload,
+    max_size: usize,
+) -> Result<MediaFile, AppError> {
+    let Upload {
+        filename,
+        mime_type,
+    } = params;
     let id = utils::id();
     let temp_filename = format!("{}_{}", id, filename);
 
@@ -112,7 +125,11 @@ async fn send_file(path: PathBuf, mut sender: hyper::body::Sender) -> Result<(),
 }
 
 async fn get(req: Request<Body>) -> Result<Response, AppError> {
-    let MediaQuery { id, filename, download } = parse_query(req.uri())?;
+    let MediaQuery {
+        id,
+        filename,
+        download,
+    } = parse_query(req.uri())?;
     let method = req.method().clone();
 
     let mut conn = database::get().await?;
@@ -121,9 +138,15 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
     if let Some(id) = id {
         media = Some(Media::get_by_id(db, &id).await.or_not_found()?);
     } else if let Some(filename) = filename {
-        media = Some(Media::get_by_filename(db, &*filename).await.or_not_found()?);
+        media = Some(
+            Media::get_by_filename(db, &*filename)
+                .await
+                .or_not_found()?,
+        );
     }
-    let media = media.ok_or_else(|| AppError::BadRequest("Filename or media id must be specified.".to_string()))?;
+    let media = media.ok_or_else(|| {
+        AppError::BadRequest("Filename or media id must be specified.".to_string())
+    })?;
     let path = Media::path(&*media.filename);
     let size = std::fs::metadata(&path)
         .map(|metadata| metadata.len())
@@ -144,7 +167,10 @@ async fn get(req: Request<Body>) -> Result<Response, AppError> {
     let mut response_builder = hyper::Response::builder()
         .header(header::ACCEPT_RANGES, HeaderValue::from_static("none"))
         .header(header::CONTENT_LENGTH, HeaderValue::from(size))
-        .header(header::CACHE_CONTROL, HeaderValue::from_static("max-age=31536000")) // for year
+        .header(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("max-age=31536000"),
+        ) // for year
         .header(
             header::CONTENT_DISPOSITION,
             content_disposition(download, &*media.original_filename),

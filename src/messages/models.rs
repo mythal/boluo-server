@@ -16,7 +16,9 @@ pub fn check_pos(pos: f64) -> Result<(), ValidationFailed> {
             "The wrong floating point value was used for the position value",
         ));
     } else if pos < 0.0 {
-        return Err(ValidationFailed("The position value cannot be less than zero"));
+        return Err(ValidationFailed(
+            "The position value cannot be less than zero",
+        ));
     }
     Ok(())
 }
@@ -54,8 +56,14 @@ pub struct Message {
 }
 
 impl Message {
-    pub async fn get<T: Querist>(db: &mut T, id: &Uuid, user_id: Option<&Uuid>) -> Result<Option<Message>, DbError> {
-        let row = db.query_one(include_str!("sql/get.sql"), &[id, &user_id]).await?;
+    pub async fn get<T: Querist>(
+        db: &mut T,
+        id: &Uuid,
+        user_id: Option<&Uuid>,
+    ) -> Result<Option<Message>, DbError> {
+        let row = db
+            .query_one(include_str!("sql/get.sql"), &[id, &user_id])
+            .await?;
         if let Some(row) = row {
             let mut message: Message = row.try_get(0)?;
             let should_hide: Option<bool> = row.try_get(1)?;
@@ -68,11 +76,19 @@ impl Message {
         }
     }
 
-    pub async fn query_by_pos<T: Querist>(db: &mut T, channel_id: &Uuid, pos: f64) -> Result<Option<Message>, DbError> {
+    pub async fn query_by_pos<T: Querist>(
+        db: &mut T,
+        channel_id: &Uuid,
+        pos: f64,
+    ) -> Result<Option<Message>, DbError> {
         let row = db
             .query_one(include_str!("sql/by_pos.sql"), &[channel_id, &pos])
             .await?;
-        let maybe_message = if let Some(row) = row { row.try_get(0)? } else { None };
+        let maybe_message = if let Some(row) = row {
+            row.try_get(0)?
+        } else {
+            None
+        };
         Ok(maybe_message)
     }
 
@@ -361,7 +377,9 @@ impl Message {
         let row = db
             .query_one(
                 include_str!("sql/edit.sql"),
-                &[id, &name, &text, &entities, &in_game, &is_action, &folded, &media_id],
+                &[
+                    id, &name, &text, &entities, &in_game, &is_action, &folded, &media_id,
+                ],
             )
             .await?;
         if let Some(row) = row {
@@ -395,8 +413,18 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     let nickname = "Test User";
     let space_name = "Test Space";
 
-    let user = User::register(db, email, username, nickname, password).await.unwrap();
-    let space = Space::create(db, space_name.to_string(), &user.id, String::new(), None, None).await?;
+    let user = User::register(db, email, username, nickname, password)
+        .await
+        .unwrap();
+    let space = Space::create(
+        db,
+        space_name.to_string(),
+        &user.id,
+        String::new(),
+        None,
+        None,
+    )
+    .await?;
     SpaceMember::add_admin(db, &user.id, &space.id).await?;
 
     let channel_name = "Test Channel";
@@ -425,7 +453,9 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     .await?;
     assert_eq!(message.text, "");
 
-    let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
+    let message = Message::get(db, &message.id, Some(&user.id))
+        .await?
+        .unwrap();
     assert_eq!(message.text, text);
 
     let new_text = "cocona";
@@ -444,14 +474,18 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     .unwrap();
     assert_eq!(edited.text, "");
 
-    let message = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
+    let message = Message::get(db, &message.id, Some(&user.id))
+        .await?
+        .unwrap();
     assert_eq!(message.text, new_text);
     let message_by_pos = Message::query_by_pos(db, &message.channel_id, message.pos)
         .await?
         .unwrap();
     assert_eq!(message_by_pos.id, message.id);
     ChannelMember::set_master(db, &user.id, &channel.id, false).await?;
-    let a = Message::get(db, &message.id, Some(&user.id)).await?.unwrap();
+    let a = Message::get(db, &message.id, Some(&user.id))
+        .await?
+        .unwrap();
     assert_eq!(a.text, "");
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 1);
@@ -501,7 +535,10 @@ async fn message_test() -> Result<(), crate::error::AppError> {
     .unwrap();
     let a = messages[1].pos;
     let b = messages[0].pos;
-    Message::move_between(db, &c.id, &a, &b).await.unwrap().unwrap();
+    Message::move_between(db, &c.id, &a, &b)
+        .await
+        .unwrap()
+        .unwrap();
     let messages = Message::get_by_channel(db, &channel.id, None, 128).await?;
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[1].id, c.id);

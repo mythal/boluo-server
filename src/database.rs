@@ -152,10 +152,17 @@ impl Client {
         }
         let transaction = self.client.transaction().await?;
         let prepared = &mut self.prepared;
-        Ok(Transaction { transaction, prepared })
+        Ok(Transaction {
+            transaction,
+            prepared,
+        })
     }
 
-    async fn get_statement(&mut self, source: Sql, types: &[postgres_types::Type]) -> Result<Statement, DbError> {
+    async fn get_statement(
+        &mut self,
+        source: Sql,
+        types: &[postgres_types::Type],
+    ) -> Result<Statement, DbError> {
         if let Some(statement) = self.prepared.get(&source) {
             Ok(statement.clone())
         } else {
@@ -233,7 +240,11 @@ impl<'a> Transaction<'a> {
         self.transaction.rollback().await
     }
 
-    async fn get_statement(&mut self, source: Sql, types: &[postgres_types::Type]) -> Result<Statement, DbError> {
+    async fn get_statement(
+        &mut self,
+        source: Sql,
+        types: &[postgres_types::Type],
+    ) -> Result<Statement, DbError> {
         let mut statement = self.prepared.get(&source);
         if statement.is_none() {
             let prepared = self.transaction.prepare_typed(source.0, types).await?;
