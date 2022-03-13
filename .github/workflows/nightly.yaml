@@ -1,11 +1,11 @@
-name: Publish image
+name: Nightly
 on:
   push:
     branches:
       - master
 jobs:
   push_to_registry:
-    name: Push Docker image to GitHub Packages
+    name: Build nightly image
     runs-on: ubuntu-latest
     permissions:
       packages: write
