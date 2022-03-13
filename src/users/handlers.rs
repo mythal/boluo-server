@@ -1,4 +1,6 @@
-use super::api::{Login, LoginReturn, Register, ResetPassword, ResetPasswordConfirm, ResetPasswordTokenCheck};
+use super::api::{
+    Login, LoginReturn, Register, ResetPassword, ResetPasswordConfirm, ResetPasswordTokenCheck,
+};
 use super::models::User;
 use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::session::{remove_session, revoke_session};
@@ -12,9 +14,9 @@ use crate::media::{upload, upload_params};
 use crate::spaces::Space;
 use crate::users::api::{CheckEmailExists, CheckUsernameExists, Edit, GetMe, QueryUser};
 use crate::users::models::UserExt;
+use crate::utils::get_ip;
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
-use crate::utils::get_ip;
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -81,7 +83,9 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let user = User::login(db, &*form.username, &*form.password)
         .await
         .or_no_permission()?;
-    let session = session::start(&user.id).await.map_err(error_unexpected!())?;
+    let session = session::start(&user.id)
+        .await
+        .map_err(error_unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)
@@ -136,7 +140,11 @@ pub async fn logout(req: Request<Body>) -> Result<Response, AppError> {
 pub async fn edit(req: Request<Body>) -> Result<User, AppError> {
     use crate::csrf::authenticate;
     let session = authenticate(&req).await?;
-    let Edit { nickname, bio, avatar }: Edit = parse_body(req).await?;
+    let Edit {
+        nickname,
+        bio,
+        avatar,
+    }: Edit = parse_body(req).await?;
     let mut db = database::get().await?;
     User::edit(&mut *db, &session.user_id, nickname, bio, avatar)
         .await
@@ -200,11 +208,17 @@ pub fn token_key(token: &str) -> Vec<u8> {
 pub async fn ip_limit(cache: &mut cache::Connection, req: &Request<Body>) -> Result<(), AppError> {
     use redis::AsyncCommands;
 
-    let ip = get_ip(req).ok_or_else(|| AppError::BadRequest(format!("failed to get client IP")))?;
+    let ip = get_ip(req).unwrap_or_else(|| {
+        log::warn!("Unable to obtain client IP");
+        log::info!("{:?}", req.headers());
+        "0.0.0.0"
+    });
     let mut key = b"reset_password_ip:".to_vec();
     key.extend_from_slice(ip.as_bytes());
     let counter: i32 = cache.inner.incr(&key, 1).await?;
-    cache.inner.expire(&key, 60 * 2).await?;
+    if counter == 1 {
+        cache.inner.expire(&key, 60 * 2).await?;
+    }
     if counter > 3 {
         return Err(AppError::LimitExceeded("IP"));
     }
@@ -222,9 +236,13 @@ pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
         .ok_or(AppError::NotFound("email"))?;
     let token = uuid::Uuid::new_v4().to_string();
     let key = token_key(&token);
-    if let Some(_) = cache.get(key.as_slice()).await? {
+    let email_key = token_key(&email);
+    if let Some(_) = cache.get(email_key.as_slice()).await? {
         return Err(AppError::LimitExceeded("email"));
     }
+    cache
+        .set_with_expiration(email_key.as_slice(), token.as_bytes(), 60 * 5)
+        .await?;
 
     cache
         .set_with_expiration(key.as_slice(), email.as_bytes(), 60 * 60)
@@ -250,7 +268,11 @@ pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
 
 pub async fn reset_password_token_check(req: Request<Body>) -> Result<bool, AppError> {
     let ResetPasswordTokenCheck { token } = parse_query(req.uri())?;
-    let email = cache::conn().await.get(token_key(&token).as_slice()).await?.map(String::from_utf8);
+    let email = cache::conn()
+        .await
+        .get(token_key(&token).as_slice())
+        .await?
+        .map(String::from_utf8);
     if let Some(Ok(_)) = email {
         Ok(true)
     } else {
@@ -288,8 +310,12 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/check_username", Method::GET) => check_username_exists(req).await.map(ok_response),
         ("/check_email", Method::GET) => check_email_exists(req).await.map(ok_response),
         ("/reset_password", Method::POST) => reset_password(req).await.map(ok_response),
-        ("/reset_password_token_check", Method::GET) => reset_password_token_check(req).await.map(ok_response),
-        ("/reset_password_confirm", Method::POST) => reset_password_confirm(req).await.map(ok_response),
+        ("/reset_password_token_check", Method::GET) => {
+            reset_password_token_check(req).await.map(ok_response)
+        }
+        ("/reset_password_confirm", Method::POST) => {
+            reset_password_confirm(req).await.map(ok_response)
+        }
         _ => missing(),
     }
 }

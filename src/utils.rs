@@ -1,10 +1,10 @@
 use anyhow::Context;
+use hyper::header::HeaderName;
+use hyper::{Body, Request};
 use once_cell::sync::OnceCell;
 use ring::hmac;
 use ring::rand::SecureRandom;
 use std::time::{Duration, SystemTime};
-use hyper::{Body, Request};
-use hyper::header::HeaderName;
 use uuid::Uuid;
 
 macro_rules! regex {
@@ -20,7 +20,8 @@ pub fn now_unix_duration() -> Duration {
     use std::time::UNIX_EPOCH;
 
     let now = SystemTime::now();
-    now.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!")
+    now.duration_since(UNIX_EPOCH)
+        .expect("SystemTime before UNIX EPOCH!")
 }
 
 pub fn id() -> Uuid {
@@ -69,11 +70,17 @@ pub fn timestamp() -> i64 {
     Utc::now().timestamp_millis()
 }
 
-pub fn inner_map<T, E, U, F: Fn(T) -> U>(x: Result<Option<T>, E>, mapper: F) -> Result<Option<U>, E> {
+pub fn inner_map<T, E, U, F: Fn(T) -> U>(
+    x: Result<Option<T>, E>,
+    mapper: F,
+) -> Result<Option<U>, E> {
     x.map(|y| y.map(mapper))
 }
 
-pub fn inner_result_map<T, E, U, F: Fn(T) -> Result<U, E>>(x: Result<Option<T>, E>, mapper: F) -> Result<Option<U>, E> {
+pub fn inner_result_map<T, E, U, F: Fn(T) -> Result<U, E>>(
+    x: Result<Option<T>, E>,
+    mapper: F,
+) -> Result<Option<U>, E> {
     match x {
         Ok(Some(x)) => mapper(x).map(|value| Some(value)),
         Ok(None) => Ok(None),
@@ -101,6 +108,7 @@ pub fn get_ip(req: &Request<Body>) -> Option<&str> {
     let real_ip = HeaderName::from_lowercase(b"x-real-ip").unwrap();
     let forwarded_for = HeaderName::from_lowercase(b"x-forwarded-for").unwrap();
     let headers = req.headers();
+    dbg!(headers);
     if headers.contains_key(&real_ip) {
         headers.get(&real_ip)?.to_str().ok()
     } else {
