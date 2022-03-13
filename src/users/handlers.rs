@@ -17,6 +17,7 @@ use crate::users::models::UserExt;
 use crate::utils::get_ip;
 use hyper::{Body, Method, Request};
 use once_cell::sync::OnceCell;
+use redis::AsyncCommands;
 
 async fn register(req: Request<Body>) -> Result<User, AppError> {
     let Register {
@@ -206,8 +207,6 @@ pub fn token_key(token: &str) -> Vec<u8> {
 }
 
 pub async fn ip_limit(cache: &mut cache::Connection, req: &Request<Body>) -> Result<(), AppError> {
-    use redis::AsyncCommands;
-
     let ip = get_ip(req).unwrap_or_else(|| {
         log::warn!("Unable to obtain client IP");
         log::info!("{:?}", req.headers());
@@ -225,10 +224,23 @@ pub async fn ip_limit(cache: &mut cache::Connection, req: &Request<Body>) -> Res
     Ok(())
 }
 
+pub async fn email_limit(cache: &mut cache::Connection, email: &String) -> Result<(), AppError> {
+    let email_key = token_key(email);
+    let counter: i32 = cache.inner.incr(&email_key, 1).await?;
+    if counter == 1 {
+        cache.inner.expire(&email_key, 60 * 2).await?;
+    }
+    if counter > 2 {
+        return Err(AppError::LimitExceeded("email"));
+    }
+    Ok(())
+}
+
 pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
     let mut cache = cache::conn().await;
     ip_limit(&mut cache, &req).await?;
     let ResetPassword { email } = parse_body(req).await?;
+    email_limit(&mut cache, &email).await?;
 
     let mut db = database::get().await?;
     User::get_by_email(&mut *db, &email)
@@ -236,13 +248,6 @@ pub async fn reset_password(req: Request<Body>) -> Result<(), AppError> {
         .ok_or(AppError::NotFound("email"))?;
     let token = uuid::Uuid::new_v4().to_string();
     let key = token_key(&token);
-    let email_key = token_key(&email);
-    if let Some(_) = cache.get(email_key.as_slice()).await? {
-        return Err(AppError::LimitExceeded("email"));
-    }
-    cache
-        .set_with_expiration(email_key.as_slice(), token.as_bytes(), 60 * 5)
-        .await?;
 
     cache
         .set_with_expiration(key.as_slice(), email.as_bytes(), 60 * 60)
