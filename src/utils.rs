@@ -108,7 +108,6 @@ pub fn get_ip(req: &Request<Body>) -> Option<&str> {
     let real_ip = HeaderName::from_lowercase(b"x-real-ip").unwrap();
     let forwarded_for = HeaderName::from_lowercase(b"x-forwarded-for").unwrap();
     let headers = req.headers();
-    dbg!(headers);
     if headers.contains_key(&real_ip) {
         headers.get(&real_ip)?.to_str().ok()
     } else {
