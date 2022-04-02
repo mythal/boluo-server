@@ -24,9 +24,7 @@ pub fn err_response(e: AppError) -> Response {
             log::error!("Failed to serialize error: {}", e);
             hyper::Response::builder()
                 .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                .body(hyper::Body::from(include_str!(
-                    "error_serialize_error.json"
-                )))
+                .body(hyper::Body::from(include_str!("error_serialize_error.json")))
                 .expect("Failed to build serialize error response")
         })
 }
@@ -122,10 +120,7 @@ fn test_get_uuid() {
 
     let uuid = Uuid::new_v4();
     let path_and_query = format!("/?id={}", uuid.to_string());
-    let uri = Uri::builder()
-        .path_and_query(&*path_and_query)
-        .build()
-        .unwrap();
+    let uri = Uri::builder().path_and_query(&*path_and_query).build().unwrap();
     let query: IdQuery = parse_query(&uri).unwrap();
     assert_eq!(query.id, uuid);
 

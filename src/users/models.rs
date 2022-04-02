@@ -27,9 +27,7 @@ pub struct User {
 
 impl User {
     pub async fn all<T: Querist>(db: &mut T) -> Result<Vec<User>, DbError> {
-        let rows = db
-            .query_typed(include_str!("sql/all.sql"), &[], &[])
-            .await?;
+        let rows = db.query_typed(include_str!("sql/all.sql"), &[], &[]).await?;
         let mut users = vec![];
         for row in rows {
             users.push(row.try_get(0)?);
@@ -82,11 +80,7 @@ impl User {
         inner_result_map(row, |row| row.try_get(0))
     }
 
-    pub async fn login<T: Querist>(
-        db: &mut T,
-        username: &str,
-        password: &str,
-    ) -> Result<Option<User>, DbError> {
+    pub async fn login<T: Querist>(db: &mut T, username: &str, password: &str) -> Result<Option<User>, DbError> {
         use postgres_types::Type;
 
         let row = db
@@ -105,25 +99,15 @@ impl User {
         User::get(db, Some(id), None, None).await
     }
 
-    pub async fn get_by_email<T: Querist>(
-        db: &mut T,
-        email: &str,
-    ) -> Result<Option<User>, DbError> {
+    pub async fn get_by_email<T: Querist>(db: &mut T, email: &str) -> Result<Option<User>, DbError> {
         User::get(db, None, Some(email), None).await
     }
 
-    pub async fn get_by_username<T: Querist>(
-        db: &mut T,
-        username: &str,
-    ) -> Result<Option<User>, DbError> {
+    pub async fn get_by_username<T: Querist>(db: &mut T, username: &str) -> Result<Option<User>, DbError> {
         User::get(db, None, None, Some(username)).await
     }
 
-    pub async fn reset_password<T: Querist>(
-        db: &mut T,
-        id: Uuid,
-        password: &str,
-    ) -> Result<(), ModelError> {
+    pub async fn reset_password<T: Querist>(db: &mut T, id: Uuid, password: &str) -> Result<(), ModelError> {
         use crate::validators::PASSWORD;
         use postgres_types::Type;
 
@@ -159,10 +143,7 @@ impl User {
             BIO.run(bio)?;
         }
         let row = db
-            .query_exactly_one(
-                include_str!("sql/edit.sql"),
-                &[id, &nickname, &bio, &avatar],
-            )
+            .query_exactly_one(include_str!("sql/edit.sql"), &[id, &nickname, &bio, &avatar])
             .await?;
         row.try_get(0).map_err(Into::into)
     }
@@ -177,10 +158,7 @@ pub struct UserExt {
 }
 
 impl UserExt {
-    pub async fn get_settings<T: Querist>(
-        db: &mut T,
-        user_id: Uuid,
-    ) -> Result<serde_json::Value, DbError> {
+    pub async fn get_settings<T: Querist>(db: &mut T, user_id: Uuid) -> Result<serde_json::Value, DbError> {
         let user_ext = db
             .query_one(include_str!("sql/get_settings.sql"), &[&user_id])
             .await?
@@ -212,9 +190,7 @@ async fn user_test() -> Result<(), crate::error::AppError> {
     let username = "humura";
     let nickname = "Akami Humura";
     let password = "MadokaMadokaSuHaSuHa";
-    let new_user = User::register(db, email, username, nickname, password)
-        .await
-        .unwrap();
+    let new_user = User::register(db, email, username, nickname, password).await.unwrap();
     let user = User::get_by_id(db, &new_user.id).await?.unwrap();
     assert_eq!(user.email, email);
     let user = User::login(db, username, password).await.unwrap().unwrap();
@@ -244,11 +220,8 @@ async fn user_test() -> Result<(), crate::error::AppError> {
     assert_eq!(user_altered.nickname, new_nickname);
     assert_eq!(user_altered.bio, bio);
     assert_eq!(user_altered.avatar_id, Some(avatar.id));
-    User::reset_password(db, user.id, "hahahahha")
-        .await
-        .unwrap();
-    let settings =
-        UserExt::update_settings(db, user.id, serde_json::json!({"madoka": "homura"})).await?;
+    User::reset_password(db, user.id, "hahahahha").await.unwrap();
+    let settings = UserExt::update_settings(db, user.id, serde_json::json!({"madoka": "homura"})).await?;
     assert_eq!(
         *settings.get("madoka").unwrap(),
         serde_json::Value::String("homura".to_string())

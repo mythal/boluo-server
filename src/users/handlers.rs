@@ -1,6 +1,4 @@
-use super::api::{
-    Login, LoginReturn, Register, ResetPassword, ResetPasswordConfirm, ResetPasswordTokenCheck,
-};
+use super::api::{Login, LoginReturn, Register, ResetPassword, ResetPasswordConfirm, ResetPasswordTokenCheck};
 use super::models::User;
 use crate::interface::{missing, ok_response, parse_body, parse_query, Response};
 use crate::session::{remove_session, revoke_session};
@@ -84,9 +82,7 @@ pub async fn login(req: Request<Body>) -> Result<Response, AppError> {
     let user = User::login(db, &*form.username, &*form.password)
         .await
         .or_no_permission()?;
-    let session = session::start(&user.id)
-        .await
-        .map_err(error_unexpected!())?;
+    let session = session::start(&user.id).await.map_err(error_unexpected!())?;
     let token = session::token(&session);
     let session_cookie = CookieBuilder::new("session", token.clone())
         .same_site(SameSite::Lax)
@@ -141,11 +137,7 @@ pub async fn logout(req: Request<Body>) -> Result<Response, AppError> {
 pub async fn edit(req: Request<Body>) -> Result<User, AppError> {
     use crate::csrf::authenticate;
     let session = authenticate(&req).await?;
-    let Edit {
-        nickname,
-        bio,
-        avatar,
-    }: Edit = parse_body(req).await?;
+    let Edit { nickname, bio, avatar }: Edit = parse_body(req).await?;
     let mut db = database::get().await?;
     User::edit(&mut *db, &session.user_id, nickname, bio, avatar)
         .await
@@ -315,12 +307,8 @@ pub async fn router(req: Request<Body>, path: &str) -> Result<Response, AppError
         ("/check_username", Method::GET) => check_username_exists(req).await.map(ok_response),
         ("/check_email", Method::GET) => check_email_exists(req).await.map(ok_response),
         ("/reset_password", Method::POST) => reset_password(req).await.map(ok_response),
-        ("/reset_password_token_check", Method::GET) => {
-            reset_password_token_check(req).await.map(ok_response)
-        }
-        ("/reset_password_confirm", Method::POST) => {
-            reset_password_confirm(req).await.map(ok_response)
-        }
+        ("/reset_password_token_check", Method::GET) => reset_password_token_check(req).await.map(ok_response),
+        ("/reset_password_confirm", Method::POST) => reset_password_confirm(req).await.map(ok_response),
         _ => missing(),
     }
 }
