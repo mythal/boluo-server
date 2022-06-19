@@ -38,3 +38,9 @@ jobs:
           REDIS_URL: redis://redis/
           DEBUG: 1
           PORT: 3000
+
+  format-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dprint/check@v2.0
