@@ -20,8 +20,7 @@ pub fn now_unix_duration() -> Duration {
     use std::time::UNIX_EPOCH;
 
     let now = SystemTime::now();
-    now.duration_since(UNIX_EPOCH)
-        .expect("SystemTime before UNIX EPOCH!")
+    now.duration_since(UNIX_EPOCH).expect("SystemTime before UNIX EPOCH!")
 }
 
 pub fn id() -> Uuid {
@@ -70,17 +69,11 @@ pub fn timestamp() -> i64 {
     Utc::now().timestamp_millis()
 }
 
-pub fn inner_map<T, E, U, F: Fn(T) -> U>(
-    x: Result<Option<T>, E>,
-    mapper: F,
-) -> Result<Option<U>, E> {
+pub fn inner_map<T, E, U, F: Fn(T) -> U>(x: Result<Option<T>, E>, mapper: F) -> Result<Option<U>, E> {
     x.map(|y| y.map(mapper))
 }
 
-pub fn inner_result_map<T, E, U, F: Fn(T) -> Result<U, E>>(
-    x: Result<Option<T>, E>,
-    mapper: F,
-) -> Result<Option<U>, E> {
+pub fn inner_result_map<T, E, U, F: Fn(T) -> Result<U, E>>(x: Result<Option<T>, E>, mapper: F) -> Result<Option<U>, E> {
     match x {
         Ok(Some(x)) => mapper(x).map(|value| Some(value)),
         Ok(None) => Ok(None),

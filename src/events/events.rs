@@ -104,35 +104,17 @@ impl Event {
     pub fn new_message(mailbox: Uuid, message: Message) {
         let channel_id = message.channel_id;
         let message = Box::new(message);
-        Event::fire(
-            EventBody::NewMessage {
-                message,
-                channel_id,
-            },
-            mailbox,
-        )
+        Event::fire(EventBody::NewMessage { message, channel_id }, mailbox)
     }
 
     pub fn message_deleted(mailbox: Uuid, channel_id: Uuid, message_id: Uuid) {
-        Event::fire(
-            EventBody::MessageDeleted {
-                message_id,
-                channel_id,
-            },
-            mailbox,
-        )
+        Event::fire(EventBody::MessageDeleted { message_id, channel_id }, mailbox)
     }
 
     pub fn message_edited(mailbox: Uuid, message: Message) {
         let channel_id = message.channel_id;
         let message = Box::new(message);
-        Event::fire(
-            EventBody::MessageEdited {
-                message,
-                channel_id,
-            },
-            mailbox,
-        )
+        Event::fire(EventBody::MessageEdited { message, channel_id }, mailbox)
     }
 
     pub fn channel_deleted(mailbox: Uuid, channel_id: Uuid) {
@@ -141,26 +123,11 @@ impl Event {
 
     pub fn message_preview(mailbox: Uuid, preview: Box<Preview>) {
         let channel_id = preview.channel_id;
-        Event::fire(
-            EventBody::MessagePreview {
-                preview,
-                channel_id,
-            },
-            mailbox,
-        );
+        Event::fire(EventBody::MessagePreview { preview, channel_id }, mailbox);
     }
-    pub async fn push_status(
-        cache: &mut crate::cache::Connection,
-        space_id: Uuid,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn push_status(cache: &mut crate::cache::Connection, space_id: Uuid) -> Result<(), anyhow::Error> {
         let status_map = space_users_status(cache, space_id).await?;
-        Event::transient(
-            space_id,
-            EventBody::StatusMap {
-                status_map,
-                space_id,
-            },
-        );
+        Event::transient(space_id, EventBody::StatusMap { status_map, space_id });
         Ok(())
     }
 
@@ -172,11 +139,7 @@ impl Event {
         focus: Vec<Uuid>,
     ) -> Result<(), anyhow::Error> {
         let mut cache = cache::conn().await;
-        let heartbeat = UserStatus {
-            timestamp,
-            kind,
-            focus,
-        };
+        let heartbeat = UserStatus { timestamp, kind, focus };
         let mut changed = true;
 
         let key = cache::make_key(b"space", &space_id, b"heartbeat");
@@ -209,13 +172,7 @@ impl Event {
     pub fn channel_edited(channel: Channel) {
         let space_id = channel.space_id;
         let channel_id = channel.id;
-        Event::transient(
-            space_id,
-            EventBody::ChannelEdited {
-                channel,
-                channel_id,
-            },
-        )
+        Event::transient(space_id, EventBody::ChannelEdited { channel, channel_id })
     }
 
     pub fn cache_key(mailbox: &Uuid) -> Vec<u8> {
@@ -270,10 +227,7 @@ impl Event {
         drop(conn);
         let event = SyncEvent::new(Event {
             mailbox: channel_id,
-            body: EventBody::Members {
-                members,
-                channel_id,
-            },
+            body: EventBody::Members { members, channel_id },
             timestamp: timestamp(),
         });
 
@@ -299,10 +253,7 @@ impl Event {
         }
 
         let kind = match &body {
-            EventBody::MessagePreview {
-                preview,
-                channel_id: _,
-            } => Kind::Preview {
+            EventBody::MessagePreview { preview, channel_id: _ } => Kind::Preview {
                 sender_id: preview.sender_id,
                 channel_id: preview.channel_id,
             },
@@ -311,13 +262,8 @@ impl Event {
 
         let event = Event::build(body, mailbox);
         match kind {
-            Kind::Preview {
-                sender_id,
-                channel_id,
-            } => {
-                cache
-                    .preview_map
-                    .insert((sender_id, channel_id), event.clone());
+            Kind::Preview { sender_id, channel_id } => {
+                cache.preview_map.insert((sender_id, channel_id), event.clone());
             }
             Kind::Other => {
                 cache.events.push_back(event.clone());

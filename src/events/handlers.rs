@@ -33,15 +33,11 @@ async fn check_space_perms<T: Querist>(
     if !space.allow_spectator {
         match user_id {
             Ok(user_id) => {
-                SpaceMember::get(db, &user_id, &space.id)
-                    .await
-                    .or_no_permission()?;
+                SpaceMember::get(db, &user_id, &space.id).await.or_no_permission()?;
             }
             Err(err) => {
                 log::warn!("Failed to verify session: {:?}", err);
-                return Err(AppError::Unauthenticated(format!(
-                    "space do not allow spectator"
-                )));
+                return Err(AppError::Unauthenticated(format!("space do not allow spectator")));
             }
         }
     }
@@ -87,9 +83,7 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender) -> Result<(), anyhow:
                     log::warn!("lagged {} at {}", lagged, mailbox);
                     continue;
                 }
-                Err(RecvError::Closed) => {
-                    return Err(anyhow!("broadcast ({}) is closed.", mailbox))
-                }
+                Err(RecvError::Closed) => return Err(anyhow!("broadcast ({}) is closed.", mailbox)),
             };
             if tx.send(message).await.is_err() {
                 break;
@@ -111,11 +105,7 @@ async fn push_events(mailbox: Uuid, outgoing: &mut Sender) -> Result<(), anyhow:
     Ok(())
 }
 
-async fn handle_client_event(
-    mailbox: Uuid,
-    user_id: Option<Uuid>,
-    message: String,
-) -> Result<(), anyhow::Error> {
+async fn handle_client_event(mailbox: Uuid, user_id: Option<Uuid>, message: String) -> Result<(), anyhow::Error> {
     let event: Result<ClientEvent, _> = serde_json::from_str(&*message);
     if let Err(event) = event {
         log::debug!("failed to parse event from client: {}", event);
@@ -147,9 +137,11 @@ async fn connect(req: Request) -> Result<Response, anyhow::Error> {
         let key = make_key(b"token", &token, b"user_id");
         let data = redis.get(&*key).await?;
         if let Some(bytes) = data {
-            *user_id = Ok(Uuid::from_bytes(bytes.try_into().map_err(|_| {
-                anyhow!("can't convert user id in cache to UUID type")
-            })?))
+            *user_id = Ok(Uuid::from_bytes(
+                bytes
+                    .try_into()
+                    .map_err(|_| anyhow!("can't convert user id in cache to UUID type"))?,
+            ))
         }
     }
 
@@ -198,9 +190,7 @@ pub async fn token(req: Request) -> Result<Token, AppError> {
         let mut redis = cache::conn().await;
         let token = Uuid::new_v4();
         let key = make_key(b"token", &token, b"user_id");
-        redis
-            .set_with_expiration(&*key, session.user_id.as_bytes(), 10)
-            .await?;
+        redis.set_with_expiration(&*key, session.user_id.as_bytes(), 10).await?;
         Ok(Token {
             token: Some(token.to_string()),
         })
