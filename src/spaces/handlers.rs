@@ -11,6 +11,7 @@ use crate::events::Event;
 use crate::interface::{self, missing, ok_response, parse_query, IdQuery, Response};
 use crate::spaces::api::{Join, Kick, SearchParams, SpaceWithMember};
 use crate::spaces::models::SpaceMemberWithUser;
+use crate::users::User;
 use hyper::{Body, Request};
 use uuid::Uuid;
 
@@ -109,13 +110,14 @@ async fn create(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
     let mut trans = conn.transaction().await?;
     let db = &mut trans;
     let default_dice_type = default_dice_type.as_deref();
-    let space = Space::create(db, name, &session.user_id, description, password, default_dice_type).await?;
-    let member = SpaceMember::add_admin(db, &session.user_id, &space.id).await?;
+    let user = User::get_by_id(db, &session.user_id).await?.ok_or(AppError::NotFound("user"))?;
+    let space = Space::create(db, name, &user.id, description, password, default_dice_type).await?;
+    let member = SpaceMember::add_admin(db, &user.id, &space.id).await?;
     let channel = Channel::create(db, &space.id, &*first_channel_name, true, default_dice_type).await?;
-    ChannelMember::add_user(db, &session.user_id, &channel.id, "", true).await?;
+    ChannelMember::add_user(db, &user.id, &channel.id, "", true).await?;
     trans.commit().await?;
     log::info!("a space ({}) was just created", space.id);
-    Ok(SpaceWithMember { space, member })
+    Ok(SpaceWithMember { space, member, user })
 }
 
 async fn edit(req: Request<Body>) -> Result<Space, AppError> {
@@ -185,13 +187,14 @@ async fn join(req: Request<Body>) -> Result<SpaceWithMember, AppError> {
         )));
     }
     let user_id = &session.user_id;
+    let user = User::get_by_id(db, user_id).await?.ok_or_else(|| unexpected!("No such user found."))?;
     let member = if &space.owner_id == user_id {
         SpaceMember::add_admin(db, user_id, &space_id).await?
     } else {
         SpaceMember::add_user(db, user_id, &space_id).await?
     };
     Event::space_updated(space_id);
-    Ok(SpaceWithMember { space, member })
+    Ok(SpaceWithMember { space, member, user })
 }
 
 async fn leave(req: Request<Body>) -> Result<bool, AppError> {

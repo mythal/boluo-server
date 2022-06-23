@@ -220,6 +220,7 @@ impl Space {
             .map(|row| SpaceWithMember {
                 space: row.get(0),
                 member: row.get(1),
+                user: row.get(2),
             })
             .collect())
     }

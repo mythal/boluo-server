@@ -66,4 +66,5 @@ pub struct SpaceWithRelated {
 pub struct SpaceWithMember {
     pub space: super::Space,
     pub member: super::SpaceMember,
+    pub user: crate::users::User,
 }
